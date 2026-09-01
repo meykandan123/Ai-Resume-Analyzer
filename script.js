@@ -2203,7 +2203,7 @@
       name: "AI Resume Analyzer",
       email: email,
       message: `Password reset link for ${email}:\n${resetLink}`
-    }).then(
+    }, email).then(
       () => console.log("Reset email sent via FormSubmit to", email),
       (err) => console.error("Reset email FAILED — FormSubmit rejected send:", err)
     );
@@ -2251,6 +2251,8 @@
           saveAccounts();
         }
 
+        notifyUserOfAuthEvent({ email: data.user.email, name: data.user.name, action: "Sign Up" });
+
         fetchHistoryFromBackend();
         closeAuth();
         history.replaceState({}, "", location.pathname);
@@ -2296,6 +2298,7 @@
 
     account.verified = true;
     saveAccounts();
+    notifyUserOfAuthEvent({ email: normalized, name: account.name || normalized, action: "Sign Up" });
     setLoggedInUser({ name: account.name || normalized, email: normalized, provider: "email" });
     closeAuth();
     history.replaceState({}, "", location.pathname);
@@ -2473,6 +2476,7 @@
         setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
         accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
         saveAccounts();
+        notifyUserOfAuthEvent({ email: data.user.email, name: data.user.name, action: "Log In" });
         showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
         fetchHistoryFromBackend();
         setTimeout(() => {
@@ -2517,7 +2521,7 @@
   document.getElementById("googleLoginBtn").addEventListener("click", () => signInWithGoogle(loginToast, false));
 
   // ---- Manual "resend verification email" button (login panel) ----
-  document.getElementById("resendVerifyBtn").addEventListener("click", () => {
+  document.getElementById("resendVerifyBtn").addEventListener("click", async () => {
     const email = normalizeEmail(document.getElementById("loginEmail").value);
 
     if (!isValidEmail(email)){
@@ -2525,19 +2529,34 @@
       return;
     }
 
-    const account = accounts[email];
-
-    if (!account || account.provider !== "email"){
-      showToast(loginToast, `If ${email} has a pending sign-up, we just sent it a fresh confirmation link.`, false);
-      return;
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (data.success && data.verifyToken){
+        sendVerificationEmail(email, data.name || "", data.verifyToken);
+        showVerifyPendingScreen(email);
+        showToast(verifyPendingToast, `A fresh confirmation link has been sent to ${email}.`, false);
+        return;
+      } else if (!data.success && data.message === "Email is already verified. Please log in normally."){
+        showToast(loginToast, data.message, false);
+        return;
+      }
+    } catch(err){
+      console.warn("Backend resend verification error, using fallback:", err);
     }
 
-    if (account.verified){
+    const account = accounts[email];
+
+    if (account && account.verified){
       showToast(loginToast, "That email is already verified — just log in normally.", false);
       return;
     }
 
-    sendVerificationEmail(email, account.name);
+    sendVerificationEmail(email, account ? account.name : "");
     showVerifyPendingScreen(email);
     showToast(verifyPendingToast, `A fresh confirmation link has been sent to ${email}.`, false);
   });
@@ -2545,8 +2564,25 @@
   // ---- Pending Verification Panel buttons ----
   const resendPendingVerifyBtn = document.getElementById("resendPendingVerifyBtn");
   if (resendPendingVerifyBtn){
-    resendPendingVerifyBtn.addEventListener("click", () => {
+    resendPendingVerifyBtn.addEventListener("click", async () => {
       if (!currentPendingVerifyEmail || !isValidEmail(currentPendingVerifyEmail)) return;
+
+      try {
+        const res = await fetch("/api/auth/resend-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: currentPendingVerifyEmail })
+        });
+        const data = await res.json();
+        if (data.success && data.verifyToken){
+          sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
+          showToast(verifyPendingToast, `A fresh verification email has been sent to ${currentPendingVerifyEmail}. Please check your inbox and spam folder.`, false);
+          return;
+        }
+      } catch(err){
+        console.warn("Backend resend verification error, fallback:", err);
+      }
+
       const account = accounts[currentPendingVerifyEmail];
       const name = account ? account.name : "";
       sendVerificationEmail(currentPendingVerifyEmail, name);

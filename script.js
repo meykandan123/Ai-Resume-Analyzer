@@ -1926,15 +1926,28 @@
     closeProfilePage();
   }
 
+  // Safe JSON Fetch helper preventing SyntaxError on non-JSON or 404 responses
+  async function safeFetchJson(url, options) {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(`HTTP ${res.status}: Non-JSON response received`);
+    }
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      throw new Error(`HTTP ${res.status}: Empty response body`);
+    }
+    return JSON.parse(text);
+  }
+
   // Restore a logged-in session on page load from MongoDB / localStorage
   async function restoreSession(){
     const token = getAuthToken();
     if (token){
       try {
-        const res = await fetch("/api/user/profile", {
+        const data = await safeFetchJson("/api/user/profile", {
           headers: { "Authorization": "Bearer " + token }
         });
-        const data = await res.json();
         if (data.success && data.user){
           setLoggedInUser({
             name: data.user.name,
@@ -2229,12 +2242,11 @@
 
     // Call MongoDB Backend Verification Endpoint
     try {
-      const res = await fetch("/api/auth/verify", {
+      const data = await safeFetchJson("/api/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalized, token })
       });
-      const data = await res.json();
       if (data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
@@ -2398,12 +2410,11 @@
     }
 
     try {
-      const res = await fetch("/api/auth/signup", {
+      const data = await safeFetchJson("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })
       });
-      const data = await res.json();
       if (data.success && data.requireVerification){
         accounts[email] = { name, password, provider: "email", verified: false };
         saveAccounts();
@@ -2465,12 +2476,11 @@
     }
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const data = await safeFetchJson("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
       });
-      const data = await res.json();
       if (data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
@@ -2530,12 +2540,11 @@
     }
 
     try {
-      const res = await fetch("/api/auth/resend-verification", {
+      const data = await safeFetchJson("/api/auth/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
       if (data.success && data.verifyToken){
         sendVerificationEmail(email, data.name || "", data.verifyToken);
         showVerifyPendingScreen(email);
@@ -2568,12 +2577,11 @@
       if (!currentPendingVerifyEmail || !isValidEmail(currentPendingVerifyEmail)) return;
 
       try {
-        const res = await fetch("/api/auth/resend-verification", {
+        const data = await safeFetchJson("/api/auth/resend-verification", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: currentPendingVerifyEmail })
         });
-        const data = await res.json();
         if (data.success && data.verifyToken){
           sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
           showToast(verifyPendingToast, `A fresh verification email has been sent to ${currentPendingVerifyEmail}. Please check your inbox and spam folder.`, false);
@@ -2632,12 +2640,11 @@
             saveAccounts();
 
             try {
-              const apiRes = await fetch("/api/auth/google", {
+              const apiData = await safeFetchJson("/api/auth/google", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name: accounts[email].name, email })
               });
-              const apiData = await apiRes.json();
               if (apiData.success && apiData.token){
                 setAuthToken(apiData.token);
                 fetchHistoryFromBackend();
@@ -2708,10 +2715,9 @@
     const token = getAuthToken();
     if (!token || !currentUser) return;
     try {
-      const res = await fetch("/api/history", {
+      const data = await safeFetchJson("/api/history", {
         headers: { "Authorization": "Bearer " + token }
       });
-      const data = await res.json();
       if (data.success && Array.isArray(data.history)){
         const all = loadHistoryAll();
         all[currentUser.email] = data.history;

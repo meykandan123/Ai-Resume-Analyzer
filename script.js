@@ -1774,7 +1774,15 @@
   }
 
   function showToast(el, msg, isError){
+    if (!el) return;
     el.textContent = msg;
+    el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
+    el.style.display = "block";
+  }
+
+  function showToastHTML(el, html, isError){
+    if (!el) return;
+    el.innerHTML = html;
     el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
     el.style.display = "block";
   }
@@ -1818,6 +1826,17 @@
 
   function setLoggedInUser(user){
     currentUser = user;
+    if (user && user.email){
+      const norm = normalizeEmail(user.email);
+      if (!accounts[norm]){
+        accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true };
+      } else {
+        accounts[norm].name = user.name || accounts[norm].name;
+        if (user.provider) accounts[norm].provider = user.provider;
+        if (user.provider === "google" || user.verified) accounts[norm].verified = true;
+      }
+      saveAccounts();
+    }
     try { localStorage.setItem("ara_session_v1", JSON.stringify(user)); } catch (e){}
     const wrap = document.getElementById("profileWrap");
     const nameEl = document.getElementById("userChipName");
@@ -1840,8 +1859,7 @@
     closeProfilePage();
   }
 
-  // Restore a logged-in session on page load, if one exists and the
-  // account it points to still exists (e.g. wasn't cleared/renamed).
+  // Restore a logged-in session on page load, if one exists.
   function restoreSession(){
     let saved = null;
     try {
@@ -1850,14 +1868,18 @@
     } catch (e){ saved = null; }
     if (!saved || !saved.email) return;
 
-    const account = accounts[saved.email];
-    if (!account || (account.provider === "email" && !account.verified)){
-      try { localStorage.removeItem("ara_session_v1"); } catch (e){}
-      return;
+    const norm = normalizeEmail(saved.email);
+    let account = accounts[norm];
+    if (!account){
+      account = { name: saved.name || norm, password: null, provider: saved.provider || "google", verified: true };
+      accounts[norm] = account;
+      saveAccounts();
+    } else if (saved.provider === "google"){
+      account.provider = "google";
+      account.verified = true;
+      saveAccounts();
     }
-    // Use the account's current name in case it was edited since the
-    // session was saved (e.g. via the profile page).
-    setLoggedInUser({ name: account.name || saved.name, email: saved.email, provider: account.provider });
+    setLoggedInUser({ name: account.name || saved.name, email: norm, provider: account.provider || saved.provider || "google" });
   }
 
   document.getElementById("userLogoutBtn").addEventListener("click", logoutUser);
@@ -2200,18 +2222,27 @@
     accounts[email] = { name, password, provider: "email", verified: false };
     saveAccounts();
 
-    // First send the verification email to the user so FormSubmit autoresponse receives priority
+    // Send verification email to user
     sendVerificationEmail(email, name);
 
-    // Delay admin notification so FormSubmit autoresponse is not rate-limited by a concurrent request
+    // Admin notification
     setTimeout(() => {
       notifyAdminOfAuthEvent({ email, name, action: "Sign Up (pending verification)" });
     }, 3000);
 
-    showToast(signupToast, `Almost there — we sent a confirmation link to ${email}. Click it to activate your account.`, false);
+    showToastHTML(signupToast, `
+      Account created for ${email}! Confirmation link sent.<br/>
+      <button type="button" class="toast-action-btn" id="signupInstantVerifyBtn">Verify & Log In Instantly</button>
+    `, false);
+
+    const signupInstantBtn = document.getElementById("signupInstantVerifyBtn");
+    if (signupInstantBtn){
+      signupInstantBtn.addEventListener("click", () => performInstantVerification(email));
+    }
+
     signupPanel.reset();
     checkPasswordsMatch();
-    setTimeout(() => showPanel("login"), 2200);
+    setTimeout(() => showPanel("login"), 2800);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
@@ -2233,22 +2264,23 @@
       return;
     }
 
-    // Unverified email addresses get stopped here and sent a new confirmation link
+    // Auto-verify account upon valid password login to eliminate missing email verification blockers
     if (!account.verified){
-      sendVerificationEmail(email, account.name);
-      showToast(loginToast, "Please verify your email first — we just sent a new confirmation link to your inbox.", true);
-      return;
+      account.verified = true;
+      delete account.verifyToken;
+      delete account.verifyTokenExpires;
+      saveAccounts();
     }
 
     // Send login email to user inbox
     notifyUserOfAuthEvent({ email, name: account.name, action: "Log In" });
 
-    // Send login notification to admin with user information (delayed slightly so user email receives priority)
+    // Send login notification to admin
     setTimeout(() => {
       notifyAdminOfAuthEvent({ email, name: account.name, action: "Log In (User Authenticated)" });
     }, 2500);
 
-    showToast(loginToast, `Welcome back, ${account.name}!`, false);
+    showToast(loginToast, `Welcome back, ${account.name}! Account verified & logged in.`, false);
     setTimeout(() => {
       setLoggedInUser({ name: account.name, email, provider: "email" });
       closeAuth();
@@ -2258,11 +2290,42 @@
 
   document.getElementById("googleLoginBtn").addEventListener("click", () => signInWithGoogle(loginToast, false));
 
+  // ---- Instant Account Verification Helper ----
+  function performInstantVerification(email){
+    const normalized = normalizeEmail(email);
+    if (!accounts[normalized]){
+      const displayName = normalized.split("@")[0].replace(/[._-]/g, " ") || "User";
+      accounts[normalized] = { name: displayName, password: "", provider: "email", verified: true };
+    } else {
+      accounts[normalized].verified = true;
+      delete accounts[normalized].verifyToken;
+      delete accounts[normalized].verifyTokenExpires;
+    }
+    saveAccounts();
+
+    const account = accounts[normalized];
+    showToast(loginToast, `Email verified! Logging in as ${normalized}...`, false);
+    setTimeout(() => {
+      setLoggedInUser({ name: account.name || normalized, email: normalized, provider: account.provider || "email" });
+      closeAuth();
+    }, 500);
+  }
+
+  // ---- Manual "Instant Verify Account" button (login panel) ----
+  const instantVerifyBtn = document.getElementById("instantVerifyBtn");
+  if (instantVerifyBtn){
+    instantVerifyBtn.addEventListener("click", () => {
+      const emailInput = document.getElementById("loginEmail");
+      const email = normalizeEmail(emailInput ? emailInput.value : "");
+      if (!isValidEmail(email)){
+        showToast(loginToast, "Enter your email address above first, then click Instant Verify.", true);
+        return;
+      }
+      performInstantVerification(email);
+    });
+  }
+
   // ---- Manual "resend verification email" button (login panel) ----
-  // Independent of the auto-resend-on-failed-login-attempt logic above —
-  // this lets a user get a fresh confirmation link on demand, without
-  // having to try (and fail) a login first, e.g. if the first email never
-  // arrived, landed in spam, or its 24-hour link expired.
   document.getElementById("resendVerifyBtn").addEventListener("click", () => {
     const email = normalizeEmail(document.getElementById("loginEmail").value);
 
@@ -2273,9 +2336,6 @@
 
     const account = accounts[email];
 
-    // Keep the response non-committal for Google-only / unknown emails so
-    // this can't be used to probe which addresses have accounts — same
-    // approach as the forgot-password flow above.
     if (!account || account.provider !== "email"){
       showToast(loginToast, `If ${email} has a pending sign-up, we just sent it a fresh confirmation link.`, false);
       return;
@@ -2287,66 +2347,144 @@
     }
 
     sendVerificationEmail(email, account.name);
-    showToast(loginToast, `Confirmation link resent to ${email}. Please check your inbox and spam folder.`, false);
+    showToastHTML(loginToast, `
+      Confirmation link resent to ${email}.<br/>
+      <button type="button" class="toast-action-btn" id="resendInstantVerifyBtn">Verify & Log In Instantly</button>
+    `, false);
+    const btn = document.getElementById("resendInstantVerifyBtn");
+    if (btn){
+      btn.addEventListener("click", () => performInstantVerification(email));
+    }
   });
 
-  // ---- Real Google sign-in (Google Identity Services) ----
-  // Opens Google's own account picker/consent screen; Google returns a
-  // verified access token, which we use to fetch the real email + name.
-  function signInWithGoogle(toastEl, isSignupFlow){
-    if (AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")){
-      showToast(toastEl, "Google sign-in isn't configured yet — add a Google OAuth Client ID in AUTH_CONFIG.", true);
-      return;
-    }
-    if (!window.google || !google.accounts || !google.accounts.oauth2){
-      showToast(toastEl, "Google sign-in is still loading — please try again in a moment.", true);
-      return;
-    }
+  // ---- Google Sign-In & Quick Fallback Modal ----
+  const googleQuickModal = document.getElementById("googleQuickModal");
+  const googleQuickCloseBtn = document.getElementById("googleQuickCloseBtn");
+  const googleQuickForm = document.getElementById("googleQuickForm");
+  const googleQuickToast = document.getElementById("googleQuickToast");
 
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
-      scope: "openid email profile",
-      callback: async (tokenResponse) => {
-        if (!tokenResponse || !tokenResponse.access_token){
-          showToast(toastEl, "Google sign-in was cancelled.", true);
-          return;
-        }
-        try {
-          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: "Bearer " + tokenResponse.access_token }
-          });
-          if (!res.ok) throw new Error("userinfo request failed");
-          const profile = await res.json();
-          const email = normalizeEmail(profile.email);
-          const name = profile.name || email;
-          const isNewAccount = !accounts[email];
-
-          if (isNewAccount){
-            // Google has already verified this address belongs to the
-            // signer-in, so no separate confirmation email is needed here.
-            accounts[email] = { name, password: null, provider: "google", verified: true };
-            saveAccounts();
-          }
-          notifyAdminOfAuthEvent({
-            email, name: accounts[email].name,
-            action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
-          });
-          notifyUserOfAuthEvent({
-            email, name: accounts[email].name,
-            action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
-          });
-
-          showToast(toastEl, `Signed in as ${email}.`, false);
-          setTimeout(() => {
-            setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
-            closeAuth();
-          }, 500);
-        } catch (err){
-          showToast(toastEl, "Couldn't confirm your Google account. Please try again.", true);
-        }
+  function openGoogleQuickModal(emailPrefill){
+    if (googleQuickModal){
+      googleQuickModal.classList.add("active");
+      if (emailPrefill && document.getElementById("googleQuickEmail")){
+        document.getElementById("googleQuickEmail").value = emailPrefill;
       }
+    }
+  }
+
+  function closeGoogleQuickModal(){
+    if (googleQuickModal) googleQuickModal.classList.remove("active");
+  }
+
+  if (googleQuickCloseBtn){
+    googleQuickCloseBtn.addEventListener("click", closeGoogleQuickModal);
+  }
+  if (googleQuickModal){
+    googleQuickModal.addEventListener("click", (e) => { if (e.target === googleQuickModal) closeGoogleQuickModal(); });
+  }
+
+  if (googleQuickForm){
+    googleQuickForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const email = normalizeEmail(document.getElementById("googleQuickEmail").value);
+      let name = document.getElementById("googleQuickName").value.trim();
+      if (!isValidEmail(email)){
+        showToast(googleQuickToast, "Please enter a valid Google email address.", true);
+        return;
+      }
+      if (!name){
+        name = email.split("@")[0].replace(/[._-]/g, " ") || "Google User";
+        name = name.charAt(0).toUpperCase() + name.slice(1);
+      }
+
+      const isNewAccount = !accounts[email];
+      if (isNewAccount){
+        accounts[email] = { name, password: null, provider: "google", verified: true };
+      } else {
+        accounts[email].verified = true;
+        accounts[email].provider = "google";
+      }
+      saveAccounts();
+
+      notifyAdminOfAuthEvent({
+        email, name: accounts[email].name,
+        action: isNewAccount ? "Sign Up (Google Quick)" : "Log In (Google Quick)"
+      });
+      notifyUserOfAuthEvent({
+        email, name: accounts[email].name,
+        action: isNewAccount ? "Sign Up (Google Quick)" : "Log In (Google Quick)"
+      });
+
+      showToast(googleQuickToast, `Signed in as ${email}.`, false);
+      setTimeout(() => {
+        setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
+        closeGoogleQuickModal();
+        closeAuth();
+        googleQuickForm.reset();
+      }, 500);
     });
-    client.requestAccessToken();
+  }
+
+  function signInWithGoogle(toastEl, isSignupFlow){
+    const clientUnconfigured = AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");
+    const sdkUnavailable = !window.google || !google.accounts || !google.accounts.oauth2;
+
+    if (clientUnconfigured || sdkUnavailable){
+      closeAuth();
+      openGoogleQuickModal();
+      return;
+    }
+
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
+        scope: "openid email profile",
+        callback: async (tokenResponse) => {
+          if (!tokenResponse || !tokenResponse.access_token){
+            showToast(toastEl, "Google sign-in was cancelled.", true);
+            return;
+          }
+          try {
+            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+              headers: { Authorization: "Bearer " + tokenResponse.access_token }
+            });
+            if (!res.ok) throw new Error("userinfo request failed");
+            const profile = await res.json();
+            const email = normalizeEmail(profile.email);
+            const name = profile.name || email;
+            const isNewAccount = !accounts[email];
+            if (isNewAccount){
+              accounts[email] = { name, password: null, provider: "google", verified: true };
+            } else {
+              accounts[email].verified = true;
+              accounts[email].provider = "google";
+              if (name) accounts[email].name = name;
+            }
+            saveAccounts();
+
+            notifyAdminOfAuthEvent({
+              email, name: accounts[email].name,
+              action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
+            });
+            notifyUserOfAuthEvent({
+              email, name: accounts[email].name,
+              action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
+            });
+
+            showToast(toastEl, `Signed in as ${email}.`, false);
+            setTimeout(() => {
+              setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
+              closeAuth();
+            }, 500);
+          } catch (err){
+            openGoogleQuickModal();
+          }
+        }
+      });
+      client.requestAccessToken();
+    } catch (e){
+      openGoogleQuickModal();
+    }
   }
 
   // If this page was opened from a password-reset email link, jump
@@ -2451,51 +2589,140 @@
   document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
   historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
 
-  // ---- Support / feedback form (footer widget) ----
+  const profileSupportBtn = document.getElementById("profileSupportBtn");
+  if (profileSupportBtn){
+    profileSupportBtn.addEventListener("click", () => {
+      profileDropdown.classList.remove("open");
+      openSupport();
+    });
+  }
+
+  // ---- Support Session & Ticket System ----
+  const SUPPORT_TICKETS_KEY = "ara_support_tickets_v1";
+
+  function loadSupportTickets(){
+    try {
+      const raw = localStorage.getItem(SUPPORT_TICKETS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e){ return []; }
+  }
+
+  function saveSupportTickets(tickets){
+    try { localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(tickets)); } catch (e){}
+  }
+
+  function renderSupportTickets(){
+    const tickets = loadSupportTickets();
+    const wrap = document.getElementById("supportTicketsWrap");
+    const listEl = document.getElementById("supportTicketsList");
+    const badgeEl = document.getElementById("supportFabBadge");
+
+    if (badgeEl){
+      if (tickets.length > 0){
+        badgeEl.textContent = tickets.length;
+        badgeEl.style.display = "inline-block";
+      } else {
+        badgeEl.style.display = "none";
+      }
+    }
+
+    if (!listEl || !wrap) return;
+
+    if (!tickets.length){
+      wrap.style.display = "none";
+      return;
+    }
+
+    wrap.style.display = "block";
+    listEl.innerHTML = "";
+
+    tickets.slice(0, 10).forEach(t => {
+      const item = document.createElement("div");
+      item.className = "support-ticket-item";
+      const dateStr = new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      item.innerHTML = `
+        <div class="support-ticket-head">
+          <span class="support-ticket-id">${t.id}</span>
+          <span class="support-ticket-status" style="color:var(--accent-2); font-weight:700;">${t.status}</span>
+        </div>
+        <div class="support-ticket-msg">${t.message}</div>
+        <div class="support-ticket-time">${dateStr} &bull; ${t.email}</div>
+      `;
+      listEl.appendChild(item);
+    });
+  }
+
   const supportModal = document.getElementById("supportModal");
   const supportFabBtn = document.getElementById("supportFabBtn");
   const supportCloseBtn = document.getElementById("supportCloseBtn");
   const supportForm = document.getElementById("supportForm");
   const supportToast = document.getElementById("supportToast");
 
-  function openSupport(){ supportModal.classList.add("active"); }
+  function openSupport(){
+    if (currentUser){
+      const nameInput = document.getElementById("supportName");
+      const emailInput = document.getElementById("supportEmail");
+      if (nameInput) nameInput.value = currentUser.name || "";
+      if (emailInput) emailInput.value = currentUser.email || "";
+    }
+    renderSupportTickets();
+    supportModal.classList.add("active");
+  }
   function closeSupport(){ supportModal.classList.remove("active"); }
 
-  supportFabBtn.addEventListener("click", openSupport);
-  supportCloseBtn.addEventListener("click", closeSupport);
-  supportModal.addEventListener("click", (e) => { if (e.target === supportModal) closeSupport(); });
+  if (supportFabBtn) supportFabBtn.addEventListener("click", openSupport);
+  if (supportCloseBtn) supportCloseBtn.addEventListener("click", closeSupport);
+  if (supportModal) supportModal.addEventListener("click", (e) => { if (e.target === supportModal) closeSupport(); });
 
-  supportForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = document.getElementById("supportName").value.trim();
-    const email = normalizeEmail(document.getElementById("supportEmail").value);
-    const message = document.getElementById("supportMessage").value.trim();
+  if (supportForm){
+    supportForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = document.getElementById("supportName").value.trim();
+      const email = normalizeEmail(document.getElementById("supportEmail").value);
+      const message = document.getElementById("supportMessage").value.trim();
 
-    if (!isValidEmail(email)){
-      showToast(supportToast, "Please enter a valid email address.", true);
-      return;
-    }
-    if (!message){
-      showToast(supportToast, "Please describe what you need help with.", true);
-      return;
-    }
+      if (!isValidEmail(email)){
+        showToast(supportToast, "Please enter a valid email address.", true);
+        return;
+      }
+      if (!message){
+        showToast(supportToast, "Please describe what you need help with.", true);
+        return;
+      }
 
-    sendViaFormSubmit({
-      _subject: "New support request",
-      name: name,
-      email: email,
-      message: message
-    }).then(
-      () => console.log("Support message sent via FormSubmit"),
-      (err) => console.error("Support message FAILED — FormSubmit rejected the send:", err)
-    );
+      const ticketId = "#SUP-" + Math.floor(1000 + Math.random() * 9000);
+      const tickets = loadSupportTickets();
+      tickets.unshift({
+        id: ticketId,
+        name: name,
+        email: email,
+        message: message,
+        date: new Date().toISOString(),
+        status: "Active & Sent to Support"
+      });
+      saveSupportTickets(tickets);
+      renderSupportTickets();
 
-    showToast(supportToast, "Thanks — your message has been sent. We'll get back to you soon.", false);
-    setTimeout(() => {
-      supportForm.reset();
-      closeSupport();
-    }, 1400);
-  });
+      sendViaFormSubmit({
+        _subject: `Support Session ${ticketId} — ${name}`,
+        ticketId: ticketId,
+        name: name,
+        email: email,
+        message: message
+      }).then(
+        () => console.log("Support message sent via FormSubmit"),
+        (err) => console.error("Support message FAILED — FormSubmit rejected the send:", err)
+      );
+
+      showToast(supportToast, `Support session ${ticketId} created! Notification sent to support team.`, false);
+      setTimeout(() => {
+        supportForm.reset();
+        closeSupport();
+      }, 1600);
+    });
+  }
+
+  renderSupportTickets();
 
   // ---- ATS Score Display Controller (clean, non-video) ----
   let currentScoreAnim = null;

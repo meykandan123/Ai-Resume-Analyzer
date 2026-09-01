@@ -1969,3 +1969,70 @@
     transition:border-color .15s;
   }
   .support-modal textarea:focus{ border-color: var(--accent); }
+
+  /* Badge indicator for floating support button */
+  .support-badge {
+    background: #e03131;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 2px 7px;
+    margin-left: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+
+  /* Support ticket item list */
+  .support-ticket-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: #fafafa;
+  }
+  .support-ticket-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .support-ticket-id { color: var(--accent-2); }
+  .support-ticket-status {
+    font-size: 10.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 700;
+  }
+  .support-ticket-msg {
+    font-size: 12.5px;
+    color: #444;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .support-ticket-time {
+    font-size: 11px;
+    color: #888;
+  }
+
+  /* Interactive verification action in toasts */
+  .toast-action-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    background: var(--accent);
+    color: #fff !important;
+    font-weight: 700;
+    font-size: 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+  }
+  .toast-action-btn:hover { background: var(--accent-hover); }
+

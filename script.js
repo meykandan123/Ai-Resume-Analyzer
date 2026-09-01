@@ -1759,7 +1759,7 @@
 
     const token = generateResetToken();
     account.verifyToken = token;
-    account.verifyTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // link valid 24 hours
+    account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid 5 minutes
     saveAccounts();
 
     let origin = location.origin;
@@ -1771,29 +1771,30 @@
     const verifyLink = `${origin}${pathname}?verifyEmail=${encodeURIComponent(email)}&verifyToken=${token}`;
     const displayName = name || "there";
 
-    // Welcome paragraph (3 lines) + the verification link, sent from our
-    // FormSubmit inbox to the new user's own inbox via _autoresponse.
     const welcomeMessage =
       `Hi ${displayName},\n\n` +
-      `Welcome to AI Resume Analyzer! We're glad you're here, and we can't wait to help you sharpen your resume and land more interviews.\n` +
-      `You're just one click away from getting started — confirming your email unlocks instant AI-powered scoring, tailored improvement suggestions, and a saved history of every resume you check.\n` +
-      `This link is valid for 24 hours, and you won't be able to log in until you use it.\n\n` +
-      `Confirm your email:\n${verifyLink}\n\n` +
+      `Welcome to AI Resume Analyzer!\n` +
+      `Please confirm your email address by clicking the link below:\n\n` +
+      `${verifyLink}\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 5 minutes only.\n` +
+      `If the link expires before you click it, please visit the login page and click "Resend confirmation" to get a new link.\n\n` +
       `If you didn't create this account, you can safely ignore this email.`;
 
-    console.log("Sending verification email", { to: email, verifyLink });
+    console.log("Sending verification email (5-min deadline)", { to: email, verifyLink });
 
     sendViaFormSubmit({
-      _subject: "Welcome! Confirm your email — AI Resume Analyzer",
+      _subject: "Confirm your email — AI Resume Analyzer",
       _replyto: email,
       _autoresponse: welcomeMessage,
       name: "AI Resume Analyzer",
       email: email,
-      message: `Verification email sent to ${email}.\nVerify link: ${verifyLink}`
+      message: `Verification email sent to ${email}.\nVerify link (valid 5 mins): ${verifyLink}`
     }).then(
       () => console.log("Verification email submitted to FormSubmit for", email),
       (err) => console.error("Verification email FAILED — FormSubmit rejected the send:", err)
     );
+
+    return verifyLink;
   }
 
   function showToast(el, msg, isError){
@@ -2055,7 +2056,8 @@
 
   forgotPanel.addEventListener("submit", (e) => {
     e.preventDefault();
-    const email = normalizeEmail(document.getElementById("forgotEmail").value);
+    const rawEmail = document.getElementById("forgotEmail").value;
+    const email = normalizeEmail(rawEmail);
 
     if (!isValidEmail(email)){
       showToast(forgotToast, "Please enter a valid email address.", true);
@@ -2064,18 +2066,15 @@
 
     const account = accounts[email];
 
-    // Same message either way — this is what keeps the form from being
-    // usable to check which emails are registered.
-    showToast(forgotToast, `If an account exists for ${email}, we've sent a reset link to that inbox.`, false);
-    forgotPanel.reset();
-
-    // Google-only accounts have no password to reset, and unknown emails
-    // get no email — but the user-facing message above stays identical.
-    if (!account || account.provider !== "email") return;
+    if (!account || account.provider !== "email"){
+      showToast(forgotToast, `If an account exists for ${email}, a password reset link has been sent to that inbox (or spam folder).`, false);
+      forgotPanel.reset();
+      return;
+    }
 
     const token = generateResetToken();
     account.resetToken = token;
-    account.resetTokenExpires = Date.now() + 30 * 60 * 1000; // link valid 30 minutes
+    account.resetTokenExpires = Date.now() + 15 * 60 * 1000; // link valid 15 minutes
     saveAccounts();
 
     let origin = location.origin;
@@ -2086,19 +2085,20 @@
 
     const resetLink = `${origin}${pathname}?resetEmail=${encodeURIComponent(email)}&resetToken=${token}`;
 
-    // FormSubmit's "_autoresponse" auto-emails this text back to whatever
-    // address is in the "email" field below — i.e. the user, not the admin.
     sendViaFormSubmit({
-      _subject: "Reset your password",
+      _subject: "Reset your password — AI Resume Analyzer",
       _replyto: email,
-      _autoresponse: `Click the link below to reset your password (valid for 30 minutes):\n${resetLink}`,
+      _autoresponse: `Hi ${account.name || "there"},\n\nClick the link below to reset your password (valid for 15 minutes):\n\n${resetLink}\n\nIf you didn't request a password reset, you can safely ignore this email.`,
       name: "AI Resume Analyzer",
       email: email,
-      message: `Password reset requested for ${email}.\nReset link: ${resetLink}`
+      message: `Password reset link for ${email}:\n${resetLink}`
     }).then(
-      () => console.log("Reset email sent via FormSubmit"),
-      (err) => console.error("Reset email FAILED — FormSubmit rejected the send:", err)
+      () => console.log("Reset email sent via FormSubmit to", email),
+      (err) => console.error("Reset email FAILED — FormSubmit rejected send:", err)
     );
+
+    showToast(forgotToast, `Password reset link sent to ${email}! Please check your inbox and spam folder (valid for 15 minutes).`, false);
+    forgotPanel.reset();
   });
 
   // ---- Forgot password: the link in the email lands back here with
@@ -2116,13 +2116,26 @@
 
     const normalized = normalizeEmail(email);
     const account = accounts[normalized];
-    const valid = account && account.verifyToken === token &&
-                  account.verifyTokenExpires && Date.now() <= account.verifyTokenExpires;
+
+    if (!account){
+      authModal.classList.add("active");
+      showPanel("login");
+      showToast(loginToast, "Account not found. Please sign up to create your account.", true);
+      history.replaceState({}, "", location.pathname);
+      return;
+    }
+
+    const isExpired = account.verifyTokenExpires && Date.now() > account.verifyTokenExpires;
+    const valid = account.verifyToken === token && !isExpired;
 
     if (!valid){
       authModal.classList.add("active");
       showPanel("login");
-      showToast(loginToast, "That confirmation link is invalid or has expired. Please log in to request a new one.", true);
+      if (isExpired){
+        showToast(loginToast, "That verification link has expired (links are valid for 5 minutes). Please enter your email above and click 'Resend confirmation' to get a fresh link.", true);
+      } else {
+        showToast(loginToast, "That confirmation link is invalid or has already been used.", true);
+      }
       history.replaceState({}, "", location.pathname);
       return;
     }
@@ -2140,7 +2153,7 @@
     // Display welcome banner on dashboard
     const statusEl = document.getElementById("status");
     if (statusEl){
-      statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:12px 18px; display:block;">
+      statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:14px 20px; display:block; border-radius:8px;">
         🎉 Email verified successfully! Welcome to your dashboard, <strong>${account.name || normalized}</strong>.
       </div>`;
       setTimeout(() => { if (statusEl.firstChild) statusEl.innerHTML = ""; }, 6000);

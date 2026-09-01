@@ -1926,9 +1926,15 @@
     closeProfilePage();
   }
 
+  // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server)
+  const API_BASE = (location.protocol === "file:" || (location.port && location.port !== "5000"))
+    ? "http://localhost:5000"
+    : "";
+
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON or 404 responses
   async function safeFetchJson(url, options) {
-    const res = await fetch(url, options);
+    const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : url;
+    const res = await fetch(fullUrl, options);
     const contentType = res.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
       throw new Error(`HTTP ${res.status}: Non-JSON response received`);
@@ -2033,7 +2039,7 @@
       const token = getAuthToken();
       if (token){
         try {
-          await fetch("/api/user/profile", {
+          await safeFetchJson("/api/user/profile", {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -2067,7 +2073,7 @@
     const token = getAuthToken();
     if (token){
       try {
-        await fetch("/api/user/profile", {
+        await safeFetchJson("/api/user/profile", {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -2748,7 +2754,7 @@
     const token = getAuthToken();
     if (token){
       try {
-        await fetch("/api/history", {
+        await safeFetchJson("/api/history", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -2777,7 +2783,7 @@
     const token = getAuthToken();
     if (token && id){
       try {
-        await fetch("/api/history/" + id, {
+        await safeFetchJson("/api/history/" + id, {
           method: "DELETE",
           headers: { "Authorization": "Bearer " + token }
         });

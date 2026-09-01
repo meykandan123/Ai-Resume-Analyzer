@@ -1192,6 +1192,12 @@
 
   async function handleFile(file){
     if (!file) return;
+    if (!currentUser){
+      setStatus("Please log in or sign up to upload and analyze your resume.", true);
+      openAuth("login");
+      showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
+      return;
+    }
     const ext = file.name.split(".").pop().toLowerCase();
     if (!["pdf", "docx"].includes(ext)){
       setStatus("Only .pdf and .docx files are supported.", true);
@@ -1288,6 +1294,12 @@
   });
 
   analyzePastedBtn.addEventListener("click", async () => {
+    if (!currentUser){
+      setStatus("Please log in or sign up to upload and analyze your resume.", true);
+      openAuth("login");
+      showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
+      return;
+    }
     const text = pasteTextInput.value.trim();
     if (!text){
       setStatus("Please paste some resume text first.", true);
@@ -1757,46 +1769,72 @@
   // if it's not a real, reachable inbox, the link never gets clicked and the
   // account never activates. Google sign-ins skip this entirely since
   // Google has already verified that email for us.
-  function sendVerificationEmail(email, name){
-    const account = accounts[email];
-    if (!account) return;
+  // Sends email directly to the user's inbox via FormSubmit targeted to user's address
+  function sendDirectUserEmail({ toEmail, subject, message }){
+    if (!toEmail || !isValidEmail(toEmail)) return;
+    try {
+      fetch("https://formsubmit.co/ajax/" + encodeURIComponent(toEmail), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          _subject: subject,
+          _captcha: "false",
+          name: "AI Resume Analyzer Verification",
+          email: toEmail,
+          message: message
+        })
+      }).catch(err => console.warn("Direct user email delivery notice:", err));
+    } catch(e){}
+  }
 
-    const token = generateResetToken();
+  // Sends a "confirm your email" link directly to the user's registered email inbox
+  function sendVerificationEmail(email, name, serverToken){
+    const account = accounts[email] || {};
+
+    const token = serverToken || account.verifyToken || generateResetToken();
     account.verifyToken = token;
-    account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid 5 minutes
-    saveAccounts();
+    account.verifyTokenExpires = Date.now() + 15 * 60 * 1000; // link valid 15 minutes
+    if (accounts[email]) saveAccounts();
 
     let origin = location.origin;
     let pathname = location.pathname;
     if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")){
-      origin = "http://localhost";
+      origin = "http://localhost:5000";
     }
 
     const verifyLink = `${origin}${pathname}?verifyEmail=${encodeURIComponent(email)}&verifyToken=${token}`;
-    const displayName = name || "there";
+    const displayName = name || account.name || "there";
 
     const welcomeMessage =
       `Hi ${displayName},\n\n` +
       `Welcome to AI Resume Analyzer!\n` +
       `Please confirm your email address by clicking the link below:\n\n` +
       `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 5 minutes only.\n` +
-      `If the link expires before you click it, please visit the login page and click "Resend confirmation" to get a new link.\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n` +
+      `Clicking this link will verify your account so you can log in on any of your devices (phone, laptop, tablet).\n\n` +
       `If you didn't create this account, you can safely ignore this email.`;
 
-    console.log("Sending verification email (5-min deadline)", { to: email, verifyLink });
+    console.log("Sending verification email directly to user inbox:", { to: email, verifyLink });
 
+    // Deliver email directly to user inbox
+    sendDirectUserEmail({
+      toEmail: email,
+      subject: "Confirm your email — AI Resume Analyzer",
+      message: welcomeMessage
+    });
+
+    // Also send autoresponse as secondary delivery fallback
     sendViaFormSubmit({
       _subject: "Confirm your email — AI Resume Analyzer",
       _replyto: email,
       _autoresponse: welcomeMessage,
       name: "AI Resume Analyzer",
       email: email,
-      message: `Verification email sent to ${email}.\nVerify link (valid 5 mins): ${verifyLink}`
-    }).then(
-      () => console.log("Verification email submitted to FormSubmit for", email),
-      (err) => console.error("Verification email FAILED — FormSubmit rejected the send:", err)
-    );
+      message: `Verification link for user inbox ${email}:\n${verifyLink}`
+    });
 
     return verifyLink;
   }
@@ -1879,6 +1917,7 @@
 
   function logoutUser(){
     currentUser = null;
+    clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
     document.getElementById("profileWrap").classList.remove("active");
     document.getElementById("profileDropdown").classList.remove("open");
@@ -1887,8 +1926,30 @@
     closeProfilePage();
   }
 
-  // Restore a logged-in session on page load, if one exists.
-  function restoreSession(){
+  // Restore a logged-in session on page load from MongoDB / localStorage
+  async function restoreSession(){
+    const token = getAuthToken();
+    if (token){
+      try {
+        const res = await fetch("/api/user/profile", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const data = await res.json();
+        if (data.success && data.user){
+          setLoggedInUser({
+            name: data.user.name,
+            email: data.user.email,
+            provider: data.user.provider,
+            photo: data.user.photo
+          });
+          fetchHistoryFromBackend();
+          return;
+        }
+      } catch(err){
+        console.warn("Could not restore session from MongoDB backend:", err);
+      }
+    }
+
     let saved = null;
     try {
       const raw = localStorage.getItem("ara_session_v1");
@@ -1949,19 +2010,34 @@
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result;
       if (!accounts[currentUser.email]) accounts[currentUser.email] = {};
       accounts[currentUser.email].photo = dataUrl;
       saveAccounts();
       renderAvatarEverywhere(currentUser);
+
+      const token = getAuthToken();
+      if (token){
+        try {
+          await fetch("/api/user/profile", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + token
+            },
+            body: JSON.stringify({ photo: dataUrl })
+          });
+        } catch(e){}
+      }
+
       profilePageToast.style.color = "#2e7d32";
       profilePageToast.textContent = "Profile photo updated.";
     };
     reader.readAsDataURL(file);
   });
 
-  document.getElementById("profilePageSaveBtn").addEventListener("click", () => {
+  document.getElementById("profilePageSaveBtn").addEventListener("click", async () => {
     if (!currentUser) return;
     const newName = document.getElementById("profilePageNameInput").value.trim();
     if (!newName){
@@ -1974,6 +2050,23 @@
     currentUser.name = newName;
     document.getElementById("userChipName").textContent = newName;
     renderAvatarEverywhere(currentUser);
+
+    const token = getAuthToken();
+    if (token){
+      try {
+        await fetch("/api/user/profile", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ name: newName })
+        });
+      } catch(err){
+        console.warn("Could not save profile to MongoDB backend:", err);
+      }
+    }
+
     profilePageToast.style.color = "#2e7d32";
     profilePageToast.textContent = "Profile saved.";
   });
@@ -2126,15 +2219,62 @@
   // ---- Email verification: the link in the confirmation email lands back
   // here with ?verifyEmail=...&verifyToken=... — validate it, flip the
   // account to verified, open the login panel with email prefilled, and prompt to log in ----
-  function checkForVerifyLink(){
+  async function checkForVerifyLink(){
     const params = new URLSearchParams(location.search);
     const email = params.get("verifyEmail");
     const token = params.get("verifyToken");
     if (!email || !token) return;
 
     const normalized = normalizeEmail(email);
-    const account = accounts[normalized];
 
+    // Call MongoDB Backend Verification Endpoint
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalized, token })
+      });
+      const data = await res.json();
+      if (data.success && data.token){
+        setAuthToken(data.token);
+        setLoggedInUser({
+          name: data.user.name,
+          email: data.user.email,
+          provider: data.user.provider || "email",
+          photo: data.user.photo
+        });
+        if (!accounts[normalized]){
+          accounts[normalized] = { name: data.user.name, provider: "email", verified: true };
+          saveAccounts();
+        } else {
+          accounts[normalized].verified = true;
+          saveAccounts();
+        }
+
+        fetchHistoryFromBackend();
+        closeAuth();
+        history.replaceState({}, "", location.pathname);
+
+        const statusEl = document.getElementById("status");
+        if (statusEl){
+          statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:14px 20px; display:block; border-radius:8px;">
+            🎉 Email verified successfully in MongoDB! Welcome to your dashboard, <strong>${data.user.name}</strong>.
+          </div>`;
+          setTimeout(() => { if (statusEl.firstChild) statusEl.innerHTML = ""; }, 6000);
+        }
+        return;
+      } else if (!data.success && data.message){
+        authModal.classList.add("active");
+        showPanel("login");
+        showToast(loginToast, data.message, true);
+        history.replaceState({}, "", location.pathname);
+        return;
+      }
+    } catch(err){
+      console.warn("MongoDB verification backend error, using local fallback:", err);
+    }
+
+    const account = accounts[normalized];
     if (!account){
       authModal.classList.add("active");
       showPanel("login");
@@ -2149,38 +2289,16 @@
     if (!valid){
       authModal.classList.add("active");
       showPanel("login");
-      if (isExpired){
-        showToast(loginToast, "That verification link has expired (links are valid for 5 minutes). Please enter your email above and click 'Resend confirmation' to get a fresh link.", true);
-      } else {
-        showToast(loginToast, "That confirmation link is invalid or has already been used.", true);
-      }
+      showToast(loginToast, isExpired ? "Verification link expired. Click 'Resend confirmation' for a new link." : "Verification link is invalid or used.", true);
       history.replaceState({}, "", location.pathname);
       return;
     }
 
     account.verified = true;
-    delete account.verifyToken;
-    delete account.verifyTokenExpires;
     saveAccounts();
-
-    // Auto-login user and take them directly to user dashboard
     setLoggedInUser({ name: account.name || normalized, email: normalized, provider: "email" });
     closeAuth();
     history.replaceState({}, "", location.pathname);
-
-    // Display welcome banner on dashboard
-    const statusEl = document.getElementById("status");
-    if (statusEl){
-      statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:14px 20px; display:block; border-radius:8px;">
-        🎉 Email verified successfully! Welcome to your dashboard, <strong>${account.name || normalized}</strong>.
-      </div>`;
-      setTimeout(() => { if (statusEl.firstChild) statusEl.innerHTML = ""; }, 6000);
-    }
-
-    // Notify admin in background
-    setTimeout(() => {
-      notifyAdminOfAuthEvent({ email: normalized, name: account.name, action: "Email Verified (Dashboard Access)" });
-    }, 1500);
   }
 
   function checkForResetLink(){
@@ -2257,7 +2375,7 @@
   signupConfirmInput.addEventListener("input", checkPasswordsMatch);
   signupPasswordInput.addEventListener("input", checkPasswordsMatch);
 
-  signupPanel.addEventListener("submit", (e) => {
+  signupPanel.addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = document.getElementById("signupName").value.trim();
     const email = normalizeEmail(document.getElementById("signupEmail").value);
@@ -2275,6 +2393,43 @@
       showToast(signupToast, "Password must be at least 6 characters.", true);
       return;
     }
+
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password })
+      });
+      const data = await res.json();
+      if (data.success && data.requireVerification){
+        accounts[email] = { name, password, provider: "email", verified: false };
+        saveAccounts();
+        sendVerificationEmail(email, name, data.verifyToken);
+        signupPanel.reset();
+        checkPasswordsMatch();
+        showVerifyPendingScreen(email);
+        return;
+      } else if (data.success && data.token){
+        setAuthToken(data.token);
+        setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
+        accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
+        saveAccounts();
+        showToast(signupToast, `Account created! Welcome, ${data.user.name}!`, false);
+        fetchHistoryFromBackend();
+        setTimeout(() => {
+          closeAuth();
+          signupPanel.reset();
+          checkPasswordsMatch();
+        }, 700);
+        return;
+      } else if (!data.success && data.message){
+        showToast(signupToast, data.message, true);
+        return;
+      }
+    } catch(err){
+      console.warn("Backend unavailable, using local signup fallback:", err);
+    }
+
     if (accounts[email]){
       showToast(signupToast, "An account with that email already exists. Try logging in instead.", true);
       return;
@@ -2282,26 +2437,21 @@
 
     accounts[email] = { name, password, provider: "email", verified: false };
     saveAccounts();
-
-    // Send verification email to user
     sendVerificationEmail(email, name);
 
-    // Admin notification
     setTimeout(() => {
       notifyAdminOfAuthEvent({ email, name, action: "Sign Up (pending verification)" });
     }, 3000);
 
     signupPanel.reset();
     checkPasswordsMatch();
-
-    // Show dedicated Verification Pending screen in auth modal
     showVerifyPendingScreen(email);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
 
   // ---- Login ----
-  loginPanel.addEventListener("submit", (e) => {
+  loginPanel.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = normalizeEmail(document.getElementById("loginEmail").value);
     const password = document.getElementById("loginPassword").value;
@@ -2311,13 +2461,39 @@
       return;
     }
 
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (data.success && data.token){
+        setAuthToken(data.token);
+        setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
+        accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
+        saveAccounts();
+        showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
+        fetchHistoryFromBackend();
+        setTimeout(() => {
+          closeAuth();
+          loginPanel.reset();
+        }, 700);
+        return;
+      } else if (!data.success && data.message){
+        showToast(loginToast, data.message, true);
+        return;
+      }
+    } catch(err){
+      console.warn("Backend unavailable, using local login fallback:", err);
+    }
+
     const account = accounts[email];
     if (!account || account.provider !== "email" || account.password !== password){
       showToast(loginToast, "Incorrect email or password. Please try again.", true);
       return;
     }
 
-    // Require email verification link confirmation before logging in
     if (!account.verified){
       sendVerificationEmail(email, account.name);
       showVerifyPendingScreen(email);
@@ -2325,10 +2501,7 @@
       return;
     }
 
-    // Send login email to user inbox
     notifyUserOfAuthEvent({ email, name: account.name, action: "Log In" });
-
-    // Send login notification to admin
     setTimeout(() => {
       notifyAdminOfAuthEvent({ email, name: account.name, action: "Log In (User Authenticated)" });
     }, 2500);
@@ -2422,6 +2595,21 @@
             }
             saveAccounts();
 
+            try {
+              const apiRes = await fetch("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: accounts[email].name, email })
+              });
+              const apiData = await apiRes.json();
+              if (apiData.success && apiData.token){
+                setAuthToken(apiData.token);
+                fetchHistoryFromBackend();
+              }
+            } catch(err){
+              console.warn("Could not sync Google user to MongoDB backend:", err);
+            }
+
             notifyAdminOfAuthEvent({
               email, name: accounts[email].name,
               action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
@@ -2461,8 +2649,13 @@
     });
   });
 
-  // ---- Resume history (per logged-in user, stored in localStorage) ----
+  // ---- Resume history (stored in MongoDB & synchronized with localStorage) ----
   const HISTORY_KEY = "ara_history_v1";
+  const AUTH_TOKEN_KEY = "ara_jwt_token_v1";
+
+  function getAuthToken(){ try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch(e){ return null; } }
+  function setAuthToken(token){ try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch(e){} }
+  function clearAuthToken(){ try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch(e){} }
 
   function loadHistoryAll(){
     try {
@@ -2475,26 +2668,81 @@
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(all)); } catch (e){}
   }
 
-  function saveHistoryEntry(email, filename, score, verdict){
+  async function fetchHistoryFromBackend(){
+    const token = getAuthToken();
+    if (!token || !currentUser) return;
+    try {
+      const res = await fetch("/api/history", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.history)){
+        const all = loadHistoryAll();
+        all[currentUser.email] = data.history;
+        saveHistoryAll(all);
+        renderHistory();
+      }
+    } catch(err){
+      console.warn("Could not fetch history from MongoDB backend:", err);
+    }
+  }
+
+  async function saveHistoryEntry(email, filename, score, verdict){
     if (!email) return;
     const all = loadHistoryAll();
     if (!all[email]) all[email] = [];
-    all[email].unshift({
+    const entry = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       filename: filename || "resume",
       score: score,
       verdict: verdict,
       date: new Date().toISOString()
-    });
+    };
+    all[email].unshift(entry);
     if (all[email].length > 50) all[email] = all[email].slice(0, 50);
     saveHistoryAll(all);
+    renderHistory();
+
+    const token = getAuthToken();
+    if (token){
+      try {
+        await fetch("/api/history", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({
+            filename: filename || "resume",
+            score: score,
+            verdict: verdict,
+            resumeText: pendingResumeText || ""
+          })
+        });
+        fetchHistoryFromBackend();
+      } catch(err){
+        console.warn("Could not save history to MongoDB backend:", err);
+      }
+    }
   }
 
-  function deleteHistoryEntry(email, id){
+  async function deleteHistoryEntry(email, id){
     const all = loadHistoryAll();
     if (all[email]) all[email] = all[email].filter(entry => entry.id !== id);
     saveHistoryAll(all);
     renderHistory();
+
+    const token = getAuthToken();
+    if (token && id){
+      try {
+        await fetch("/api/history/" + id, {
+          method: "DELETE",
+          headers: { "Authorization": "Bearer " + token }
+        });
+      } catch(err){
+        console.warn("Could not delete history from MongoDB backend:", err);
+      }
+    }
   }
 
   function scoreColor(score){

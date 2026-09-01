@@ -626,6 +626,23 @@
       <button type="submit" class="auth-submit-btn">Update Password</button>
     </form>
 
+    <!-- EMAIL VERIFICATION PENDING PANEL -->
+    <div class="auth-panel" id="verifyPendingPanel">
+      <div class="auth-toast auth-toast-top" id="verifyPendingToast"></div>
+      <div class="verify-pending-card">
+        <div class="verify-icon-badge">📩</div>
+        <h3 class="verify-title">Check your inbox</h3>
+        <p class="verify-desc">
+          We've sent a verification link to <br/><strong id="pendingVerifyEmail" class="verify-email-highlight">user@example.com</strong>.
+        </p>
+        <div class="verify-info-box">
+          <span>⏰ <strong>Important:</strong> The link is valid for <strong>5 minutes</strong>. Click it in your email to activate your account and access your dashboard.</span>
+        </div>
+        <button type="button" class="auth-submit-btn" id="resendPendingVerifyBtn" style="width:100%;">Resend Verification Email</button>
+        <button type="button" class="back-link" id="backToLoginFromVerifyBtn" style="margin-top:12px; align-self:center;">&larr; Back to Log In</button>
+      </div>
+    </div>
+
   </div>
 </div>
 

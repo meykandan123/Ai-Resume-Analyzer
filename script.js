@@ -2004,15 +2004,19 @@
   const signupPanel = document.getElementById("signupPanel");
   const forgotPanel = document.getElementById("forgotPanel");
   const resetPanel = document.getElementById("resetPanel");
+  const verifyPendingPanel = document.getElementById("verifyPendingPanel");
 
   const loginToast = document.getElementById("loginToast");
   const signupToast = document.getElementById("signupToast");
   const forgotToast = document.getElementById("forgotToast");
   const resetToast = document.getElementById("resetToast");
+  const verifyPendingToast = document.getElementById("verifyPendingToast");
+
+  let currentPendingVerifyEmail = "";
 
   function showPanel(which){
-    [loginPanel, signupPanel, forgotPanel, resetPanel].forEach(p => p.classList.remove("active"));
-    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast);
+    [loginPanel, signupPanel, forgotPanel, resetPanel, verifyPendingPanel].forEach(p => p && p.classList.remove("active"));
+    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
     document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
     if (mismatchHint) mismatchHint.classList.remove("show");
 
@@ -2032,7 +2036,17 @@
     } else if (which === "reset"){
       resetPanel.classList.add("active");
       authTabs.style.display = "none"; // set-new-password is its own step too
+    } else if (which === "verifyPending"){
+      verifyPendingPanel.classList.add("active");
+      authTabs.style.display = "none";
     }
+  }
+
+  function showVerifyPendingScreen(email){
+    currentPendingVerifyEmail = email;
+    const pendingLabel = document.getElementById("pendingVerifyEmail");
+    if (pendingLabel) pendingLabel.textContent = email;
+    showPanel("verifyPending");
   }
 
   function openAuth(mode){
@@ -2042,7 +2056,7 @@
 
   function closeAuth(){
     authModal.classList.remove("active");
-    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast);
+    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
     document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
     if (mismatchHint) mismatchHint.classList.remove("show");
   }
@@ -2277,11 +2291,11 @@
       notifyAdminOfAuthEvent({ email, name, action: "Sign Up (pending verification)" });
     }, 3000);
 
-    showToast(signupToast, `Account created for ${email}! We've sent a verification link to your email inbox (or spam folder). Please click the link to activate your account and access your dashboard.`, false);
-
     signupPanel.reset();
     checkPasswordsMatch();
-    setTimeout(() => showPanel("login"), 3500);
+
+    // Show dedicated Verification Pending screen in auth modal
+    showVerifyPendingScreen(email);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
@@ -2306,7 +2320,8 @@
     // Require email verification link confirmation before logging in
     if (!account.verified){
       sendVerificationEmail(email, account.name);
-      showToast(loginToast, `Email not verified yet. We sent a verification link to ${email}. Please check your inbox or spam folder.`, true);
+      showVerifyPendingScreen(email);
+      showToast(verifyPendingToast, `Email not verified yet. We sent a fresh verification link to ${email}.`, true);
       return;
     }
 
@@ -2350,8 +2365,26 @@
     }
 
     sendVerificationEmail(email, account.name);
-    showToast(loginToast, `Confirmation link resent to ${email}. Please check your inbox or spam folder.`, false);
+    showVerifyPendingScreen(email);
+    showToast(verifyPendingToast, `A fresh confirmation link has been sent to ${email}.`, false);
   });
+
+  // ---- Pending Verification Panel buttons ----
+  const resendPendingVerifyBtn = document.getElementById("resendPendingVerifyBtn");
+  if (resendPendingVerifyBtn){
+    resendPendingVerifyBtn.addEventListener("click", () => {
+      if (!currentPendingVerifyEmail || !isValidEmail(currentPendingVerifyEmail)) return;
+      const account = accounts[currentPendingVerifyEmail];
+      const name = account ? account.name : "";
+      sendVerificationEmail(currentPendingVerifyEmail, name);
+      showToast(verifyPendingToast, `A fresh verification email has been sent to ${currentPendingVerifyEmail}. Please check your inbox and spam folder.`, false);
+    });
+  }
+
+  const backToLoginFromVerifyBtn = document.getElementById("backToLoginFromVerifyBtn");
+  if (backToLoginFromVerifyBtn){
+    backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
+  }
 
   function signInWithGoogle(toastEl, isSignupFlow){
     const clientUnconfigured = AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");

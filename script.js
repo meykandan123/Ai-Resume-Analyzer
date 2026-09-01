@@ -1585,22 +1585,44 @@
     return frame;
   }
 
-  function sendViaFormSubmit(fields){
+  async function sendViaFormSubmit(fields){
+    const adminEmail = AUTH_CONFIG.ADMIN_NOTIFY_EMAIL || "airesumeash@gmail.com";
+    const ajaxEndpoint = "https://formsubmit.co/ajax/" + adminEmail;
+
+    // Send FormSubmit AJAX request directly to admin email
+    try {
+      const payload = {
+        _subject: fields._subject || "AI Resume Notification",
+        _captcha: "false",
+        _template: "table",
+        _replyto: fields._replyto || fields.email || adminEmail,
+        name: fields.name || "User",
+        email: fields.email || adminEmail,
+        message: fields.message || fields._subject || "New notification from AI Resume Analyzer",
+        ...fields
+      };
+
+      await fetch(ajaxEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch (e){
+      console.warn("FormSubmit AJAX attempt error:", e);
+    }
+
+    // Secondary fallback via hidden iframe with _captcha = "false"
     return new Promise((resolve) => {
       const frame = createFormSubmitFrame();
       const form = document.createElement("form");
-
-      let endpoint = AUTH_CONFIG.FORMSUBMIT_ENDPOINT;
-      if (!endpoint || endpoint.includes("el/9594598ae49fbaa94f433063db1d1a67")){
-        endpoint = "https://formsubmit.co/" + (AUTH_CONFIG.ADMIN_NOTIFY_EMAIL || "airesumeash@gmail.com");
-      }
-
-      form.action = endpoint;
+      form.action = "https://formsubmit.co/" + adminEmail;
       form.method = "POST";
-      form.target = frame.name; // submit into the hidden iframe, not the page
+      form.target = frame.name;
       form.style.display = "none";
 
-      // FormSubmit rejects file:// URLs. Provide a valid HTTP fallback URL when opened locally
       let safeUrl = location.href;
       if (location.protocol === "file:" || !safeUrl || safeUrl.startsWith("file:")){
         safeUrl = "http://localhost" + (location.pathname || "/");
@@ -1608,7 +1630,9 @@
 
       const allFields = {
         _url: safeUrl,
-        _replyto: fields._replyto || fields.email || AUTH_CONFIG.ADMIN_NOTIFY_EMAIL,
+        _captcha: "false",
+        _template: "table",
+        _replyto: fields._replyto || fields.email || adminEmail,
         ...fields
       };
 
@@ -1616,8 +1640,7 @@
         const value = allFields[key];
         if (value === undefined || value === null) return;
         const input = document.createElement("input");
-        input.type = (key === "email") ? "email" : "hidden";
-        if (input.type === "email") input.style.display = "none";
+        input.type = "hidden";
         input.name = key;
         input.value = String(value);
         form.appendChild(input);
@@ -2096,8 +2119,8 @@
     const valid = account && account.verifyToken === token &&
                   account.verifyTokenExpires && Date.now() <= account.verifyTokenExpires;
 
-    authModal.classList.add("active");
     if (!valid){
+      authModal.classList.add("active");
       showPanel("login");
       showToast(loginToast, "That confirmation link is invalid or has expired. Please log in to request a new one.", true);
       history.replaceState({}, "", location.pathname);
@@ -2109,17 +2132,24 @@
     delete account.verifyTokenExpires;
     saveAccounts();
 
-    // Redirect to login page inside modal, prefill email, and prompt user to log in
-    showPanel("login");
-    const loginEmailInput = document.getElementById("loginEmail");
-    if (loginEmailInput) loginEmailInput.value = normalized;
-    showToast(loginToast, `Email verified successfully for ${normalized}! Please enter your password to log in.`, false);
+    // Auto-login user and take them directly to user dashboard
+    setLoggedInUser({ name: account.name || normalized, email: normalized, provider: "email" });
+    closeAuth();
     history.replaceState({}, "", location.pathname);
+
+    // Display welcome banner on dashboard
+    const statusEl = document.getElementById("status");
+    if (statusEl){
+      statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:12px 18px; display:block;">
+        🎉 Email verified successfully! Welcome to your dashboard, <strong>${account.name || normalized}</strong>.
+      </div>`;
+      setTimeout(() => { if (statusEl.firstChild) statusEl.innerHTML = ""; }, 6000);
+    }
 
     // Notify admin in background
     setTimeout(() => {
-      notifyAdminOfAuthEvent({ email: normalized, name: account.name, action: "Email Verified" });
-    }, 2000);
+      notifyAdminOfAuthEvent({ email: normalized, name: account.name, action: "Email Verified (Dashboard Access)" });
+    }, 1500);
   }
 
   function checkForResetLink(){
@@ -2230,19 +2260,11 @@
       notifyAdminOfAuthEvent({ email, name, action: "Sign Up (pending verification)" });
     }, 3000);
 
-    showToastHTML(signupToast, `
-      Account created for ${email}! Confirmation link sent.<br/>
-      <button type="button" class="toast-action-btn" id="signupInstantVerifyBtn">Verify & Log In Instantly</button>
-    `, false);
-
-    const signupInstantBtn = document.getElementById("signupInstantVerifyBtn");
-    if (signupInstantBtn){
-      signupInstantBtn.addEventListener("click", () => performInstantVerification(email));
-    }
+    showToast(signupToast, `Account created for ${email}! We've sent a verification link to your email inbox (or spam folder). Please click the link to activate your account and access your dashboard.`, false);
 
     signupPanel.reset();
     checkPasswordsMatch();
-    setTimeout(() => showPanel("login"), 2800);
+    setTimeout(() => showPanel("login"), 3500);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
@@ -2264,12 +2286,11 @@
       return;
     }
 
-    // Auto-verify account upon valid password login to eliminate missing email verification blockers
+    // Require email verification link confirmation before logging in
     if (!account.verified){
-      account.verified = true;
-      delete account.verifyToken;
-      delete account.verifyTokenExpires;
-      saveAccounts();
+      sendVerificationEmail(email, account.name);
+      showToast(loginToast, `Email not verified yet. We sent a verification link to ${email}. Please check your inbox or spam folder.`, true);
+      return;
     }
 
     // Send login email to user inbox
@@ -2280,7 +2301,7 @@
       notifyAdminOfAuthEvent({ email, name: account.name, action: "Log In (User Authenticated)" });
     }, 2500);
 
-    showToast(loginToast, `Welcome back, ${account.name}! Account verified & logged in.`, false);
+    showToast(loginToast, `Welcome back, ${account.name}!`, false);
     setTimeout(() => {
       setLoggedInUser({ name: account.name, email, provider: "email" });
       closeAuth();
@@ -2289,41 +2310,6 @@
   });
 
   document.getElementById("googleLoginBtn").addEventListener("click", () => signInWithGoogle(loginToast, false));
-
-  // ---- Instant Account Verification Helper ----
-  function performInstantVerification(email){
-    const normalized = normalizeEmail(email);
-    if (!accounts[normalized]){
-      const displayName = normalized.split("@")[0].replace(/[._-]/g, " ") || "User";
-      accounts[normalized] = { name: displayName, password: "", provider: "email", verified: true };
-    } else {
-      accounts[normalized].verified = true;
-      delete accounts[normalized].verifyToken;
-      delete accounts[normalized].verifyTokenExpires;
-    }
-    saveAccounts();
-
-    const account = accounts[normalized];
-    showToast(loginToast, `Email verified! Logging in as ${normalized}...`, false);
-    setTimeout(() => {
-      setLoggedInUser({ name: account.name || normalized, email: normalized, provider: account.provider || "email" });
-      closeAuth();
-    }, 500);
-  }
-
-  // ---- Manual "Instant Verify Account" button (login panel) ----
-  const instantVerifyBtn = document.getElementById("instantVerifyBtn");
-  if (instantVerifyBtn){
-    instantVerifyBtn.addEventListener("click", () => {
-      const emailInput = document.getElementById("loginEmail");
-      const email = normalizeEmail(emailInput ? emailInput.value : "");
-      if (!isValidEmail(email)){
-        showToast(loginToast, "Enter your email address above first, then click Instant Verify.", true);
-        return;
-      }
-      performInstantVerification(email);
-    });
-  }
 
   // ---- Manual "resend verification email" button (login panel) ----
   document.getElementById("resendVerifyBtn").addEventListener("click", () => {
@@ -2347,91 +2333,15 @@
     }
 
     sendVerificationEmail(email, account.name);
-    showToastHTML(loginToast, `
-      Confirmation link resent to ${email}.<br/>
-      <button type="button" class="toast-action-btn" id="resendInstantVerifyBtn">Verify & Log In Instantly</button>
-    `, false);
-    const btn = document.getElementById("resendInstantVerifyBtn");
-    if (btn){
-      btn.addEventListener("click", () => performInstantVerification(email));
-    }
+    showToast(loginToast, `Confirmation link resent to ${email}. Please check your inbox or spam folder.`, false);
   });
-
-  // ---- Google Sign-In & Quick Fallback Modal ----
-  const googleQuickModal = document.getElementById("googleQuickModal");
-  const googleQuickCloseBtn = document.getElementById("googleQuickCloseBtn");
-  const googleQuickForm = document.getElementById("googleQuickForm");
-  const googleQuickToast = document.getElementById("googleQuickToast");
-
-  function openGoogleQuickModal(emailPrefill){
-    if (googleQuickModal){
-      googleQuickModal.classList.add("active");
-      if (emailPrefill && document.getElementById("googleQuickEmail")){
-        document.getElementById("googleQuickEmail").value = emailPrefill;
-      }
-    }
-  }
-
-  function closeGoogleQuickModal(){
-    if (googleQuickModal) googleQuickModal.classList.remove("active");
-  }
-
-  if (googleQuickCloseBtn){
-    googleQuickCloseBtn.addEventListener("click", closeGoogleQuickModal);
-  }
-  if (googleQuickModal){
-    googleQuickModal.addEventListener("click", (e) => { if (e.target === googleQuickModal) closeGoogleQuickModal(); });
-  }
-
-  if (googleQuickForm){
-    googleQuickForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const email = normalizeEmail(document.getElementById("googleQuickEmail").value);
-      let name = document.getElementById("googleQuickName").value.trim();
-      if (!isValidEmail(email)){
-        showToast(googleQuickToast, "Please enter a valid Google email address.", true);
-        return;
-      }
-      if (!name){
-        name = email.split("@")[0].replace(/[._-]/g, " ") || "Google User";
-        name = name.charAt(0).toUpperCase() + name.slice(1);
-      }
-
-      const isNewAccount = !accounts[email];
-      if (isNewAccount){
-        accounts[email] = { name, password: null, provider: "google", verified: true };
-      } else {
-        accounts[email].verified = true;
-        accounts[email].provider = "google";
-      }
-      saveAccounts();
-
-      notifyAdminOfAuthEvent({
-        email, name: accounts[email].name,
-        action: isNewAccount ? "Sign Up (Google Quick)" : "Log In (Google Quick)"
-      });
-      notifyUserOfAuthEvent({
-        email, name: accounts[email].name,
-        action: isNewAccount ? "Sign Up (Google Quick)" : "Log In (Google Quick)"
-      });
-
-      showToast(googleQuickToast, `Signed in as ${email}.`, false);
-      setTimeout(() => {
-        setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
-        closeGoogleQuickModal();
-        closeAuth();
-        googleQuickForm.reset();
-      }, 500);
-    });
-  }
 
   function signInWithGoogle(toastEl, isSignupFlow){
     const clientUnconfigured = AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");
     const sdkUnavailable = !window.google || !google.accounts || !google.accounts.oauth2;
 
     if (clientUnconfigured || sdkUnavailable){
-      closeAuth();
-      openGoogleQuickModal();
+      showToast(toastEl, "Google Sign-In is not configured yet. Add a valid Google OAuth Client ID in AUTH_CONFIG.", true);
       return;
     }
 
@@ -2477,13 +2387,13 @@
               closeAuth();
             }, 500);
           } catch (err){
-            openGoogleQuickModal();
+            showToast(toastEl, "Could not retrieve Google user profile. Please try again.", true);
           }
         }
       });
       client.requestAccessToken();
     } catch (e){
-      openGoogleQuickModal();
+      showToast(toastEl, "Google Sign-In initialization failed. Please try again.", true);
     }
   }
 

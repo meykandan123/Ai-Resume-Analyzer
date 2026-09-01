@@ -1585,36 +1585,39 @@
     return frame;
   }
 
-  async function sendViaFormSubmit(fields){
+  function sendViaFormSubmit(fields){
     const adminEmail = AUTH_CONFIG.ADMIN_NOTIFY_EMAIL || "airesumeash@gmail.com";
-    const ajaxEndpoint = "https://formsubmit.co/ajax/" + adminEmail;
+    const userEmail = fields.email || fields._replyto || adminEmail;
+    const isAutoResponse = Boolean(fields._autoresponse);
 
-    // Send FormSubmit AJAX request directly to admin email
-    try {
-      const payload = {
-        _subject: fields._subject || "AI Resume Notification",
-        _captcha: "false",
-        _template: "table",
-        _replyto: fields._replyto || fields.email || adminEmail,
-        name: fields.name || "User",
-        email: fields.email || adminEmail,
-        message: fields.message || fields._subject || "New notification from AI Resume Analyzer",
-        ...fields
-      };
+    // For general non-autoresponse notifications, send AJAX POST to admin
+    if (!isAutoResponse){
+      try {
+        const payload = {
+          _subject: fields._subject || "AI Resume Notification",
+          _captcha: "false",
+          _template: "table",
+          _replyto: userEmail,
+          name: fields.name || "User",
+          email: userEmail,
+          message: fields.message || fields._subject || "New notification from AI Resume Analyzer",
+          ...fields
+        };
 
-      await fetch(ajaxEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-    } catch (e){
-      console.warn("FormSubmit AJAX attempt error:", e);
+        fetch("https://formsubmit.co/ajax/" + adminEmail, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      } catch (e){
+        console.warn("FormSubmit AJAX attempt error:", e);
+      }
     }
 
-    // Secondary fallback via hidden iframe with _captcha = "false"
+    // Submit HTML form into hidden iframe (this triggers FormSubmit _autoresponse to user's inbox)
     return new Promise((resolve) => {
       const frame = createFormSubmitFrame();
       const form = document.createElement("form");
@@ -1632,8 +1635,9 @@
         _url: safeUrl,
         _captcha: "false",
         _template: "table",
-        _replyto: fields._replyto || fields.email || adminEmail,
-        ...fields
+        _replyto: adminEmail,
+        ...fields,
+        email: userEmail // Crucial: sets user email as form email so FormSubmit sends _autoresponse to user's inbox
       };
 
       Object.keys(allFields).forEach(key => {

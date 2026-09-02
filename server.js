@@ -12,6 +12,7 @@ const UserResumeAnalysis = require("./models/UserResumeAnalysis");
 const UserActivity = require("./models/UserActivity");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/Ai-Resume-Analyzer";
 const JWT_SECRET = process.env.JWT_SECRET || "ai_resume_secret_key_987654321";

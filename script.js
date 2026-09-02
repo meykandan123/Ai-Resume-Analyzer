@@ -1754,8 +1754,6 @@
     const isSignup = action.startsWith("Sign Up");
     const subject = isSignup ? "Welcome to AI Resume Analyzer 🎉" : "Welcome back to AI Resume Analyzer 👋";
 
-    // 3 extra lines, different depending on whether this is a first sign up
-    // or a returning login.
     const extraLines = isSignup
       ? [
           "1. Upload your resume (PDF or DOCX) to get an instant AI-powered score.",
@@ -1771,16 +1769,12 @@
     const greeting = isSignup ? `Welcome, ${displayName}!` : `Welcome back, ${displayName}!`;
     const message = `${greeting}\n\n${extraLines.join("\n")}`;
 
-    sendViaFormSubmit({
-      _subject: subject,
-      _autoresponse: message,
-      name: "AI Resume Analyzer",
-      email: email,
-      message: `Welcome email auto-sent to ${email} (${action}).`
-    }).then(
-      () => console.log("Welcome email sent via FormSubmit"),
-      (err) => console.error("Welcome email FAILED — FormSubmit rejected the send:", err)
-    );
+    // Deliver welcome email directly to user's registered inbox ONLY
+    sendDirectUserEmail({
+      toEmail: email,
+      subject: subject,
+      message: message
+    });
   }
 
   // Sends a "confirm your email" link to a brand-new email/password signup.
@@ -1838,23 +1832,13 @@
       `Clicking this link will verify your account so you can log in on any of your devices (phone, laptop, tablet).\n\n` +
       `If you didn't create this account, you can safely ignore this email.`;
 
-    console.log("Sending verification email directly to user inbox:", { to: email, verifyLink });
+    console.log("Sending verification email directly to user inbox:", { to: email });
 
-    // Deliver email directly to user inbox
+    // Deliver email directly to user's registered inbox ONLY
     sendDirectUserEmail({
       toEmail: email,
       subject: "Confirm your email — AI Resume Analyzer",
       message: welcomeMessage
-    });
-
-    // Also send autoresponse as secondary delivery fallback
-    sendViaFormSubmit({
-      _subject: "Confirm your email — AI Resume Analyzer",
-      _replyto: email,
-      _autoresponse: welcomeMessage,
-      name: "AI Resume Analyzer",
-      email: email,
-      message: `Verification link for user inbox ${email}:\n${verifyLink}`
     });
 
     return verifyLink;
@@ -2214,7 +2198,7 @@
   document.getElementById("forgotLinkBtn").addEventListener("click", () => showPanel("forgot"));
   document.getElementById("backToLoginBtn").addEventListener("click", () => showPanel("login"));
 
-  forgotPanel.addEventListener("submit", (e) => {
+  forgotPanel.addEventListener("submit", async (e) => {
     e.preventDefault();
     const rawEmail = document.getElementById("forgotEmail").value;
     const email = normalizeEmail(rawEmail);
@@ -2222,6 +2206,27 @@
     if (!isValidEmail(email)){
       showToast(forgotToast, "Please enter a valid email address.", true);
       return;
+    }
+
+    try {
+      const data = await safeFetchJson("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      if (data.success){
+        const account = accounts[email];
+        if (account && data.resetToken){
+          account.resetToken = data.resetToken;
+          account.resetTokenExpires = Date.now() + 15 * 60 * 1000;
+          saveAccounts();
+        }
+        showToast(forgotToast, data.message || `If an account exists for ${email}, a password reset link has been sent to that inbox.`, false);
+        forgotPanel.reset();
+        return;
+      }
+    } catch(err){
+      console.warn("MongoDB forgot password backend error, using local fallback:", err);
     }
 
     const account = accounts[email];
@@ -2240,22 +2245,23 @@
     let origin = location.origin;
     let pathname = location.pathname;
     if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")){
-      origin = "http://localhost";
+      origin = "http://localhost:5000";
     }
 
     const resetLink = `${origin}${pathname}?resetEmail=${encodeURIComponent(email)}&resetToken=${token}`;
+    const resetMessage =
+      `Hi ${account.name || "there"},\n\n` +
+      `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
+      `${resetLink}\n\n` +
+      `⏰ IMPORTANT: This password reset link is valid for 15 minutes.\n\n` +
+      `If you didn't request a password reset, you can safely ignore this email.`;
 
-    sendViaFormSubmit({
-      _subject: "Reset your password — AI Resume Analyzer",
-      _replyto: email,
-      _autoresponse: `Hi ${account.name || "there"},\n\nClick the link below to reset your password (valid for 15 minutes):\n\n${resetLink}\n\nIf you didn't request a password reset, you can safely ignore this email.`,
-      name: "AI Resume Analyzer",
-      email: email,
-      message: `Password reset link for ${email}:\n${resetLink}`
-    }, email).then(
-      () => console.log("Reset email sent via FormSubmit to", email),
-      (err) => console.error("Reset email FAILED — FormSubmit rejected send:", err)
-    );
+    // Deliver reset email directly to user's registered inbox ONLY
+    sendDirectUserEmail({
+      toEmail: email,
+      subject: "Reset your password — AI Resume Analyzer",
+      message: resetMessage
+    });
 
     showToast(forgotToast, `Password reset link sent to ${email}! Please check your inbox and spam folder (valid for 15 minutes).`, false);
     forgotPanel.reset();
@@ -2375,7 +2381,7 @@
     showPanel("reset");
   }
 
-  resetPanel.addEventListener("submit", (e) => {
+  resetPanel.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!pendingResetEmail) return;
 
@@ -2389,6 +2395,43 @@
     if (pw !== confirm){
       showToast(resetToast, "Passwords don't match.", true);
       return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const token = params.get("resetToken");
+
+    try {
+      const data = await safeFetchJson("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingResetEmail, token, newPassword: pw })
+      });
+      if (data.success){
+        const account = accounts[pendingResetEmail];
+        if (account){
+          account.password = pw;
+          delete account.resetToken;
+          delete account.resetTokenExpires;
+          saveAccounts();
+        }
+        showToast(resetToast, "Password updated successfully! Redirecting to login...", false);
+        setTimeout(() => {
+          history.replaceState({}, "", location.pathname);
+          const emailForLogin = pendingResetEmail;
+          pendingResetEmail = null;
+          resetPanel.reset();
+          showPanel("login");
+          const loginEmailInput = document.getElementById("loginEmail");
+          if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
+          showToast(loginToast, "Password updated! Please log in with your new password.", false);
+        }, 1400);
+        return;
+      } else if (!data.success && data.message){
+        showToast(resetToast, data.message, true);
+        return;
+      }
+    } catch(err){
+      console.warn("Backend reset-password error, using local fallback:", err);
     }
 
     const account = accounts[pendingResetEmail];

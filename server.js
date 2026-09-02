@@ -134,6 +134,32 @@ const generateVerifyToken = () => {
   return crypto.randomBytes(32).toString("hex");
 };
 
+// Helper: Send email directly to user's registered email inbox via FormSubmit API
+const sendEmailToUser = async (toEmail, subject, message) => {
+  if (!toEmail || typeof toEmail !== "string") return false;
+  const normalized = toEmail.toLowerCase().trim();
+  try {
+    const response = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(normalized)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        _subject: subject,
+        _captcha: "false",
+        name: "AI Resume Analyzer",
+        email: normalized,
+        message: message
+      })
+    });
+    return response.ok;
+  } catch (err) {
+    console.error("Failed to send email to user:", err.message);
+    return false;
+  }
+};
+
 // ==================== AUTH ROUTES ====================
 
 // Sign Up
@@ -357,6 +383,99 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ success: false, message: "Server error during login." });
+  }
+});
+
+// Forgot Password Endpoint
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email address is required." });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // For security, do not disclose if email exists or provider type to unauthenticated clients
+    if (!user || user.provider !== "email") {
+      return res.json({
+        success: true,
+        message: `If an account exists for ${normalizedEmail}, a password reset link has been sent to that inbox (or spam folder).`
+      });
+    }
+
+    // Generate single-use reset token valid for 15 minutes
+    const resetToken = generateVerifyToken();
+    user.resetToken = resetToken;
+    user.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
+
+    const host = req.get("host") || "localhost:5000";
+    const protocol = req.protocol || "http";
+    const resetLink = `${protocol}://${host}/?resetEmail=${encodeURIComponent(user.email)}&resetToken=${resetToken}`;
+    const resetMessage =
+      `Hi ${user.name || "there"},\n\n` +
+      `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
+      `${resetLink}\n\n` +
+      `⏰ IMPORTANT: This password reset link is valid for 15 minutes.\n\n` +
+      `If you didn't request a password reset, you can safely ignore this email.`;
+
+    // Send email directly to THAT USER's registered email address
+    await sendEmailToUser(user.email, "Reset your password — AI Resume Analyzer", resetMessage);
+
+    return res.json({
+      success: true,
+      message: `Password reset link sent to ${user.email}! Please check your inbox and spam folder (valid for 15 minutes).`,
+      email: user.email,
+      resetToken: user.resetToken
+    });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    return res.status(500).json({ success: false, message: "Server error processing password reset." });
+  }
+});
+
+// Reset Password Endpoint
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ success: false, message: "Email, reset token, and new password are required." });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user || user.provider !== "email") {
+      return res.status(404).json({ success: false, message: "Account not found." });
+    }
+
+    if (!user.resetToken || user.resetToken !== token || !user.resetTokenExpires || user.resetTokenExpires < new Date()) {
+      return res.status(400).json({ success: false, message: "Password reset link is invalid or has expired. Please request a new one." });
+    }
+
+    // Hash new password using bcrypt
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.resetToken = null;
+    user.resetTokenExpires = null;
+    await user.save();
+
+    const userIdStr = user.userId || user._id.toString();
+    await logUserActivity(userIdStr, "PASSWORD_RESET", `User reset password for email: ${user.email}`);
+
+    return res.json({
+      success: true,
+      message: "Password reset successfully! Please log in with your new password."
+    });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    return res.status(500).json({ success: false, message: "Server error resetting password." });
   }
 });
 

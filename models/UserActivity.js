@@ -9,7 +9,7 @@ const userActivitySchema = new mongoose.Schema({
   activityType: {
     type: String,
     required: true,
-    enum: ["REGISTER", "LOGIN", "LOGOUT", "RESUME_UPLOAD", "RESUME_ANALYSIS", "ATS_CHECK"]
+    enum: ["REGISTER", "LOGIN", "LOGOUT", "RESUME_UPLOAD", "RESUME_ANALYSIS", "ATS_CHECK", "PASSWORD_RESET"]
   },
   activityDescription: {
     type: String,

@@ -2365,19 +2365,11 @@
     if (!email || !token) return;
 
     const normalized = normalizeEmail(email);
-    const account = accounts[normalized];
-    const valid = account && account.resetToken === token &&
-                  account.resetTokenExpires && Date.now() <= account.resetTokenExpires;
+    pendingResetEmail = normalized;
+    const labelEl = document.getElementById("resetEmailLabel");
+    if (labelEl) labelEl.textContent = normalized;
 
     authModal.classList.add("active");
-    if (!valid){
-      showPanel("login");
-      showToast(loginToast, "That reset link is invalid or has expired. Please request a new one.", true);
-      return;
-    }
-
-    pendingResetEmail = normalized;
-    document.getElementById("resetEmailLabel").textContent = normalized;
     showPanel("reset");
   }
 
@@ -2497,7 +2489,6 @@
       if (data.success && data.requireVerification){
         accounts[email] = { name, password, provider: "email", verified: false };
         saveAccounts();
-        sendVerificationEmail(email, name, data.verifyToken);
         signupPanel.reset();
         checkPasswordsMatch();
         showVerifyPendingScreen(email);
@@ -2532,10 +2523,6 @@
     saveAccounts();
     sendVerificationEmail(email, name);
 
-    setTimeout(() => {
-      notifyAdminOfAuthEvent({ email, name, action: "Sign Up (pending verification)" });
-    }, 3000);
-
     signupPanel.reset();
     checkPasswordsMatch();
     showVerifyPendingScreen(email);
@@ -2565,13 +2552,15 @@
         setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
         accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
         saveAccounts();
-        notifyUserOfAuthEvent({ email: data.user.email, name: data.user.name, action: "Log In" });
         showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
         fetchHistoryFromBackend();
         setTimeout(() => {
           closeAuth();
           loginPanel.reset();
         }, 700);
+        return;
+      } else if (!data.success && data.requireVerification){
+        showToast(loginToast, data.message || "Please verify your email before logging in.", true);
         return;
       } else if (!data.success && data.message){
         showToast(loginToast, data.message, true);
@@ -2588,16 +2577,9 @@
     }
 
     if (!account.verified){
-      sendVerificationEmail(email, account.name);
-      showVerifyPendingScreen(email);
-      showToast(verifyPendingToast, `Email not verified yet. We sent a fresh verification link to ${email}.`, true);
+      showToast(loginToast, "Please verify your email before logging in.", true);
       return;
     }
-
-    notifyUserOfAuthEvent({ email, name: account.name, action: "Log In" });
-    setTimeout(() => {
-      notifyAdminOfAuthEvent({ email, name: account.name, action: "Log In (User Authenticated)" });
-    }, 2500);
 
     showToast(loginToast, `Welcome back, ${account.name}!`, false);
     setTimeout(() => {
@@ -2731,15 +2713,6 @@
             } catch(err){
               console.warn("Could not sync Google user to MongoDB backend:", err);
             }
-
-            notifyAdminOfAuthEvent({
-              email, name: accounts[email].name,
-              action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
-            });
-            notifyUserOfAuthEvent({
-              email, name: accounts[email].name,
-              action: isNewAccount ? "Sign Up (Google)" : "Log In (Google)"
-            });
 
             showToast(toastEl, `Signed in as ${email}.`, false);
             setTimeout(() => {

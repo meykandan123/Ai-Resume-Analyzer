@@ -206,13 +206,25 @@ app.post("/api/auth/signup", async (req, res) => {
     // Automatically record REGISTER activity
     await logUserActivity(userId, "REGISTER", `User registered with email: ${normalizedEmail}`);
 
+    const host = req.get("host") || "localhost:5000";
+    const protocol = req.protocol || "http";
+    const verifyLink = `${protocol}://${host}/?verifyEmail=${encodeURIComponent(newUser.email)}&verifyToken=${verifyToken}`;
+    const verificationMessage =
+      `Hi ${newUser.name || "there"},\n\n` +
+      `Welcome to AI Resume Analyzer!\n` +
+      `Please confirm your email address by clicking the link below:\n\n` +
+      `${verifyLink}\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n\n` +
+      `If you didn't create this account, you can safely ignore this email.`;
+
+    sendEmailToUser(newUser.email, "Confirm your email — AI Resume Analyzer", verificationMessage).catch(() => {});
+
     return res.status(201).json({
       success: true,
       requireVerification: true,
       message: "Account created! A verification link has been sent to your email inbox.",
       email: newUser.email,
-      name: newUser.name,
-      verifyToken: newUser.verifyToken
+      name: newUser.name
     });
   } catch (err) {
     console.error("Signup error:", err);
@@ -238,24 +250,15 @@ app.post("/api/auth/verify", async (req, res) => {
 
     const userIdStr = user.userId || user._id.toString();
 
-    if (user.verified) {
-      user.lastLoginDate = new Date();
-      await user.save();
-      await logUserActivity(userIdStr, "LOGIN", `User logged in (already verified): ${user.email}`);
-
-      const jwtToken = generateToken(user._id);
-      return res.json({
-        success: true,
-        message: "Email is already verified.",
-        token: jwtToken,
-        user: { id: user._id, userId: userIdStr, name: user.name, email: user.email, provider: user.provider, photo: user.photo }
-      });
-    }
-
-    if (user.verifyToken !== token || !user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
+    // Verification token must match, be present, and not be expired
+    if (!user.verifyToken || user.verifyToken !== token || !user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
+      if (user.verified) {
+        return res.status(400).json({ success: false, message: "Your email is already verified. Please log in with your email and password." });
+      }
       return res.status(400).json({ success: false, message: "Verification link is invalid or has expired." });
     }
 
+    // Mark user as verified and clear verification token immediately (single-use)
     user.verified = true;
     user.verifyToken = null;
     user.verifyTokenExpires = null;
@@ -303,16 +306,29 @@ app.post("/api/auth/resend-verification", async (req, res) => {
       return res.json({ success: true, message: "Email is already verified. Please log in normally." });
     }
 
-    user.verifyToken = generateVerifyToken();
+    const verifyToken = generateVerifyToken();
+    user.verifyToken = verifyToken;
     user.verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
+
+    const host = req.get("host") || "localhost:5000";
+    const protocol = req.protocol || "http";
+    const verifyLink = `${protocol}://${host}/?verifyEmail=${encodeURIComponent(user.email)}&verifyToken=${verifyToken}`;
+    const verificationMessage =
+      `Hi ${user.name || "there"},\n\n` +
+      `Welcome to AI Resume Analyzer!\n` +
+      `Please confirm your email address by clicking the link below:\n\n` +
+      `${verifyLink}\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n\n` +
+      `If you didn't create this account, you can safely ignore this email.`;
+
+    sendEmailToUser(user.email, "Confirm your email — AI Resume Analyzer", verificationMessage).catch(() => {});
 
     return res.json({
       success: true,
       message: "Fresh verification link generated for your email inbox.",
       email: user.email,
-      name: user.name,
-      verifyToken: user.verifyToken
+      name: user.name
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Server error resending verification." });
@@ -341,17 +357,10 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     if (!user.verified) {
-      user.verifyToken = generateVerifyToken();
-      user.verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
-      await user.save();
-
       return res.status(401).json({
         success: false,
         requireVerification: true,
-        message: "Email not verified yet. A fresh verification link has been sent to your email inbox.",
-        email: user.email,
-        name: user.name,
-        verifyToken: user.verifyToken
+        message: "Please verify your email before logging in."
       });
     }
 
@@ -427,8 +436,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     return res.json({
       success: true,
       message: `Password reset link sent to ${user.email}! Please check your inbox and spam folder (valid for 15 minutes).`,
-      email: user.email,
-      resetToken: user.resetToken
+      email: user.email
     });
   } catch (err) {
     console.error("Forgot password error:", err);

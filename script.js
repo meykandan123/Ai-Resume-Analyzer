@@ -1945,19 +1945,30 @@
     ? "http://localhost:5000"
     : "";
 
-  // Safe JSON Fetch helper preventing SyntaxError on non-JSON or 404 responses
-  async function safeFetchJson(url, options) {
+  // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
+  async function safeFetchJson(url, options, retries = 2) {
     const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : url;
-    const res = await fetch(fullUrl, options);
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      throw new Error(`HTTP ${res.status}: Non-JSON response received`);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(fullUrl, options);
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
+          throw new Error(`HTTP ${res.status}: Non-JSON response received`);
+        }
+        const text = await res.text();
+        if (!text || !text.trim()) {
+          throw new Error(`HTTP ${res.status}: Empty response body`);
+        }
+        return JSON.parse(text);
+      } catch (err) {
+        if (attempt === retries) throw err;
+        await new Promise(r => setTimeout(r, 1500));
+      }
     }
-    const text = await res.text();
-    if (!text || !text.trim()) {
-      throw new Error(`HTTP ${res.status}: Empty response body`);
-    }
-    return JSON.parse(text);
   }
 
   // Restore a logged-in session on page load from MongoDB / localStorage

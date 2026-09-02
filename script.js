@@ -1598,7 +1598,7 @@
   // =================================================================
   const AUTH_CONFIG = {
     // Google Cloud Console → APIs & Services → Credentials → OAuth Client ID (Web application)
-    GOOGLE_CLIENT_ID: "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    GOOGLE_CLIENT_ID: "1066854237177-h6aq1utfrd5ek3i1dr8anacd4ses57u8.apps.googleusercontent.com",
 
     // formsubmit.co — the inbox every site email is routed through.
     // Direct endpoint using the site admin email ensures FormSubmit autoresponses work seamlessly.

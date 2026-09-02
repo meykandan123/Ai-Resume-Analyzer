@@ -363,9 +363,10 @@
   // Common "expected" keywords for tech/AI-leaning roles, used for the
   // "Missing Common Keywords" panel and folded into Keyword Coverage.
   const COMMON_TARGET_KEYWORDS = [
-    "TensorFlow", "PyTorch", "Deep Learning", "Machine Learning", "Model Deployment",
-    "AWS", "GCP", "Azure", "SQL", "Docker", "Kubernetes", "API Development",
-    "NLP", "CI/CD", "Agile", "REST API", "Data Structures", "Algorithms",
+    "SQL", "Git", "API", "Agile", "Project Management",
+    "Data Structures", "Algorithms", "Python", "JavaScript", "Problem Solving",
+    "Communication", "Documentation", "Testing", "CI/CD", "Optimization",
+    "Leadership", "Analysis", "Design"
   ];
 
   function findMissingCommonKeywords(text){
@@ -797,10 +798,10 @@
 
     const metricGrid = document.getElementById("readabilityMetricGrid");
     metricGrid.innerHTML = "";
-    renderMetricBox(metricGrid, "Avg Sentence Length", readability.avgSentenceLength, readability.avgSentenceLength, 12, 20, 30, "Target range: 12–20 words");
-    renderMetricBox(metricGrid, "Reading Grade Level", readability.gradeLevel, readability.gradeLevel, 8, 12, 20, "Target range: Grade 8–12 (clear business writing)");
-    renderMetricBox(metricGrid, "Skill Density", skillDensity, skillDensity + "%", 25, 40, 50, "Target range: 25–40% of words are skills");
-    renderMetricBox(metricGrid, "Quantification", quantPct, quantPct + "%", 50, 75, 100, `Target range: 50–75% bullets with numbers (${quant.quantified}/${quant.total})`);
+    renderMetricBox(metricGrid, "Avg Sentence Length", readability.avgSentenceLength, readability.avgSentenceLength, 10, 25, 35, "Target range: 10–25 words");
+    renderMetricBox(metricGrid, "Reading Grade Level", readability.gradeLevel, readability.gradeLevel, 7, 14, 20, "Target range: Grade 7–14 (clear business & technical writing)");
+    renderMetricBox(metricGrid, "Skill Density", skillDensity, skillDensity + "%", 6, 22, 35, "Target range: 6–22% of words are skills");
+    renderMetricBox(metricGrid, "Quantification", quantPct, quantPct + "%", 30, 70, 100, `Target range: 30–70% bullets with numbers (${quant.quantified}/${quant.total})`);
 
     // Timeline consistency: flag graduation/education years that are in the future
     const currentYear = new Date().getFullYear();
@@ -809,39 +810,47 @@
     const noDatesFound = eduYears.length === 0 && !/\b(19|20)\d{2}\b/.test(experience || "");
 
     // ---- Score Breakdown (6 metrics, 0-100) ----
-    const sectionCoveragePct = (allSections.filter(s => s.found).length / allSections.length) * 100;
-    const keywordCoveragePct = jdResult && jdResult.ratio !== null
-      ? jdResult.ratio * 100
-      : ((COMMON_TARGET_KEYWORDS.length - missingCommonKw.length) / COMMON_TARGET_KEYWORDS.length) * 100;
-    let contentStrengthPct = quant.total ? (quant.quantified / quant.total) * 100 : 40;
-    contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 8) * 4;
-    contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 4;
-    contentStrengthPct = Math.max(0, Math.min(100, contentStrengthPct));
-    let timelineConsistencyPct = noDatesFound ? 65 : 100;
-    if (futureGradFlag) timelineConsistencyPct -= 20;
-    timelineConsistencyPct = Math.max(0, Math.min(100, timelineConsistencyPct));
-    const gradeDelta = readability.gradeLevel < 8 ? 8 - readability.gradeLevel : (readability.gradeLevel > 12 ? readability.gradeLevel - 12 : 0);
-    const readabilityPct = Math.max(0, 100 - gradeDelta * 12);
-    let relevanceAlignmentPct;
-    if (jdResult && jdResult.ratio !== null){
-      relevanceAlignmentPct = jdResult.ratio * 100;
-    } else {
-      const densityDelta = skillDensity < 25 ? 25 - skillDensity : (skillDensity > 40 ? skillDensity - 40 : 0);
-      relevanceAlignmentPct = Math.max(0, 100 - densityDelta * 3);
-    }
-    // Formatting is computed here (rather than down by the score) so the
-    // Executive Summary / ATS Improvement Recommendations below can weigh
-    // it exactly the same way the ATS score does.
-    let formattingPct = 55; // baseline: no clear ATS-friendly formatting signal
-    if (wordCount >= 400 && wordCount <= 900) formattingPct = 100;
-    else if (wordCount >= 250 && wordCount <= 1100) formattingPct = 75;
-    else if (wordCount > 0) formattingPct = 40;
-    if (quant.total === 0) formattingPct -= 20; // no bullet points at all reads poorly to an ATS parser
-    formattingPct = Math.max(0, Math.min(100, formattingPct));
+    const sectionCoveragePct = Math.min(100, Math.round((allSections.filter(s => s.found).length / allSections.length) * 100 + 10));
 
-    // Critical fields carry a fixed penalty in the ATS score regardless of
-    // how the weighted categories look — used both by the score and by the
-    // recommendations below so the two always agree.
+    const adjustedJdRatio = (jdResult && jdResult.ratio !== null)
+      ? Math.min(1.0, jdResult.ratio * 1.3 + 0.15)
+      : null;
+
+    const keywordCoveragePct = adjustedJdRatio !== null
+      ? Math.round(adjustedJdRatio * 100)
+      : Math.min(100, Math.max(70, (skills.length >= 6 ? 95 : skills.length >= 4 ? 85 : skills.length >= 2 ? 75 : 70)));
+
+    let contentStrengthPct = 70; // baseline for readable resume content
+    if (quant.total > 0) {
+      contentStrengthPct += Math.round((quant.quantified / quant.total) * 30);
+    }
+    contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 5) * 2;
+    contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 2;
+    contentStrengthPct = Math.max(50, Math.min(100, contentStrengthPct));
+
+    let timelineConsistencyPct = noDatesFound ? 75 : 100;
+    if (futureGradFlag) timelineConsistencyPct -= 15;
+    timelineConsistencyPct = Math.max(50, Math.min(100, timelineConsistencyPct));
+
+    const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
+    const readabilityPct = Math.max(65, 100 - gradeDelta * 4);
+
+    let relevanceAlignmentPct;
+    if (adjustedJdRatio !== null){
+      relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
+    } else {
+      const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+      relevanceAlignmentPct = Math.max(70, 100 - densityDelta * 2);
+    }
+
+    let formattingPct = 75; // loose, friendly baseline
+    if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
+    else if (wordCount >= 200 && wordCount <= 1400) formattingPct = 85;
+    else if (wordCount > 0) formattingPct = 70;
+    if (quant.total === 0) formattingPct -= 10;
+    formattingPct = Math.max(50, Math.min(100, formattingPct));
+
+    // Critical fields carry a fixed penalty in the ATS score
     const criticalMissingFields = ["Name", "Email address", "Phone number", "Experience section", "Education section", "Skills section"];
 
     const scoreBreakdownGrid = document.getElementById("scoreBreakdownGrid");
@@ -854,11 +863,6 @@
     renderScoreItem(scoreBreakdownGrid, "Relevance Alignment", relevanceAlignmentPct);
 
     // ---- Executive Summary: Top Issues to Fix / Quick Fixes ----
-    // Built from the exact same signals that drive the ATS score above —
-    // critical missing fields (fixed penalty) plus the 7 weighted score
-    // categories — sorted by how much each one is actually costing the
-    // score, so what's shown here always matches why the score is what it
-    // is, instead of being a separate, looser checklist.
     const issues = [];
     const fixes = [];
 
@@ -906,7 +910,7 @@
         pct: relevanceAlignmentPct, weight: 0.14,
         issue: () => (jdResult && jdResult.ratio !== null)
           ? "Resume's overall content doesn't closely align with the job description"
-          : `Skill keyword density is ${skillDensity < 25 ? "low" : "high"} (${skillDensity}%) vs. the ideal 25–40% range`,
+          : `Skill keyword density is ${skillDensity < 6 ? "low" : "high"} (${skillDensity}%) vs. the ideal 6–22% range`,
         fix: (jdResult && jdResult.ratio !== null)
           ? "Mirror more of the job description's responsibilities and required skills"
           : "Adjust how often core skills appear so they're clearly represented without over-stuffing",
@@ -914,16 +918,16 @@
       {
         pct: readabilityPct, weight: 0.10,
         issue: () => `Reading level is outside the ideal range (Grade ${readability.gradeLevel})`,
-        fix: "Aim for a Grade 8–12 reading level with clear, concise sentences",
+        fix: "Aim for a Grade 7–14 reading level with clear, concise sentences",
       },
       {
         pct: formattingPct, weight: 0.10,
         issue: () => quant.total === 0
-          ? "No bullet points detected — this reads poorly to ATS parsers"
-          : `Resume length (${wordCount} words) is outside the ideal 400–900 word range`,
+          ? "No bullet points detected — adding bullet points improves ATS parser readability"
+          : `Resume length (${wordCount} words) is outside the ideal 300–1100 word range`,
         fix: quant.total === 0
           ? "Use bullet points (lines starting with -, *, or •) to list achievements"
-          : "Trim or expand content to land in the 400–900 word sweet spot",
+          : "Trim or expand content to land in the 300–1100 word sweet spot",
       },
       {
         pct: timelineConsistencyPct, weight: 0.08,
@@ -933,7 +937,7 @@
     ];
 
     scoreCategories
-      .filter(c => c.pct < 85)
+      .filter(c => c.pct < 75)
       .sort((a, b) => (b.weight * (100 - b.pct)) - (a.weight * (100 - a.pct)))
       .forEach(c => {
         issues.push(typeof c.issue === "function" ? c.issue() : c.issue);
@@ -970,20 +974,27 @@
     // ---- explanation of why it matters and how to fix it.           ----
     const errorItems = [];
     missing.forEach(m => {
+      let severity = "high";
+      if (["LinkedIn profile", "GitHub profile", "Years of experience (not explicitly stated)"].includes(m)) severity = "low";
+      else if (["Education section", "Projects section"].includes(m)) severity = "medium";
+
+      let detail = "This is a standard resume field or section — recruiters and ATS systems generally expect to see it.";
+      if (severity === "low") detail = "Adding a profile link or explicit timeline helps recruiters, though not strictly required by all ATS parsers.";
+
       errorItems.push({
-        severity: "high",
+        severity,
         title: `Missing: ${m}`,
-        detail: "This is a standard resume field or section — recruiters and ATS systems generally expect to see it."
+        detail
       });
     });
     if (quant.total === 0){
       errorItems.push({ severity:"medium", title:"No bullet points detected", detail:"Use bullet points (lines starting with -, *, or •) to list your achievements clearly." });
     } else if (quant.quantified === 0){
-      errorItems.push({ severity:"medium", title:"No quantified results in bullet points", detail:"Add numbers, percentages, or dollar amounts to show measurable impact." });
+      errorItems.push({ severity:"low", title:"No quantified results in bullet points", detail:"Add numbers, percentages, or dollar amounts where possible to show measurable impact." });
     }
     if (uniqueWeakPhrases.length){
       errorItems.push({
-        severity:"medium",
+        severity:"low",
         title:`Weak or passive phrasing found (${uniqueWeakPhrases.length})`,
         detail:`Phrases like ${uniqueWeakPhrases.slice(0,3).map(p => `"${p}"`).join(", ")} read passively — replace with strong action verbs.`
       });
@@ -1004,7 +1015,7 @@
     }
     if (missingCommonKw.length){
       errorItems.push({
-        severity:"medium",
+        severity:"low",
         title:`Missing common keywords (${missingCommonKw.length})`,
         detail:`Consider naturally adding: ${missingCommonKw.slice(0,5).join(", ")}${missingCommonKw.length > 5 ? ", etc." : ""}.`
       });
@@ -1013,7 +1024,7 @@
       errorItems.push({ severity:"low", title:"No professional summary", detail:"A 2–3 line summary at the top helps recruiters quickly understand your focus area." });
     }
     if (futureGradFlag){
-      errorItems.push({ severity:"high", title:"Future graduation date detected", detail:"Double-check your education dates — a graduation year in the future can confuse recruiters if unintentional." });
+      errorItems.push({ severity:"medium", title:"Future graduation date detected", detail:"Double-check your education dates — a graduation year in the future can clarify your timeline." });
     }
     if (noDatesFound){
       errorItems.push({ severity:"low", title:"No dates found in education or experience", detail:"Add month/year ranges so recruiters can follow your timeline at a glance." });
@@ -1043,14 +1054,7 @@
     }
 
     // ---- ATS Score (0-100) ----
-    // A stricter, multi-factor score built from the same signals professional
-    // ATS/resume-checker tools weigh — section completeness, keyword
-    // relevance & placement, content/experience strength, formatting &
-    // readability, and timeline consistency — using the breakdown metrics
-    // computed above, rather than one flat point-per-field score. Critical
-    // missing fields and high-severity issues are then subtracted as hard
-    // penalties so a resume can't land in the "good" range purely because
-    // a few unrelated metrics look fine.
+    // A balanced, friendly, multi-factor score built from standard ATS signals.
     const weightedScore =
       sectionCoveragePct    * 0.22 +
       keywordCoveragePct    * 0.20 +
@@ -1062,26 +1066,26 @@
 
     let score = Math.round(weightedScore);
 
-    // Hard penalties: standard ATS-blocking gaps knock points off directly,
-    // instead of being smoothed out by unrelated metrics.
+    // Softened hard penalties so standard missing optional fields don't tank score
     const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
-    score -= criticalMissingCount * 6;
-    score -= Math.min(errorItems.filter(e => e.severity === "high").length, 5) * 4;
+    score -= criticalMissingCount * 3;
+    score -= Math.min(errorItems.filter(e => e.severity === "high").length, 3) * 2;
 
-    // When a job description was pasted, blend in direct JD keyword match
-    // as the dominant signal — this is the single strongest real-world
-    // relevance factor for how an ATS will actually rank the resume.
-    if (jdResult && jdResult.ratio !== null){
-      score = Math.round(score * 0.5 + jdResult.ratio * 100 * 0.5);
+    if (hasContact && experience && education && skills.length > 0){
+      score += 4; // bonus for having complete essential sections
     }
 
-    score = Math.max(0, Math.min(100, score));
+    if (adjustedJdRatio !== null){
+      score = Math.round(score * 0.5 + adjustedJdRatio * 100 * 0.5);
+    }
 
-    let color = "#b3261e", verdict = "Needs Work";
-    if (score >= 85){ color = "#2e7d32"; verdict = "Excellent — ATS Friendly"; }
-    else if (score >= 65){ color = "#e07a5f"; verdict = "Good — Minor Gaps"; }
-    else if (score >= 45){ color = "#c9962c"; verdict = "Fair — Several Gaps"; }
-    else { color = "#b3261e"; verdict = "Needs Work — Major Gaps"; }
+    score = Math.max(35, Math.min(100, score));
+
+    let color = "#d9534f", verdict = "Needs Work";
+    if (score >= 78){ color = "#2e7d32"; verdict = "Excellent — ATS Friendly"; }
+    else if (score >= 60){ color = "#25855a"; verdict = "Good — Minor Gaps"; }
+    else if (score >= 40){ color = "#c9962c"; verdict = "Fair — Moderate Gaps"; }
+    else { color = "#d9534f"; verdict = "Needs Work — Major Gaps"; }
 
     renderATSScore(score, color, verdict);
 

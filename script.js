@@ -1231,6 +1231,7 @@
       pendingResumeText = text;
       pendingResumeFilename = file.name;
       historySavedForCurrentUpload = false;
+      logResumeUploadActivity(file.name);
       hideLoading();
       setStatus("Resume ready — choose how you'd like it analyzed.");
       showAnalysisOptions();
@@ -1239,6 +1240,21 @@
       hideLoading();
       setStatus("Error while analyzing: " + err.message, true);
     }
+  }
+
+  async function logResumeUploadActivity(filename) {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      await safeFetchJson("/api/activity/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ filename })
+      });
+    } catch (e) {}
   }
 
   const dropzone = document.getElementById("dropzone");
@@ -1320,6 +1336,7 @@
       pendingResumeText = text;
       pendingResumeFilename = "Pasted Resume Text";
       historySavedForCurrentUpload = false;
+      logResumeUploadActivity("Pasted Resume Text");
       hideLoading();
       setStatus("Resume ready — choose how you'd like it analyzed.");
       showAnalysisOptions();
@@ -1915,7 +1932,16 @@
     document.getElementById("navSignupBtn").style.display = "none";
   }
 
-  function logoutUser(){
+  async function logoutUser(){
+    const token = getAuthToken();
+    if (token) {
+      try {
+        await safeFetchJson("/api/auth/logout", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token }
+        });
+      } catch (e) {}
+    }
     currentUser = null;
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
@@ -2754,18 +2780,31 @@
     const token = getAuthToken();
     if (token){
       try {
+        const payload = {
+          filename: filename || "resume",
+          score: score,
+          verdict: verdict,
+          resumeText: pendingResumeText || "",
+          detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
+          missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
+          suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
+          analysisResults: {
+            verdict: verdict,
+            score: score,
+            experience: lastAnalysisData ? lastAnalysisData.experience : null,
+            education: lastAnalysisData ? lastAnalysisData.education : null,
+            projects: lastAnalysisData ? lastAnalysisData.projects : null,
+            mode: analysisMode || "ats"
+          },
+          mode: analysisMode || "ats"
+        };
         await safeFetchJson("/api/history", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + token
           },
-          body: JSON.stringify({
-            filename: filename || "resume",
-            score: score,
-            verdict: verdict,
-            resumeText: pendingResumeText || ""
-          })
+          body: JSON.stringify(payload)
         });
         fetchHistoryFromBackend();
       } catch(err){

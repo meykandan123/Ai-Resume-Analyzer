@@ -4,14 +4,16 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const path = require("path");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const User = require("./models/User");
-const ResumeHistory = require("./models/ResumeHistory");
+const UserResumeAnalysis = require("./models/UserResumeAnalysis");
+const UserActivity = require("./models/UserActivity");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/ai_resume";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/Ai-Resume-Analyzer";
 const JWT_SECRET = process.env.JWT_SECRET || "ai_resume_secret_key_987654321";
 
 // Middleware
@@ -30,8 +32,21 @@ try {
 // Connect to MongoDB
 async function connectDB() {
   try {
-    await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 2500 });
-    console.log("Connected to MongoDB database successfully:", MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      dbName: "Ai-Resume-Analyzer",
+      serverSelectionTimeoutMS: 2500
+    });
+    console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI);
+
+    // Automatically ensure collections exist in MongoDB database
+    try {
+      await User.createCollection();
+      await UserResumeAnalysis.createCollection();
+      await UserActivity.createCollection();
+      console.log("Collections verified/created in Ai-Resume-Analyzer: users, User Resume Analysis, User Activity");
+    } catch (collErr) {
+      console.log("Collection initialization notice:", collErr.message);
+    }
   } catch (err) {
     console.warn("Could not connect to configured MONGODB_URI (" + MONGODB_URI + ").");
     if (MongoMemoryServer) {
@@ -39,8 +54,11 @@ async function connectDB() {
         console.log("Starting in-memory MongoDB server as fallback...");
         const mongoServer = await MongoMemoryServer.create();
         const uri = mongoServer.getUri();
-        await mongoose.connect(uri);
+        await mongoose.connect(uri, { dbName: "Ai-Resume-Analyzer" });
         console.log("Connected to In-Memory MongoDB database successfully:", uri);
+        await User.createCollection();
+        await UserResumeAnalysis.createCollection();
+        await UserActivity.createCollection();
         return;
       } catch (memErr) {
         console.error("MongoMemoryServer error:", memErr.message);
@@ -50,6 +68,22 @@ async function connectDB() {
   }
 }
 connectDB();
+
+// Helper to log activities automatically into "User Activity" collection
+async function logUserActivity(userId, activityType, activityDescription) {
+  try {
+    if (!userId) return;
+    const activity = new UserActivity({
+      userId: userId.toString(),
+      activityType,
+      activityDescription: activityDescription || `${activityType} activity recorded`,
+      timestamp: new Date()
+    });
+    await activity.save();
+  } catch (err) {
+    console.error(`Failed to log activity [${activityType}]:`, err.message);
+  }
+}
 
 // Authentication Middleware
 const authenticateToken = async (req, res, next) => {
@@ -65,6 +99,10 @@ const authenticateToken = async (req, res, next) => {
     const user = await User.findById(decoded.userId).select("-password");
     if (!user) {
       return res.status(404).json({ success: false, message: "User account not found." });
+    }
+    if (!user.userId) {
+      user.userId = user._id.toString();
+      await user.save();
     }
     req.user = user;
     next();
@@ -86,8 +124,6 @@ const checkDbConnection = (req, res, next) => {
 
 app.use("/api", checkDbConnection);
 
-const crypto = require("crypto");
-
 // Helper: Generate Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
@@ -100,7 +136,7 @@ const generateVerifyToken = () => {
 
 // ==================== AUTH ROUTES ====================
 
-// Sign Up (Generates email verification token for user's email inbox)
+// Sign Up
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -116,22 +152,33 @@ app.post("/api/auth/signup", async (req, res) => {
       return res.status(400).json({ success: false, message: "An account with this email already exists." });
     }
 
+    // Hash password using bcrypt - NEVER store plain text
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const verifyToken = generateVerifyToken();
     const verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    const _id = new mongoose.Types.ObjectId();
+    const userId = _id.toString();
+    const now = new Date();
 
     const newUser = new User({
+      _id,
+      userId,
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
       provider: "email",
       verified: false,
       verifyToken,
-      verifyTokenExpires
+      verifyTokenExpires,
+      registrationDate: now,
+      lastLoginDate: now
     });
 
     await newUser.save();
+
+    // Automatically record REGISTER activity
+    await logUserActivity(userId, "REGISTER", `User registered with email: ${normalizedEmail}`);
 
     return res.status(201).json({
       success: true,
@@ -163,13 +210,19 @@ app.post("/api/auth/verify", async (req, res) => {
       return res.status(404).json({ success: false, message: "Account not found." });
     }
 
+    const userIdStr = user.userId || user._id.toString();
+
     if (user.verified) {
+      user.lastLoginDate = new Date();
+      await user.save();
+      await logUserActivity(userIdStr, "LOGIN", `User logged in (already verified): ${user.email}`);
+
       const jwtToken = generateToken(user._id);
       return res.json({
         success: true,
         message: "Email is already verified.",
         token: jwtToken,
-        user: { id: user._id, name: user.name, email: user.email, provider: user.provider, photo: user.photo }
+        user: { id: user._id, userId: userIdStr, name: user.name, email: user.email, provider: user.provider, photo: user.photo }
       });
     }
 
@@ -180,9 +233,12 @@ app.post("/api/auth/verify", async (req, res) => {
     user.verified = true;
     user.verifyToken = null;
     user.verifyTokenExpires = null;
+    user.lastLoginDate = new Date();
     await user.save();
 
-    // Multi-device token generation: Issue new JWT token for this device session
+    // Automatically record LOGIN activity
+    await logUserActivity(userIdStr, "LOGIN", `User verified email and logged in: ${user.email}`);
+
     const jwtToken = generateToken(user._id);
 
     return res.json({
@@ -191,6 +247,7 @@ app.post("/api/auth/verify", async (req, res) => {
       token: jwtToken,
       user: {
         id: user._id,
+        userId: userIdStr,
         name: user.name,
         email: user.email,
         provider: user.provider,
@@ -236,7 +293,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
   }
 });
 
-// Log In (Supports multi-device simultaneous logins)
+// Log In
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -258,7 +315,6 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     if (!user.verified) {
-      // Refresh verification token
       user.verifyToken = generateVerifyToken();
       user.verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
       await user.save();
@@ -273,7 +329,16 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    // Issue unique JWT token for this device login (supports multi-device concurrent logins)
+    // Update lastLoginDate
+    user.lastLoginDate = new Date();
+    if (!user.userId) user.userId = user._id.toString();
+    await user.save();
+
+    const userIdStr = user.userId;
+
+    // Automatically record LOGIN activity
+    await logUserActivity(userIdStr, "LOGIN", `User logged in with email: ${user.email}`);
+
     const token = generateToken(user._id);
 
     return res.json({
@@ -282,6 +347,7 @@ app.post("/api/auth/login", async (req, res) => {
       token,
       user: {
         id: user._id,
+        userId: userIdStr,
         name: user.name,
         email: user.email,
         provider: user.provider,
@@ -305,18 +371,35 @@ app.post("/api/auth/google", async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
     let user = await User.findOne({ email: normalizedEmail });
+    const now = new Date();
 
     if (!user) {
+      const _id = new mongoose.Types.ObjectId();
+      const userId = _id.toString();
       user = new User({
+        _id,
+        userId,
         name: name || normalizedEmail.split("@")[0],
         email: normalizedEmail,
         provider: "google",
-        verified: true
+        verified: true,
+        registrationDate: now,
+        lastLoginDate: now
       });
       await user.save();
-    } else if (user.provider !== "google") {
-      user.provider = "google";
+
+      // Automatically record REGISTER and LOGIN activities for new user
+      await logUserActivity(userId, "REGISTER", `User registered via Google with email: ${normalizedEmail}`);
+      await logUserActivity(userId, "LOGIN", `User logged in via Google: ${normalizedEmail}`);
+    } else {
+      if (user.provider !== "google") {
+        user.provider = "google";
+      }
+      user.lastLoginDate = now;
+      if (!user.userId) user.userId = user._id.toString();
       await user.save();
+
+      await logUserActivity(user.userId, "LOGIN", `User logged in via Google: ${normalizedEmail}`);
     }
 
     const token = generateToken(user._id);
@@ -327,6 +410,7 @@ app.post("/api/auth/google", async (req, res) => {
       token,
       user: {
         id: user._id,
+        userId: user.userId,
         name: user.name,
         email: user.email,
         provider: user.provider,
@@ -339,6 +423,30 @@ app.post("/api/auth/google", async (req, res) => {
   }
 });
 
+// Log Out Endpoint
+app.post("/api/auth/logout", authenticateToken, async (req, res) => {
+  try {
+    const userIdStr = req.user.userId || req.user._id.toString();
+    await logUserActivity(userIdStr, "LOGOUT", `User logged out: ${req.user.email}`);
+    return res.json({ success: true, message: "Logout activity recorded successfully." });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ success: false, message: "Server error during logout." });
+  }
+});
+
+// Log Resume Upload Activity Endpoint
+app.post("/api/activity/upload", authenticateToken, async (req, res) => {
+  try {
+    const { filename } = req.body;
+    const userIdStr = req.user.userId || req.user._id.toString();
+    await logUserActivity(userIdStr, "RESUME_UPLOAD", `User uploaded resume file: ${filename || 'resume'}`);
+    return res.json({ success: true, message: "Resume upload activity recorded." });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to record upload activity." });
+  }
+});
+
 // ==================== USER PROFILE ROUTES ====================
 
 // Get Current User Profile
@@ -348,11 +456,13 @@ app.get("/api/user/profile", authenticateToken, async (req, res) => {
       success: true,
       user: {
         id: req.user._id,
+        userId: req.user.userId || req.user._id.toString(),
         name: req.user.name,
         email: req.user.email,
         provider: req.user.provider,
         photo: req.user.photo,
-        createdAt: req.user.createdAt
+        registrationDate: req.user.registrationDate || req.user.createdAt,
+        lastLoginDate: req.user.lastLoginDate
       }
     });
   } catch (err) {
@@ -360,7 +470,7 @@ app.get("/api/user/profile", authenticateToken, async (req, res) => {
   }
 });
 
-// Update Profile (Name & Photo)
+// Update Profile
 app.put("/api/user/profile", authenticateToken, async (req, res) => {
   try {
     const { name, photo } = req.body;
@@ -374,6 +484,7 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
       message: "Profile updated successfully.",
       user: {
         id: req.user._id,
+        userId: req.user.userId || req.user._id.toString(),
         name: req.user.name,
         email: req.user.email,
         provider: req.user.provider,
@@ -385,58 +496,101 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== RESUME HISTORY ROUTES ====================
+// ==================== RESUME ANALYSIS & HISTORY ROUTES ====================
 
-// Save Resume History Entry
+// Save Resume Analysis Entry into "User Resume Analysis" collection
 app.post("/api/history", authenticateToken, async (req, res) => {
   try {
-    const { filename, score, verdict, resumeText } = req.body;
+    const {
+      filename,
+      score,
+      verdict,
+      resumeText,
+      detectedSkills,
+      missingKeywords,
+      analysisResults,
+      suggestions,
+      mode
+    } = req.body;
 
-    if (!filename || score === undefined || !verdict) {
-      return res.status(400).json({ success: false, message: "Filename, score, and verdict are required." });
+    if (!filename || score === undefined) {
+      return res.status(400).json({ success: false, message: "Filename and score are required." });
     }
 
-    const newHistory = new ResumeHistory({
-      userId: req.user._id,
-      userEmail: req.user.email,
-      filename,
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const analysisId = new mongoose.Types.ObjectId().toString();
+    const now = new Date();
+
+    const newAnalysis = new UserResumeAnalysis({
+      analysisId,
+      userId: userIdStr,
+      resumeFilename: filename || "resume.pdf",
+      filename: filename || "resume.pdf",
+      uploadDate: now,
+      atsScore: Number(score),
       score: Number(score),
-      verdict,
+      detectedSkills: Array.isArray(detectedSkills) ? detectedSkills : [],
+      missingKeywords: Array.isArray(missingKeywords) ? missingKeywords : [],
+      analysisResults: analysisResults || { verdict: verdict || "Analyzed", score: Number(score) },
+      verdict: verdict || "Analyzed",
+      suggestions: Array.isArray(suggestions) ? suggestions : [],
+      analysisDate: now,
+      date: now,
+      userEmail: req.user.email,
       resumeText: resumeText || ""
     });
 
-    await newHistory.save();
+    await newAnalysis.save();
+
+    // Automatically record activity based on mode or analysis type
+    if (mode === "ats") {
+      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`);
+    } else {
+      await logUserActivity(userIdStr, "RESUME_ANALYSIS", `User completed resume breakdown analysis for: ${filename} (Score: ${score})`);
+      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`);
+    }
 
     return res.status(201).json({
       success: true,
-      message: "Resume history saved to MongoDB.",
+      message: "Resume analysis saved to MongoDB in 'User Resume Analysis' collection.",
       entry: {
-        id: newHistory._id.toString(),
-        filename: newHistory.filename,
-        score: newHistory.score,
-        verdict: newHistory.verdict,
-        date: newHistory.date
+        id: newAnalysis._id.toString(),
+        analysisId: newAnalysis.analysisId,
+        filename: newAnalysis.filename,
+        score: newAnalysis.score,
+        verdict: newAnalysis.verdict,
+        date: newAnalysis.date
       }
     });
   } catch (err) {
     console.error("Save history error:", err);
-    return res.status(500).json({ success: false, message: "Failed to save history in MongoDB." });
+    return res.status(500).json({ success: false, message: "Failed to save analysis in MongoDB." });
   }
 });
 
 // Get User's Resume History
 app.get("/api/history", authenticateToken, async (req, res) => {
   try {
-    const historyList = await ResumeHistory.find({ userId: req.user._id })
-      .sort({ date: -1 })
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const historyList = await UserResumeAnalysis.find({
+      $or: [
+        { userId: userIdStr },
+        { userId: req.user._id },
+        { userEmail: req.user.email }
+      ]
+    })
+      .sort({ analysisDate: -1, date: -1 })
       .limit(50);
 
     const formattedList = historyList.map(entry => ({
-      id: entry._id.toString(),
-      filename: entry.filename,
-      score: entry.score,
-      verdict: entry.verdict,
-      date: entry.date
+      id: entry.analysisId || entry._id.toString(),
+      filename: entry.resumeFilename || entry.filename,
+      score: entry.atsScore !== undefined ? entry.atsScore : entry.score,
+      verdict: entry.verdict || "Analyzed",
+      date: entry.analysisDate || entry.date,
+      detectedSkills: entry.detectedSkills,
+      missingKeywords: entry.missingKeywords
     }));
 
     return res.json({
@@ -453,9 +607,17 @@ app.get("/api/history", authenticateToken, async (req, res) => {
 app.delete("/api/history/:id", authenticateToken, async (req, res) => {
   try {
     const historyId = req.params.id;
-    const deleted = await ResumeHistory.findOneAndDelete({
-      _id: historyId,
-      userId: req.user._id
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const deleted = await UserResumeAnalysis.findOneAndDelete({
+      $or: [
+        { analysisId: historyId },
+        { _id: mongoose.Types.ObjectId.isValid(historyId) ? historyId : null }
+      ],
+      $or: [
+        { userId: userIdStr },
+        { userEmail: req.user.email }
+      ]
     });
 
     if (!deleted) {

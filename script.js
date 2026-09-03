@@ -1415,6 +1415,21 @@
     } catch (e) {}
   }
 
+  async function logResumeDownloadActivity(filename) {
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      await safeFetchJson("/api/activity/download", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ filename: filename || "resume_report.pdf", format: "pdf" })
+      });
+    } catch (e) {}
+  }
+
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
   const chosenName = document.getElementById("chosenName");
@@ -1590,6 +1605,7 @@
     }
     try {
       generatePdfReport(lastAnalysisData);
+      logResumeDownloadActivity(lastAnalysisData.filename || "resume_report.pdf");
     } catch (err){
       console.error(err);
       setStatus("Couldn't generate the PDF report: " + err.message, true);
@@ -2223,15 +2239,11 @@
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result;
-      if (!accounts[currentUser.email]) accounts[currentUser.email] = {};
-      accounts[currentUser.email].photo = dataUrl;
-      saveAccounts();
-      renderAvatarEverywhere(currentUser);
 
       const token = getAuthToken();
       if (token){
         try {
-          await safeFetchJson("/api/user/profile", {
+          const res = await safeFetchJson("/api/user/profile", {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -2239,11 +2251,26 @@
             },
             body: JSON.stringify({ photo: dataUrl })
           });
-        } catch(e){}
+          if (!res || !res.success) {
+            profilePageToast.style.color = "#b3261e";
+            profilePageToast.textContent = (res && res.message) ? res.message : "Failed to update profile photo in MongoDB.";
+            return;
+          }
+        } catch(err) {
+          console.error("Profile photo database update failed:", err);
+          profilePageToast.style.color = "#b3261e";
+          profilePageToast.textContent = "Database error: " + err.message;
+          return;
+        }
       }
 
+      if (!accounts[currentUser.email]) accounts[currentUser.email] = {};
+      accounts[currentUser.email].photo = dataUrl;
+      saveAccounts();
+      renderAvatarEverywhere(currentUser);
+
       profilePageToast.style.color = "#2e7d32";
-      profilePageToast.textContent = "Profile photo updated.";
+      profilePageToast.textContent = "Profile photo updated successfully.";
     };
     reader.readAsDataURL(file);
   });
@@ -2256,16 +2283,11 @@
       profilePageToast.textContent = "Name can't be empty.";
       return;
     }
-    if (accounts[currentUser.email]) accounts[currentUser.email].name = newName;
-    saveAccounts();
-    currentUser.name = newName;
-    document.getElementById("userChipName").textContent = newName;
-    renderAvatarEverywhere(currentUser);
 
     const token = getAuthToken();
     if (token){
       try {
-        await safeFetchJson("/api/user/profile", {
+        const res = await safeFetchJson("/api/user/profile", {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -2273,13 +2295,27 @@
           },
           body: JSON.stringify({ name: newName })
         });
+        if (!res || !res.success) {
+          profilePageToast.style.color = "#b3261e";
+          profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
+          return;
+        }
       } catch(err){
-        console.warn("Could not save profile to MongoDB backend:", err);
+        console.error("MongoDB profile save error:", err);
+        profilePageToast.style.color = "#b3261e";
+        profilePageToast.textContent = "Database error: " + err.message;
+        return;
       }
     }
 
+    if (accounts[currentUser.email]) accounts[currentUser.email].name = newName;
+    saveAccounts();
+    currentUser.name = newName;
+    document.getElementById("userChipName").textContent = newName;
+    renderAvatarEverywhere(currentUser);
+
     profilePageToast.style.color = "#2e7d32";
-    profilePageToast.textContent = "Profile saved.";
+    profilePageToast.textContent = "Profile saved successfully.";
   });
 
   // ---- Round profile button dropdown (open/close on click, close on outside click) ----

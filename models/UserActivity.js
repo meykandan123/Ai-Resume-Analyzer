@@ -11,12 +11,17 @@ const userActivitySchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
-  action: {
+  email: {
     type: String,
-    required: true
+    lowercase: true,
+    trim: true
+  },
+  action: {
+    type: String
   },
   activityType: {
-    type: String
+    type: String,
+    required: true
   },
   description: {
     type: String

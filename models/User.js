@@ -21,6 +21,9 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String
   },
+  passwordHash: {
+    type: String
+  },
   provider: {
     type: String,
     enum: ["email", "google"],
@@ -69,6 +72,14 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date,
     default: Date.now
+  },
+  lastLoginAt: {
+    type: Date,
+    default: Date.now
+  },
+  loginCount: {
+    type: Number,
+    default: 0
   }
 }, {
   collection: "users",

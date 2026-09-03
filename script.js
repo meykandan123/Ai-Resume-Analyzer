@@ -814,45 +814,45 @@
     const noDatesFound = eduYears.length === 0 && !/\b(19|20)\d{2}\b/.test(experience || "");
 
     // ---- Score Breakdown (6 metrics, 0-100) ----
-    const sectionCoveragePct = Math.min(100, Math.round((allSections.filter(s => s.found).length / allSections.length) * 100 + 10));
+    const sectionCoveragePct = Math.min(100, Math.round((allSections.filter(s => s.found).length / allSections.length) * 100));
 
     const adjustedJdRatio = (jdResult && jdResult.ratio !== null)
-      ? Math.min(1.0, jdResult.ratio * 1.3 + 0.15)
+      ? Math.min(1.0, jdResult.ratio * 1.1 + 0.05)
       : null;
 
     const keywordCoveragePct = adjustedJdRatio !== null
       ? Math.round(adjustedJdRatio * 100)
-      : Math.min(100, Math.max(70, (skills.length >= 6 ? 95 : skills.length >= 4 ? 85 : skills.length >= 2 ? 75 : 70)));
+      : Math.min(100, (skills.length >= 8 ? 95 : skills.length >= 5 ? 85 : skills.length >= 3 ? 70 : skills.length >= 1 ? 55 : 35));
 
-    let contentStrengthPct = 70; // baseline for readable resume content
+    let contentStrengthPct = 60; // rigorous baseline for resume content impact
     if (quant.total > 0) {
-      contentStrengthPct += Math.round((quant.quantified / quant.total) * 30);
+      contentStrengthPct += Math.round((quant.quantified / quant.total) * 40);
     }
-    contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 5) * 2;
-    contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 2;
-    contentStrengthPct = Math.max(50, Math.min(100, contentStrengthPct));
+    contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 5) * 3;
+    contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 3;
+    contentStrengthPct = Math.max(30, Math.min(100, contentStrengthPct));
 
-    let timelineConsistencyPct = noDatesFound ? 75 : 100;
-    if (futureGradFlag) timelineConsistencyPct -= 15;
-    timelineConsistencyPct = Math.max(50, Math.min(100, timelineConsistencyPct));
+    let timelineConsistencyPct = noDatesFound ? 65 : 100;
+    if (futureGradFlag) timelineConsistencyPct -= 20;
+    timelineConsistencyPct = Math.max(40, Math.min(100, timelineConsistencyPct));
 
     const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
-    const readabilityPct = Math.max(65, 100 - gradeDelta * 4);
+    const readabilityPct = Math.max(50, 100 - gradeDelta * 5);
 
     let relevanceAlignmentPct;
     if (adjustedJdRatio !== null){
       relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
     } else {
       const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
-      relevanceAlignmentPct = Math.max(70, 100 - densityDelta * 2);
+      relevanceAlignmentPct = Math.max(50, 100 - densityDelta * 3);
     }
 
-    let formattingPct = 75; // loose, friendly baseline
+    let formattingPct = 65; // realistic formatting baseline
     if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
-    else if (wordCount >= 200 && wordCount <= 1400) formattingPct = 85;
-    else if (wordCount > 0) formattingPct = 70;
-    if (quant.total === 0) formattingPct -= 10;
-    formattingPct = Math.max(50, Math.min(100, formattingPct));
+    else if (wordCount >= 200 && wordCount <= 1400) formattingPct = 80;
+    else if (wordCount > 0) formattingPct = 60;
+    if (quant.total === 0) formattingPct -= 15;
+    formattingPct = Math.max(40, Math.min(100, formattingPct));
 
     // Critical fields carry a fixed penalty in the ATS score
     const criticalMissingFields = ["Name", "Email address", "Phone number", "Experience section", "Education section", "Skills section"];
@@ -1058,37 +1058,37 @@
     }
 
     // ---- ATS Score (0-100) ----
-    // A balanced, friendly, multi-factor score built from standard ATS signals.
+    // A strict, accurate multi-factor score built from standard ATS parsing signals.
     const weightedScore =
-      sectionCoveragePct    * 0.22 +
-      keywordCoveragePct    * 0.20 +
+      sectionCoveragePct    * 0.24 +
+      keywordCoveragePct    * 0.22 +
       contentStrengthPct    * 0.16 +
       relevanceAlignmentPct * 0.14 +
       readabilityPct        * 0.10 +
-      formattingPct         * 0.10 +
-      timelineConsistencyPct * 0.08;
+      formattingPct         * 0.08 +
+      timelineConsistencyPct * 0.06;
 
     let score = Math.round(weightedScore);
 
-    // Softened hard penalties so standard missing optional fields don't tank score
+    // Apply strict penalties for missing critical contact & core sections
     const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
-    score -= criticalMissingCount * 3;
-    score -= Math.min(errorItems.filter(e => e.severity === "high").length, 3) * 2;
+    score -= criticalMissingCount * 5;
+    score -= Math.min(errorItems.filter(e => e.severity === "high").length, 3) * 3;
 
     if (hasContact && experience && education && skills.length > 0){
-      score += 4; // bonus for having complete essential sections
+      score += 2; // small bonus for complete essential core
     }
 
     if (adjustedJdRatio !== null){
-      score = Math.round(score * 0.5 + adjustedJdRatio * 100 * 0.5);
+      score = Math.round(score * 0.45 + adjustedJdRatio * 100 * 0.55);
     }
 
-    score = Math.max(35, Math.min(100, score));
+    score = Math.max(20, Math.min(100, score));
 
     let color = "#d9534f", verdict = "Needs Work";
-    if (score >= 78){ color = "#2e7d32"; verdict = "Excellent — ATS Friendly"; }
-    else if (score >= 60){ color = "#25855a"; verdict = "Good — Minor Gaps"; }
-    else if (score >= 40){ color = "#c9962c"; verdict = "Fair — Moderate Gaps"; }
+    if (score >= 82){ color = "#2e7d32"; verdict = "Excellent — ATS Friendly"; }
+    else if (score >= 68){ color = "#25855a"; verdict = "Good — Minor Gaps"; }
+    else if (score >= 50){ color = "#c9962c"; verdict = "Fair — Moderate Gaps"; }
     else { color = "#d9534f"; verdict = "Needs Work — Major Gaps"; }
 
     renderATSScore(score, color, verdict);

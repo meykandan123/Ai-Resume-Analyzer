@@ -12,61 +12,118 @@
   let historySavedForCurrentUpload = false;
 
   // ---------------------------------------------------------------
-  // Skill dictionary — includes languages requested: Python, Java, JS
+  // Comprehensive Industry Skill Dictionary & Precision Extractor
   // ---------------------------------------------------------------
   const SKILL_KEYWORDS = [
-    // Programming languages (highlighted as "lang" tags)
+    // Programming languages (lang)
     { name: "python", type: "lang" },
     { name: "java", type: "lang" },
     { name: "javascript", type: "lang" },
     { name: "typescript", type: "lang" },
     { name: "c++", type: "lang" },
     { name: "c#", type: "lang" },
+    { name: "c", type: "lang" },
     { name: "php", type: "lang" },
     { name: "ruby", type: "lang" },
     { name: "go", type: "lang" },
+    { name: "rust", type: "lang" },
     { name: "swift", type: "lang" },
     { name: "kotlin", type: "lang" },
     { name: "sql", type: "lang" },
     { name: "html", type: "lang" },
+    { name: "html5", type: "lang" },
     { name: "css", type: "lang" },
-    // Frameworks / libraries
+    { name: "css3", type: "lang" },
+    { name: "bash", type: "lang" },
+    { name: "shell", type: "lang" },
+    { name: "r", type: "lang" },
+    { name: "dart", type: "lang" },
+    { name: "scala", type: "lang" },
+
+    // Frameworks & Libraries (tool)
     { name: "react", type: "tool" },
+    { name: "react.js", type: "tool" },
+    { name: "react native", type: "tool" },
     { name: "angular", type: "tool" },
     { name: "vue", type: "tool" },
-    { name: "django", type: "tool" },
-    { name: "flask", type: "tool" },
-    { name: "spring", type: "tool" },
+    { name: "vue.js", type: "tool" },
+    { name: "next.js", type: "tool" },
     { name: "node.js", type: "tool" },
     { name: "express", type: "tool" },
+    { name: "express.js", type: "tool" },
+    { name: "django", type: "tool" },
+    { name: "flask", type: "tool" },
+    { name: "fastapi", type: "tool" },
+    { name: "spring", type: "tool" },
+    { name: "spring boot", type: "tool" },
+    { name: ".net", type: "tool" },
+    { name: "asp.net", type: "tool" },
+    { name: "laravel", type: "tool" },
     { name: "bootstrap", type: "tool" },
     { name: "tailwind", type: "tool" },
-    { name: "next.js", type: "tool" },
-    // Data / AI
+    { name: "tailwind css", type: "tool" },
+    { name: "redux", type: "tool" },
+    { name: "flutter", type: "tool" },
+    { name: "jquery", type: "tool" },
+
+    // Data / AI / ML
     { name: "machine learning", type: "tool" },
     { name: "deep learning", type: "tool" },
     { name: "nlp", type: "tool" },
+    { name: "artificial intelligence", type: "tool" },
     { name: "tensorflow", type: "tool" },
     { name: "pytorch", type: "tool" },
+    { name: "keras", type: "tool" },
+    { name: "scikit-learn", type: "tool" },
+    { name: "opencv", type: "tool" },
     { name: "pandas", type: "tool" },
     { name: "numpy", type: "tool" },
     { name: "data analysis", type: "tool" },
     { name: "data science", type: "tool" },
-    // Databases
+    { name: "tableau", type: "tool" },
+    { name: "power bi", type: "tool" },
+
+    // Databases & Storage
     { name: "mysql", type: "tool" },
     { name: "postgresql", type: "tool" },
     { name: "mongodb", type: "tool" },
+    { name: "redis", type: "tool" },
+    { name: "sqlite", type: "tool" },
+    { name: "oracle", type: "tool" },
     { name: "firebase", type: "tool" },
-    // Cloud / DevOps
+    { name: "prisma", type: "tool" },
+    { name: "mongoose", type: "tool" },
+
+    // Cloud / DevOps / Tools
     { name: "aws", type: "tool" },
+    { name: "amazon web services", type: "tool" },
     { name: "azure", type: "tool" },
     { name: "gcp", type: "tool" },
+    { name: "google cloud", type: "tool" },
     { name: "docker", type: "tool" },
     { name: "kubernetes", type: "tool" },
+    { name: "jenkins", type: "tool" },
+    { name: "ci/cd", type: "tool" },
     { name: "git", type: "tool" },
     { name: "github", type: "tool" },
+    { name: "gitlab", type: "tool" },
     { name: "linux", type: "tool" },
-    // Soft / general
+    { name: "nginx", type: "tool" },
+    { name: "apache", type: "tool" },
+    { name: "rest api", type: "tool" },
+    { name: "graphql", type: "tool" },
+    { name: "microservices", type: "tool" },
+    { name: "system design", type: "tool" },
+
+    // Testing & Tools
+    { name: "jest", type: "tool" },
+    { name: "cypress", type: "tool" },
+    { name: "selenium", type: "tool" },
+    { name: "junit", type: "tool" },
+    { name: "figma", type: "tool" },
+    { name: "jira", type: "tool" },
+
+    // Soft / Management / Core
     { name: "project management", type: "soft" },
     { name: "communication", type: "soft" },
     { name: "leadership", type: "soft" },
@@ -75,20 +132,22 @@
     { name: "agile", type: "soft" },
     { name: "scrum", type: "soft" },
     { name: "excel", type: "soft" },
+    { name: "analytical skills", type: "soft" },
+    { name: "time management", type: "soft" }
   ];
 
   // Extra headers used for section-presence checks (Sections Found / Missing)
   // and to help extractSection() find correct boundaries between sections.
-  const SUMMARY_HEADERS = ["summary", "professional summary", "career summary", "profile", "about", "about me", "objective", "career objective"];
-  const SKILLS_HEADERS = ["skills", "technical skills", "key skills", "core competencies", "skills & tools"];
-  const CERT_HEADERS = ["certifications", "certification", "certifications & achievements", "licenses & certifications", "achievements", "accomplishments"];
+  const SUMMARY_HEADERS = ["summary", "professional summary", "career summary", "profile", "about", "about me", "objective", "career objective", "executive summary"];
+  const SKILLS_HEADERS = ["skills", "technical skills", "key skills", "core competencies", "skills & tools", "technical proficiencies", "technologies", "skillset", "skills summary"];
+  const CERT_HEADERS = ["certifications", "certification", "certifications & achievements", "licenses & certifications", "achievements", "accomplishments", "certificates", "courses & certifications"];
   const LEADERSHIP_HEADERS = ["leadership", "activities", "leadership & activities", "leadership/activities", "extracurricular activities", "extra curricular activities", "volunteer experience", "volunteering"];
   const AWARDS_HEADERS = ["awards", "honors", "awards & honors", "honors & awards"];
 
   const SECTION_HEADERS = {
-    experience: ["experience", "work experience", "employment history", "professional experience", "career history"],
-    education: ["education", "academic background", "qualifications", "educational qualification", "educational qualifications", "academic qualification", "academic qualifications", "academic details", "education & qualifications"],
-    projects: ["projects", "personal projects", "academic projects", "key projects"],
+    experience: ["experience", "work experience", "employment history", "professional experience", "career history", "work history", "internships", "internship experience", "relevant experience"],
+    education: ["education", "academic background", "qualifications", "educational qualification", "educational qualifications", "academic qualification", "academic qualifications", "academic details", "education & qualifications", "degrees", "academic profile"],
+    projects: ["projects", "personal projects", "academic projects", "key projects", "technical projects", "selected projects", "major projects"],
     certifications: CERT_HEADERS,
   };
 
@@ -216,10 +275,39 @@
   function extractSkills(text){
     const lower = text.toLowerCase();
     const found = [];
+    const seenNames = new Set();
+
     for (const skill of SKILL_KEYWORDS){
-      const escaped = skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp("\\b" + escaped + "\\b", "i");
-      if (re.test(lower)) found.push(skill);
+      const sName = skill.name.toLowerCase();
+      if (seenNames.has(sName)) continue;
+
+      let matched = false;
+      if (sName === "c++") {
+        matched = /\bc\+\+|\bcplusplus\b/i.test(lower);
+      } else if (sName === "c#") {
+        matched = /\bc#|\bcsharp\b/i.test(lower);
+      } else if (sName === ".net" || sName === "asp.net") {
+        matched = /\.net\b|asp\.net\b/i.test(lower);
+      } else if (sName === "node.js" || sName === "node") {
+        matched = /\bnode\.?js\b|\bnodejs\b|\bnode\b/i.test(lower);
+      } else if (sName === "react.js" || sName === "react") {
+        matched = /\breact\.?js\b|\breactjs\b|\breact\b/i.test(lower);
+      } else if (sName === "vue.js" || sName === "vue") {
+        matched = /\bvue\.?js\b|\bvuejs\b|\bvue\b/i.test(lower);
+      } else if (sName === "next.js" || sName === "next") {
+        matched = /\bnext\.?js\b|\bnextjs\b/i.test(lower);
+      } else if (sName === "express.js" || sName === "express") {
+        matched = /\bexpress\.?js\b|\bexpressjs\b|\bexpress\b/i.test(lower);
+      } else {
+        const escaped = sName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp("(?:^|[^a-zA-Z0-9_#+.-])" + escaped + "(?:$|[^a-zA-Z0-9_#+.-])", "i");
+        matched = re.test(lower);
+      }
+
+      if (matched){
+        found.push(skill);
+        seenNames.add(sName);
+      }
     }
     return found;
   }

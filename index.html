@@ -30,6 +30,7 @@
   </a>
   <div class="nav-center">
     <a href="#" id="navHomeLink" class="nav-btn-secondary nav-home-btn">Home</a>
+    <a href="#" id="navDashboardBtn" class="nav-btn-secondary nav-home-btn" style="display:none;">Dashboard</a>
   </div>
   </div>
   <div class="nav-right">
@@ -51,9 +52,10 @@
             <div class="profile-dropdown-email" id="userChipEmail">—</div>
           </div>
         </div>
-        <button class="profile-dropdown-history" id="userProfileBtn" type="button">Profile</button>
-        <button class="profile-dropdown-history" id="historyBtn" type="button">History</button>
-        <button class="profile-dropdown-history" id="profileSupportBtn" type="button">Support Session</button>
+        <button class="profile-dropdown-history" id="dropdownDashboardBtn" type="button">📊 Dashboard</button>
+        <button class="profile-dropdown-history" id="userProfileBtn" type="button">👤 Profile</button>
+        <button class="profile-dropdown-history" id="historyBtn" type="button">📜 History</button>
+        <button class="profile-dropdown-history" id="profileSupportBtn" type="button">💬 Support Session</button>
         <button class="profile-dropdown-logout" id="userLogoutBtn" type="button">Log out</button>
       </div>
     </div>
@@ -458,6 +460,87 @@
       <h3 style="margin:0 0 8px; font-size:14px; font-weight:700; color:var(--ink);">Your Support Requests</h3>
       <div id="supportTicketsList" class="history-list" style="max-height:180px;"></div>
     </div>
+  </div>
+</div>
+
+<!-- User Dashboard modal -->
+<div class="modal-overlay support-modal" id="dashboardModal">
+  <div class="auth-modal dashboard-modal-box" style="max-width:850px; width:94%; max-height:88vh; overflow-y:auto;">
+    <button class="modal-close" id="dashboardCloseBtn" type="button">&times;</button>
+    
+    <!-- User Info Header Banner -->
+    <div class="dashboard-user-header" style="background:var(--subtle); border-radius:12px; padding:18px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px; border:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div class="profile-dropdown-avatar" style="width:48px; height:48px; font-size:20px; flex-shrink:0;">
+          <span id="dashAvatarInitials">?</span>
+          <img id="dashAvatarImg" class="profile-dropdown-avatar-img" alt="" style="display:none;" />
+        </div>
+        <div>
+          <h2 style="margin:0; font-size:18px; font-weight:700; color:var(--ink);" id="dashUserName">User Name</h2>
+          <div style="font-size:13px; color:#666;" id="dashUserEmail">user@example.com</div>
+        </div>
+      </div>
+      <div style="text-align:right; font-size:12px; color:#777;">
+        <div>Provider: <strong id="dashUserProvider" style="color:var(--accent); text-transform:capitalize;">Email</strong></div>
+        <div>Member Since: <span id="dashUserCreated">—</span></div>
+        <div>Last Login: <span id="dashUserLastLogin">—</span></div>
+      </div>
+    </div>
+
+    <!-- Key Dashboard Stats Grid -->
+    <h3 style="margin:0 0 12px; font-size:15px; font-weight:700; color:var(--ink);">Overview & Metrics</h3>
+    <div class="dashboard-stats-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-bottom:24px;">
+      <div class="dash-stat-card" style="background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:var(--accent);" id="dashStatTotalResumes">0</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Total Analyzed</div>
+      </div>
+      <div class="dash-stat-card" style="background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:#2e7d32;" id="dashStatLatestScore">—</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Latest ATS Score</div>
+      </div>
+      <div class="dash-stat-card" style="background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:#1565c0;" id="dashStatHighestScore">—</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Highest ATS Score</div>
+      </div>
+      <div class="dash-stat-card" style="background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:#6a1b9a;" id="dashStatAvgScore">—</div>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Average ATS Score</div>
+      </div>
+    </div>
+
+    <!-- Latest Uploaded Resume Banner -->
+    <div id="dashLatestUploadBox" style="background:#f8f9fa; border:1px border-dashed var(--line); border-radius:10px; padding:14px 16px; margin-bottom:24px; display:none;">
+      <div style="font-size:11px; text-transform:uppercase; font-weight:700; color:#888; letter-spacing:0.5px;">Latest Uploaded Resume</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; flex-wrap:wrap; gap:8px;">
+        <div style="font-weight:700; color:var(--ink);" id="dashLatestFileName">document.pdf</div>
+        <div style="font-size:12px; color:#666;">
+          Format: <span id="dashLatestFileType" style="text-transform:uppercase; font-weight:600;">PDF</span> |
+          Uploaded: <span id="dashLatestFileDate">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Resume Analyses & Activity Feed Sections -->
+    <div style="display:grid; grid-template-columns: 1fr; gap:20px;">
+      
+      <!-- Recent Analyses Section -->
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--ink);">Recent Resume Analyses</h3>
+        </div>
+        <div id="dashRecentAnalysesList" class="history-list" style="max-height:220px; overflow-y:auto;"></div>
+      </div>
+
+      <!-- Recent User Activities Section -->
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; margin-top:10px;">
+          <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--ink);">Recent Activities</h3>
+        </div>
+        <div id="dashRecentActivitiesList" class="history-list" style="max-height:220px; overflow-y:auto;"></div>
+      </div>
+
+    </div>
+
   </div>
 </div>
 

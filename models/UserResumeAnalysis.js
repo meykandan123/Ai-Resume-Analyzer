@@ -11,16 +11,31 @@ const userResumeAnalysisSchema = new mongoose.Schema({
     required: true,
     ref: "User"
   },
-  resumeFilename: {
+  fileName: {
     type: String,
     required: true
+  },
+  resumeFilename: {
+    type: String
   },
   filename: {
     type: String
   },
-  uploadDate: {
-    type: Date,
-    default: Date.now
+  fileType: {
+    type: String,
+    default: "pdf"
+  },
+  filePath: {
+    type: String,
+    default: ""
+  },
+  fileUrl: {
+    type: String,
+    default: ""
+  },
+  analysisType: {
+    type: String,
+    default: "Resume Analysis"
   },
   atsScore: {
     type: Number,
@@ -28,6 +43,14 @@ const userResumeAnalysisSchema = new mongoose.Schema({
   },
   score: {
     type: Number
+  },
+  analysisResult: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  analysisResults: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   detectedSkills: {
     type: [String],
@@ -37,16 +60,16 @@ const userResumeAnalysisSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
-  analysisResults: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
   verdict: {
     type: String
   },
   suggestions: {
     type: [String],
     default: []
+  },
+  uploadDate: {
+    type: Date,
+    default: Date.now
   },
   analysisDate: {
     type: Date,
@@ -66,7 +89,8 @@ const userResumeAnalysisSchema = new mongoose.Schema({
     default: ""
   }
 }, {
-  collection: "User Resume Analysis"
+  collection: "resume_analysis",
+  timestamps: true
 });
 
-module.exports = mongoose.model("UserResumeAnalysis", userResumeAnalysisSchema, "User Resume Analysis");
+module.exports = mongoose.model("UserResumeAnalysis", userResumeAnalysisSchema, "resume_analysis");

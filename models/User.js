@@ -61,9 +61,19 @@ const userSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  },
+  lastLogin: {
+    type: Date,
+    default: Date.now
   }
 }, {
-  collection: "users"
+  collection: "users",
+  timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
 });
 
 module.exports = mongoose.model("User", userSchema, "users");
+

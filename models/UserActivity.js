@@ -11,21 +11,30 @@ const userActivitySchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
-  activityType: {
-    type: String,
-    required: true,
-    enum: ["REGISTER", "LOGIN", "LOGOUT", "RESUME_UPLOAD", "RESUME_ANALYSIS", "ATS_CHECK", "PASSWORD_RESET"]
-  },
-  activityDescription: {
+  action: {
     type: String,
     required: true
+  },
+  activityType: {
+    type: String
+  },
+  description: {
+    type: String
+  },
+  activityDescription: {
+    type: String
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   timestamp: {
     type: Date,
     default: Date.now
   }
 }, {
-  collection: "User Activity"
+  collection: "user_activity",
+  timestamps: true
 });
 
-module.exports = mongoose.model("UserActivity", userActivitySchema, "User Activity");
+module.exports = mongoose.model("UserActivity", userActivitySchema, "user_activity");

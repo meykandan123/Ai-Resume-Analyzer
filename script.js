@@ -2073,11 +2073,14 @@
     if (wrap) wrap.classList.add("active");
     const navLoginBtn = document.getElementById("navLoginBtn");
     const navSignupBtn = document.getElementById("navSignupBtn");
+    const navDashBtn = document.getElementById("navDashboardBtn");
     if (navLoginBtn) navLoginBtn.style.display = "none";
     if (navSignupBtn) navSignupBtn.style.display = "none";
+    if (navDashBtn) navDashBtn.style.display = "inline-flex";
 
     fetchHistoryFromBackend();
     fetchActivityFromBackend();
+    fetchDashboardDataFromBackend();
     syncUnsyncedAnalysesToBackend();
   }
 
@@ -2098,7 +2101,10 @@
     document.getElementById("profileDropdown").classList.remove("open");
     document.getElementById("navLoginBtn").style.display = "";
     document.getElementById("navSignupBtn").style.display = "";
+    const navDashBtn = document.getElementById("navDashboardBtn");
+    if (navDashBtn) navDashBtn.style.display = "none";
     closeProfilePage();
+    closeDashboard();
   }
 
   // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
@@ -2140,6 +2146,8 @@
         });
         if (data.success && data.user){
           setLoggedInUser({
+            id: data.user._id || data.user.id || data.user.userId,
+            _id: data.user._id || data.user.id,
             name: data.user.name,
             email: data.user.email,
             provider: data.user.provider,
@@ -2462,6 +2470,8 @@
       if (data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
+          id: data.user._id || data.user.id || data.user.userId,
+          _id: data.user._id || data.user.id,
           name: data.user.name,
           email: data.user.email,
           provider: data.user.provider || "email",
@@ -2665,7 +2675,14 @@
         return;
       } else if (data.success && data.token){
         setAuthToken(data.token);
-        setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
+        setLoggedInUser({
+          id: data.user._id || data.user.id || data.user.userId,
+          _id: data.user._id || data.user.id,
+          name: data.user.name,
+          email: data.user.email,
+          provider: "email",
+          photo: data.user.photo
+        });
         accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
         saveAccounts();
         showToast(signupToast, `Account created! Welcome, ${data.user.name}!`, false);
@@ -2719,7 +2736,14 @@
       });
       if (data.success && data.token){
         setAuthToken(data.token);
-        setLoggedInUser({ name: data.user.name, email: data.user.email, provider: "email", photo: data.user.photo });
+        setLoggedInUser({
+          id: data.user._id || data.user.id || data.user.userId,
+          _id: data.user._id || data.user.id,
+          name: data.user.name,
+          email: data.user.email,
+          provider: "email",
+          photo: data.user.photo
+        });
         accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
         saveAccounts();
         showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
@@ -2990,21 +3014,40 @@
     if (!email && currentUser) email = currentUser.email;
     const normEmail = email ? normalizeEmail(email) : (currentUser ? normalizeEmail(currentUser.email) : null);
     
+    const finalFilename = filename || pendingResumeFilename || "resume.pdf";
+    const ext = finalFilename.split(".").pop().toLowerCase();
+    const fileType = ["pdf", "docx", "txt"].includes(ext) ? ext : "pdf";
+    const analysisType = (analysisMode === "ats") ? "ATS Check" : "Full Breakdown";
+
     const payload = {
-      filename: filename || "resume",
+      fileName: finalFilename,
+      filename: finalFilename,
+      fileType: fileType,
+      analysisType: analysisType,
+      atsScore: score,
       score: score,
       verdict: verdict,
       resumeText: pendingResumeText || "",
       detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
       missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
       suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
-      analysisResults: {
+      analysisResult: {
         verdict: verdict,
+        atsScore: score,
         score: score,
+        analysisType: analysisType,
         experience: lastAnalysisData ? lastAnalysisData.experience : null,
         education: lastAnalysisData ? lastAnalysisData.education : null,
         projects: lastAnalysisData ? lastAnalysisData.projects : null,
+        skills: lastAnalysisData ? lastAnalysisData.skills : [],
+        missingKeywords: lastAnalysisData ? lastAnalysisData.missing : [],
+        suggestions: lastAnalysisData ? lastAnalysisData.uniqueWeakPhrases : [],
         mode: analysisMode || "ats"
+      },
+      analysisResults: {
+        verdict: verdict,
+        score: score,
+        atsScore: score
       },
       mode: analysisMode || "ats"
     };
@@ -3125,6 +3168,163 @@
   });
   document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
   historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
+
+  // ---- User Dashboard System ----
+  async function fetchDashboardDataFromBackend() {
+    const token = getAuthToken();
+    if (!token || !currentUser) return null;
+    try {
+      const data = await safeFetchJson("/api/user/dashboard", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (data && data.success) {
+        renderDashboardData(data);
+        return data;
+      }
+    } catch (err) {
+      console.warn("Could not fetch dashboard data from backend:", err);
+    }
+    return null;
+  }
+
+  function renderDashboardData(data) {
+    if (!data) return;
+    const u = data.user || {};
+    const s = data.stats || {};
+
+    // 1. User Information
+    const dashName = document.getElementById("dashUserName");
+    const dashEmail = document.getElementById("dashUserEmail");
+    const dashProvider = document.getElementById("dashUserProvider");
+    const dashCreated = document.getElementById("dashUserCreated");
+    const dashLastLogin = document.getElementById("dashUserLastLogin");
+
+    if (dashName) dashName.textContent = u.name || (currentUser ? currentUser.name : "User");
+    if (dashEmail) dashEmail.textContent = u.email || (currentUser ? currentUser.email : "—");
+    if (dashProvider) dashProvider.textContent = u.provider || "email";
+    if (dashCreated) dashCreated.textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—";
+    if (dashLastLogin) dashLastLogin.textContent = u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "—";
+
+    // Avatar
+    const dashInitials = document.getElementById("dashAvatarInitials");
+    const dashImg = document.getElementById("dashAvatarImg");
+    if (dashInitials && dashImg) {
+      if (u.photo) {
+        dashImg.src = u.photo;
+        dashImg.style.display = "block";
+        dashInitials.style.display = "none";
+      } else {
+        dashImg.style.display = "none";
+        dashInitials.style.display = "inline";
+        dashInitials.textContent = (u.name || "U").trim().charAt(0).toUpperCase();
+      }
+    }
+
+    // 2. Metrics Cards
+    const totalEl = document.getElementById("dashStatTotalResumes");
+    const latestScoreEl = document.getElementById("dashStatLatestScore");
+    const highestScoreEl = document.getElementById("dashStatHighestScore");
+    const avgScoreEl = document.getElementById("dashStatAvgScore");
+
+    if (totalEl) totalEl.textContent = s.totalResumes !== undefined ? s.totalResumes : 0;
+    if (latestScoreEl) latestScoreEl.textContent = s.latestScore !== null ? s.latestScore : "—";
+    if (highestScoreEl) highestScoreEl.textContent = s.highestScore !== null ? s.highestScore : "—";
+    if (avgScoreEl) avgScoreEl.textContent = s.avgScore !== null ? s.avgScore : "—";
+
+    // 3. Latest Uploaded Resume
+    const latestBox = document.getElementById("dashLatestUploadBox");
+    const latestFileName = document.getElementById("dashLatestFileName");
+    const latestFileType = document.getElementById("dashLatestFileType");
+    const latestFileDate = document.getElementById("dashLatestFileDate");
+
+    if (s.latestUpload) {
+      if (latestBox) latestBox.style.display = "block";
+      if (latestFileName) latestFileName.textContent = s.latestUpload.fileName || "resume.pdf";
+      if (latestFileType) latestFileType.textContent = (s.latestUpload.fileType || "PDF").toUpperCase();
+      if (latestFileDate) latestFileDate.textContent = s.latestUpload.uploadDate ? new Date(s.latestUpload.uploadDate).toLocaleString() : "—";
+    } else {
+      if (latestBox) latestBox.style.display = "none";
+    }
+
+    // 4. Recent Resume Analyses
+    const analysesContainer = document.getElementById("dashRecentAnalysesList");
+    if (analysesContainer) {
+      const analyses = data.recentAnalyses || [];
+      if (!analyses.length) {
+        analysesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No resume analyses found yet. Upload a resume to get started!</div>';
+      } else {
+        analysesContainer.innerHTML = analyses.map(item => `
+          <div class="history-item" style="padding:12px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight:700; font-size:14px; color:var(--ink);">${escapeHtml(item.fileName || item.filename)}</div>
+              <div style="font-size:12px; color:#777; margin-top:2px;">
+                <span style="display:inline-block; background:var(--subtle); padding:2px 6px; border-radius:4px; font-weight:600;">${escapeHtml(item.analysisType || 'Resume Analysis')}</span>
+                &bull; ${new Date(item.date).toLocaleDateString()}
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <span class="history-item-score" style="font-size:15px; font-weight:800; color:${scoreColor(item.atsScore)}">${item.atsScore}</span>
+              <div style="font-size:11px; color:#666; font-weight:600;">${escapeHtml(item.verdict || 'Analyzed')}</div>
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
+    // 5. Recent User Activities Feed
+    const activitiesContainer = document.getElementById("dashRecentActivitiesList");
+    if (activitiesContainer) {
+      const acts = data.recentActivities || [];
+      if (!acts.length) {
+        activitiesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No activities recorded yet.</div>';
+      } else {
+        activitiesContainer.innerHTML = acts.map(act => `
+          <div class="activity-item" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; justify-content:space-between;">
+            <div>
+              <span style="display:inline-block; font-size:11px; text-transform:uppercase; font-weight:700; background:#e8f4fd; color:#1976d2; padding:2px 6px; border-radius:4px; margin-right:8px;">${escapeHtml(act.action)}</span>
+              <span style="font-size:13px; color:var(--ink);">${escapeHtml(act.description)}</span>
+            </div>
+            <div style="font-size:11px; color:#888; white-space:nowrap; margin-left:12px;">${new Date(act.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+          </div>
+        `).join("");
+      }
+    }
+  }
+
+  const dashboardModal = document.getElementById("dashboardModal");
+  function openDashboard(){
+    if (!currentUser) {
+      openAuth("login");
+      return;
+    }
+    if (dashboardModal) {
+      dashboardModal.classList.add("open");
+      fetchDashboardDataFromBackend();
+    }
+  }
+  function closeDashboard(){
+    if (dashboardModal) dashboardModal.classList.remove("open");
+  }
+
+  const navDashboardBtn = document.getElementById("navDashboardBtn");
+  if (navDashboardBtn) navDashboardBtn.addEventListener("click", openDashboard);
+
+  const dropdownDashboardBtn = document.getElementById("dropdownDashboardBtn");
+  if (dropdownDashboardBtn) {
+    dropdownDashboardBtn.addEventListener("click", () => {
+      profileDropdown.classList.remove("open");
+      openDashboard();
+    });
+  }
+
+  const dashboardCloseBtn = document.getElementById("dashboardCloseBtn");
+  if (dashboardCloseBtn) dashboardCloseBtn.addEventListener("click", closeDashboard);
+
+  if (dashboardModal) {
+    dashboardModal.addEventListener("click", (e) => {
+      if (e.target === dashboardModal) closeDashboard();
+    });
+  }
 
   const profileSupportBtn = document.getElementById("profileSupportBtn");
   if (profileSupportBtn){

@@ -868,111 +868,126 @@
     renderScoreItem(scoreBreakdownGrid, "Readability", readabilityPct);
     renderScoreItem(scoreBreakdownGrid, "Relevance Alignment", relevanceAlignmentPct);
 
-    // ---- Executive Summary: Top Issues to Fix / Quick Fixes ----
-    const issues = [];
-    const fixes = [];
+    // ---- Executive Summary / ATS Improvement Recommendations ----
+    const recs = [];
 
+    // 1. Critical Contact / Core Sections
     criticalMissingFields.forEach(field => {
       if (missing.includes(field)){
-        issues.push(`Missing: ${field}`);
-        fixes.push(`Add a clear ${field.replace(/ section$/i, "").toLowerCase()} — this is a standard field ATS systems and recruiters expect.`);
+        recs.push({
+          badge: "Critical",
+          type: "critical",
+          issue: `Missing Essential Field: ${field}`,
+          fix: `Add a clear ${field.replace(/ section$/i, "").toLowerCase()} header — ATS parsers rely on this to map your application data.`
+        });
       }
     });
 
-    const scoreCategories = [
-      {
-        pct: sectionCoveragePct, weight: 0.22,
-        issue: () => {
-          const missingSections = allSections.filter(s => !s.found).map(s => s.label);
-          return `Resume is missing ${missingSections.length} standard section(s)${missingSections.length ? " (" + missingSections.slice(0, 3).join(", ") + (missingSections.length > 3 ? ", etc." : "") + ")" : ""}`;
-        },
-        fix: "Add the sections shown under \"Missing Sections\" below",
-      },
-      {
-        pct: keywordCoveragePct, weight: 0.20,
-        issue: () => (jdResult && jdResult.ratio !== null)
-          ? `Resume matches only ${Math.round(jdResult.ratio * 100)}% of the job description's keywords`
-          : `Missing common keywords (${missingCommonKw.slice(0, 3).join(", ")}${missingCommonKw.length > 3 ? ", etc." : ""})`,
-        fix: (jdResult && jdResult.ratio !== null)
-          ? "Work more of the job description's exact terms and phrases into your resume"
-          : "Insert relevant missing keywords naturally throughout the resume",
-      },
-      {
-        pct: contentStrengthPct, weight: 0.16,
-        issue: () => {
-          if (quant.total === 0 || quant.quantified === 0) return "No quantified results in bullet points";
-          if (uniqueWeakPhrases.length) return "Weak/passive phrasing found in bullet points";
-          if (duplicateBullets.length) return "Repeated bullet phrasing detected";
-          return "Bullet points could show stronger, more measurable impact";
-        },
-        fix: () => {
-          if (quant.total === 0 || quant.quantified === 0) return "Quantify impact for each experience/project bullet (numbers, %, $)";
-          if (uniqueWeakPhrases.length) return "Replace weak phrases with strong action verbs";
-          if (duplicateBullets.length) return "Vary your bullet point language across roles/projects";
-          return "Add more numbers and outcomes to your bullet points";
-        },
-      },
-      {
-        pct: relevanceAlignmentPct, weight: 0.14,
-        issue: () => (jdResult && jdResult.ratio !== null)
-          ? "Resume's overall content doesn't closely align with the job description"
-          : `Skill keyword density is ${skillDensity < 6 ? "low" : "high"} (${skillDensity}%) vs. the ideal 6–22% range`,
-        fix: (jdResult && jdResult.ratio !== null)
-          ? "Mirror more of the job description's responsibilities and required skills"
-          : "Adjust how often core skills appear so they're clearly represented without over-stuffing",
-      },
-      {
-        pct: readabilityPct, weight: 0.10,
-        issue: () => `Reading level is outside the ideal range (Grade ${readability.gradeLevel})`,
-        fix: "Aim for a Grade 7–14 reading level with clear, concise sentences",
-      },
-      {
-        pct: formattingPct, weight: 0.10,
-        issue: () => quant.total === 0
-          ? "No bullet points detected — adding bullet points improves ATS parser readability"
-          : `Resume length (${wordCount} words) is outside the ideal 300–1100 word range`,
-        fix: quant.total === 0
-          ? "Use bullet points (lines starting with -, *, or •) to list achievements"
-          : "Trim or expand content to land in the 300–1100 word sweet spot",
-      },
-      {
-        pct: timelineConsistencyPct, weight: 0.08,
-        issue: () => futureGradFlag ? "Future graduation dates may cause timing concerns" : "No dates found in education or experience",
-        fix: futureGradFlag ? "Clarify your graduation date or expected completion timeline" : "Add month/year ranges so recruiters can follow your timeline",
-      },
-    ];
-
-    scoreCategories
-      .filter(c => c.pct < 75)
-      .sort((a, b) => (b.weight * (100 - b.pct)) - (a.weight * (100 - a.pct)))
-      .forEach(c => {
-        issues.push(typeof c.issue === "function" ? c.issue() : c.issue);
-        fixes.push(typeof c.fix === "function" ? c.fix() : c.fix);
+    // 2. Missing Job Description or Common Keywords
+    if (jdResult && jdResult.missing && jdResult.missing.length > 0){
+      recs.push({
+        badge: "Keyword Match",
+        type: "keyword",
+        issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 4).join(", ")}${jdResult.missing.length > 4 ? "..." : ""}`,
+        fix: `Incorporate missing keywords (${jdResult.missing.slice(0, 4).join(", ")}) naturally into your Experience or Skills bullet points.`
       });
+    } else if (missingCommonKw && missingCommonKw.length > 0){
+      recs.push({
+        badge: "Keywords",
+        type: "keyword",
+        issue: `Missing Core Industry Terms: ${missingCommonKw.slice(0, 4).join(", ")}`,
+        fix: `Add relevant industry skills (${missingCommonKw.slice(0, 4).join(", ")}) to improve ATS keyword search ranking.`
+      });
+    }
 
-    // Lower-weight polish items — not part of the score's own categories,
-    // added last only if there's still room in the top-6 list.
-    if (buzzwordsFound.length){ issues.push("Overused buzzwords found (" + buzzwordsFound.slice(0, 3).join(", ") + ")"); fixes.push("Swap vague buzzwords for specific, concrete language"); }
-    if (!hasSummary){ issues.push("No professional summary"); fixes.push("Add a concise Professional Summary highlighting your focus area"); }
+    // 3. Bullet Point Impact & Metrics
+    if (quant.total === 0 || quant.quantified === 0){
+      recs.push({
+        badge: "Impact Metrics",
+        type: "impact",
+        issue: "No Quantified Achievements Found",
+        fix: "Add numbers, percentages, or metrics to your experience bullets (e.g., 'Boosted efficiency by 30%', 'Managed $20k budget')."
+      });
+    }
+
+    // 4. Action Verbs & Weak Phrasing
+    if (uniqueWeakPhrases && uniqueWeakPhrases.length > 0){
+      recs.push({
+        badge: "Verb Strength",
+        type: "impact",
+        issue: `Weak or Passive Verbs Detected: ${uniqueWeakPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")}`,
+        fix: `Replace passive phrasing with strong action verbs like 'Engineered', 'Spearheaded', 'Architected', or 'Optimized'.`
+      });
+    }
+
+    // 5. Formatting & Length
+    if (wordCount < 300 || wordCount > 1100){
+      recs.push({
+        badge: "Formatting",
+        type: "format",
+        issue: `Resume Length (${wordCount} words) Outside Ideal Range`,
+        fix: `Aim for 300–1100 words. ${wordCount < 300 ? "Add more detailed bullet points describing your technical accomplishments." : "Trim redundant details to keep your resume focused."}`
+      });
+    }
+
+    // 6. Section Coverage & Structure
+    const missingSections = allSections.filter(s => !s.found).map(s => s.label);
+    if (missingSections.length > 0){
+      recs.push({
+        badge: "Structure",
+        type: "format",
+        issue: `Missing Recommended Sections: ${missingSections.slice(0, 3).join(", ")}`,
+        fix: `Add standard section headers (${missingSections.slice(0, 3).join(", ")}) to improve standard ATS parsing.`
+      });
+    }
+
+    // 7. Timeline / Dates
+    if (noDatesFound){
+      recs.push({
+        badge: "Timeline",
+        type: "format",
+        issue: "No Clear Dates Found in Experience or Education",
+        fix: "Include month and year ranges (e.g., 'Jan 2022 – Present') so ATS scanners can compute years of experience."
+      });
+    }
+
+    // 8. Buzzwords & Summary Polish
+    if (buzzwordsFound && buzzwordsFound.length > 0){
+      recs.push({
+        badge: "Polish",
+        type: "polish",
+        issue: `Overused Buzzwords Detected: ${buzzwordsFound.slice(0, 3).join(", ")}`,
+        fix: "Swap generic fluff terms for concrete technical tools and verifiable achievements."
+      });
+    }
+
+    if (!hasSummary){
+      recs.push({
+        badge: "Summary",
+        type: "polish",
+        issue: "No Professional Summary Header Found",
+        fix: "Include a 2–3 sentence Professional Summary at the top highlighting your key tech stack and career focus."
+      });
+    }
 
     const execIssuesEl = document.getElementById("execIssuesList");
     const execFixesEl = document.getElementById("execFixesList");
     execIssuesEl.innerHTML = "";
     execFixesEl.innerHTML = "";
-    if (issues.length){
-      issues.slice(0, 6).forEach(i => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span class="exec-icon">✕</span><span>${i}</span>`;
-        execIssuesEl.appendChild(li);
-      });
-      fixes.slice(0, 6).forEach(f => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span class="exec-icon">✓</span><span>${f}</span>`;
-        execFixesEl.appendChild(li);
+
+    if (recs.length > 0){
+      recs.slice(0, 8).forEach(r => {
+        const liIssue = document.createElement("li");
+        liIssue.innerHTML = `<span class="exec-icon">✕</span><div><span class="exec-badge ${r.type}">${r.badge}</span><span>${r.issue}</span></div>`;
+        execIssuesEl.appendChild(liIssue);
+
+        const liFix = document.createElement("li");
+        liFix.innerHTML = `<span class="exec-icon">✓</span><div><span class="exec-badge fix-${r.type}">${r.badge}</span><span>${r.fix}</span></div>`;
+        execFixesEl.appendChild(liFix);
       });
     } else {
-      execIssuesEl.innerHTML = "<li class='exec-empty'>No major issues found — nice work!</li>";
-      execFixesEl.innerHTML = "<li class='exec-empty'>Keep tailoring this resume for each job description.</li>";
+      execIssuesEl.innerHTML = "<li class='exec-empty'>No major ATS issues detected — excellent resume structure!</li>";
+      execFixesEl.innerHTML = "<li class='exec-empty'>Keep tailoring your resume keywords for each target job description.</li>";
     }
 
     // ---- Errors & Issues Found: every detected problem, ordered by ----

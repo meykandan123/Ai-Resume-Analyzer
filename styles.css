@@ -1112,18 +1112,35 @@
   }
   .exec-col-title.issues{ color:#b3261e; }
   .exec-col-title.fixes{ color:#2e7d32; }
-  .exec-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  .exec-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
   .exec-list li{
     display:flex;
     align-items:flex-start;
-    gap:8px;
+    gap:10px;
     font-size:13.5px;
     line-height:1.45;
     color:var(--ink);
   }
-  .exec-list li .exec-icon{ flex-shrink:0; font-weight:800; margin-top:1px; }
+  .exec-list li .exec-icon{ flex-shrink:0; font-weight:800; margin-top:2px; }
   .exec-list.issues .exec-icon{ color:#b3261e; }
   .exec-list.fixes .exec-icon{ color:#2e7d32; }
+  .exec-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    border-radius: 4px;
+    margin-right: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+  }
+  .exec-badge.critical { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+  .exec-badge.keyword { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
+  .exec-badge.impact { background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2; }
+  .exec-badge.format { background: #f3e5f5; color: #7b1fa2; border: 1px solid #e1bee7; }
+  .exec-badge.polish { background: #e8eaf6; color: #283593; border: 1px solid #c5cae9; }
+  .exec-badge[class*="fix-"] { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
   .exec-empty{ font-size:13px; color:#888; font-family:var(--mono); }
   @media (max-width:640px){ .exec-summary-body{ grid-template-columns:1fr; } }
 

@@ -1940,23 +1940,20 @@
     closeProfilePage();
   }
 
-  // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server)
+  // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
   const API_BASE = (location.protocol === "file:" || (location.port && location.port !== "5000"))
-    ? "http://localhost:5000"
+    ? `${location.protocol === "file:" ? "http:" : location.protocol}//${location.hostname || "localhost"}:5000`
     : "";
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
-  async function safeFetchJson(url, options, retries = 2) {
+  async function safeFetchJson(url, options, retries = 1) {
     const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : url;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(fullUrl, options);
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
-          if (attempt < retries) {
-            await new Promise(r => setTimeout(r, 1500));
-            continue;
-          }
+          // If response is not JSON (e.g., HTML fallback page), do not waste time retrying
           throw new Error(`HTTP ${res.status}: Non-JSON response received`);
         }
         const text = await res.text();
@@ -1965,8 +1962,9 @@
         }
         return JSON.parse(text);
       } catch (err) {
+        if (err.message && err.message.includes("Non-JSON")) throw err;
         if (attempt === retries) throw err;
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 1000));
       }
     }
   }

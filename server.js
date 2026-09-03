@@ -5,6 +5,8 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const path = require("path");
 const crypto = require("crypto");
+const dns = require("dns");
+try { dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]); } catch(e){}
 require("dotenv").config();
 
 const User = require("./models/User");
@@ -35,9 +37,11 @@ async function connectDB() {
   try {
     await mongoose.connect(MONGODB_URI, {
       dbName: "Ai-Resume-Analyzer",
-      serverSelectionTimeoutMS: 2500
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000
     });
-    console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI);
+    console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
+
 
     // Automatically ensure collections exist in MongoDB database
     try {

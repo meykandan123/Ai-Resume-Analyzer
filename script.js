@@ -2720,7 +2720,7 @@
                 fetchHistoryFromBackend();
               }
             } catch(err){
-              console.warn("Could not sync Google user to MongoDB backend:", err);
+              // Backend sync is optional; user remains signed in via client-side state
             }
 
             showToast(toastEl, `Signed in as ${email}.`, false);

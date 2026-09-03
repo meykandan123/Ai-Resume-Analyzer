@@ -543,21 +543,25 @@
     const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
 
     document.getElementById("fileTag").textContent = "Source file: " + filename;
-    document.getElementById("fName").textContent = name;
-    document.getElementById("fEmail").textContent = emailMatch ? emailMatch[0] : "Not found";
-    document.getElementById("fPhone").textContent = (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : "Not found";
+    const fNameEl = document.getElementById("fName"); if (fNameEl) fNameEl.textContent = name;
+    const fEmailEl = document.getElementById("fEmail"); if (fEmailEl) fEmailEl.textContent = emailMatch ? emailMatch[0] : "Not found";
+    const fPhoneEl = document.getElementById("fPhone"); if (fPhoneEl) fPhoneEl.textContent = (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : "Not found";
 
     const linkedinEl = document.getElementById("fLinkedin");
-    if (linkedinMatch){ linkedinEl.innerHTML = `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${linkedinMatch[0]}</a>`; }
-    else { linkedinEl.textContent = "Not found"; }
+    if (linkedinEl) {
+      if (linkedinMatch){ linkedinEl.innerHTML = `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${linkedinMatch[0]}</a>`; }
+      else { linkedinEl.textContent = "Not found"; }
+    }
 
     const githubEl = document.getElementById("fGithub");
-    if (githubMatch){ githubEl.innerHTML = `<a href="https://${githubMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${githubMatch[0]}</a>`; }
-    else { githubEl.textContent = "Not found"; }
+    if (githubEl) {
+      if (githubMatch){ githubEl.innerHTML = `<a href="https://${githubMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${githubMatch[0]}</a>`; }
+      else { githubEl.textContent = "Not found"; }
+    }
 
-    document.getElementById("sSkills").textContent = skills.length;
-    document.getElementById("sExp").textContent = years ? years + "+" : "—";
-    document.getElementById("sWords").textContent = wordCount;
+    const sSkillsEl = document.getElementById("sSkills"); if (sSkillsEl) sSkillsEl.textContent = skills.length;
+    const sExpEl = document.getElementById("sExp"); if (sExpEl) sExpEl.textContent = years ? years + "+" : "—";
+    const sWordsEl = document.getElementById("sWords"); if (sWordsEl) sWordsEl.textContent = wordCount;
 
     const tagWrap = document.getElementById("skillTags");
     tagWrap.innerHTML = "";

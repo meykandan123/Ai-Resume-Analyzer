@@ -578,37 +578,86 @@
 
     // ---- Resume Content Overview: a clean, human-readable summary of ----
     // ---- everything we were able to detect in the uploaded resume.   ----
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
     const coPersonalEl = document.getElementById("coPersonal");
     const personalRows = [
       ["Name", name !== "Not found" ? name : null],
       ["Email", emailMatch ? emailMatch[0] : null],
       ["Phone", (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : null],
-      ["LinkedIn", linkedinMatch ? linkedinMatch[0] : null],
-      ["GitHub", githubMatch ? githubMatch[0] : null],
+      ["LinkedIn", linkedinMatch ? `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//,'')}" target="_blank" style="color:var(--accent);font-weight:600;">${linkedinMatch[0]}</a>` : null],
+      ["GitHub", githubMatch ? `<a href="https://${githubMatch[0].replace(/^https?:\/\//,'')}" target="_blank" style="color:var(--accent);font-weight:600;">${githubMatch[0]}</a>` : null],
     ];
     coPersonalEl.innerHTML = personalRows.map(([label, value]) =>
-      `<div class="co-personal-row"><span class="co-k">${label}</span><span class="co-v">${value ? value : '<span class="co-empty">Not found</span>'}</span></div>`
+      `<div class="co-personal-row"><span class="co-k">${label}</span><span class="co-v">${value ? value : '<span class="co-empty">✕ Not found</span>'}</span></div>`
     ).join("");
 
     const coSkillsEl = document.getElementById("coSkills");
-    if (skills.length){
-      coSkillsEl.innerHTML = `<div class="tags">${skills.map(s => `<span class="tag ${s.type}">${s.name}</span>`).join("")}</div>`;
+    if (skills.length) {
+      const langs = skills.filter(s => s.type === "lang");
+      const tools = skills.filter(s => s.type === "tool");
+      const soft = skills.filter(s => s.type === "soft");
+
+      let html = '<div class="co-skills-grouped">';
+      if (langs.length) {
+        html += `<div class="co-skill-group"><span class="co-sg-title">Languages & Core:</span> <div class="tags">${langs.map(s => `<span class="tag lang">${s.name}</span>`).join("")}</div></div>`;
+      }
+      if (tools.length) {
+        html += `<div class="co-skill-group"><span class="co-sg-title">Frameworks & Tools:</span> <div class="tags">${tools.map(s => `<span class="tag tool">${s.name}</span>`).join("")}</div></div>`;
+      }
+      if (soft.length) {
+        html += `<div class="co-skill-group"><span class="co-sg-title">Soft Skills & Domain:</span> <div class="tags">${soft.map(s => `<span class="tag soft">${s.name}</span>`).join("")}</div></div>`;
+      }
+      html += '</div>';
+      coSkillsEl.innerHTML = html;
     } else {
-      coSkillsEl.innerHTML = "<span class='co-empty'>No matching skills detected.</span>";
+      coSkillsEl.innerHTML = `
+        <div class="co-empty-box">
+          <div class="co-empty-msg">✕ No Skills Section Clearly Detected</div>
+          <div class="co-guidance-title">💡 What to include in this section:</div>
+          <div class="co-guidance-text">List relevant technical skills (Languages, Frameworks, Tools, Databases) and soft skills matching your target job role.</div>
+        </div>
+      `;
     }
 
-    function renderCoSection(elId, content, emptyMsg){
+    function renderStructuredCoSection(elId, content, guidanceMsg) {
       const el = document.getElementById(elId);
-      if (content && content.trim()){
-        el.textContent = content;
+      if (!el) return;
+
+      if (content && content.trim()) {
+        const rawLines = content.split("\n").map(l => l.trim()).filter(Boolean);
+        let html = '<div class="co-structured-list">';
+        rawLines.forEach(line => {
+          const isBullet = BULLET_PREFIX_RE.test(line) || line.startsWith("-") || line.startsWith("*") || line.startsWith("•");
+          const cleanLine = line.replace(BULLET_PREFIX_RE, "").replace(/^[\-*•]\s*/, "").trim();
+
+          if (isBullet) {
+            html += `<div class="co-bullet-item"><span class="co-bullet-dot">•</span><span>${escapeHtml(cleanLine)}</span></div>`;
+          } else if (cleanLine.length < 70 && (/\b(20|19)\d{2}\b/.test(cleanLine) || /^[A-Z]/.test(cleanLine))) {
+            html += `<div class="co-title-item">${escapeHtml(cleanLine)}</div>`;
+          } else {
+            html += `<div class="co-text-item">${escapeHtml(cleanLine)}</div>`;
+          }
+        });
+        html += '</div>';
+        el.innerHTML = html;
       } else {
-        el.innerHTML = `<span class="co-empty">${emptyMsg}</span>`;
+        el.innerHTML = `
+          <div class="co-empty-box">
+            <div class="co-empty-msg">✕ Section Not Detected</div>
+            <div class="co-guidance-title">💡 What to include in this section:</div>
+            <div class="co-guidance-text">${guidanceMsg}</div>
+          </div>
+        `;
       }
     }
-    renderCoSection("coExperience", experience, "No experience section clearly detected.");
-    renderCoSection("coEducation", education, "No education section clearly detected.");
-    renderCoSection("coCertifications", certifications, "No certificates detected in this resume.");
-    renderCoSection("coProjects", projects, "No projects section clearly detected.");
+
+    renderStructuredCoSection("coExperience", experience, "Include Job Title, Company Name, Employment Dates (Month Year – Present), and 3–5 bullet points starting with strong action verbs and quantified metrics (%, $, numbers).");
+    renderStructuredCoSection("coEducation", education, "Include Degree Name (e.g. B.Tech / B.S. in Computer Science), University Name, Graduation Month & Year, GPA/Percentage (optional), and Relevant Coursework.");
+    renderStructuredCoSection("coCertifications", certifications, "Include Professional Certifications (e.g., AWS Certified Developer, Web Dev Certificate), Issuing Organization (e.g. Coursera, Udemy, Google), and Date.");
+    renderStructuredCoSection("coProjects", projects, "Include 2–3 Key Projects with Title, Tech Stack Used (e.g., React, Node.js, MongoDB), Live Demo / GitHub Links, and 2–3 impact bullet points describing key features.");
 
     // ---- Missing information check ----
     const missing = [];

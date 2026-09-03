@@ -1243,11 +1243,6 @@
 
     renderATSScore(score, color, verdict);
 
-    if (currentUser && !historySavedForCurrentUpload){
-      saveHistoryEntry(currentUser.email, filename, score, verdict);
-      historySavedForCurrentUpload = true;
-    }
-
     // Snapshot everything the PDF export button needs, so it doesn't have
     // to re-scrape the DOM or re-run analysis.
     lastAnalysisData = {
@@ -1266,6 +1261,11 @@
       jdResult,
       score, verdict,
     };
+
+    if (!historySavedForCurrentUpload){
+      saveHistoryEntry(currentUser ? currentUser.email : null, filename, score, verdict);
+      historySavedForCurrentUpload = true;
+    }
 
     document.getElementById("results").style.display = "block";
     document.getElementById("results").scrollIntoView({ behavior: "smooth" });
@@ -2050,28 +2050,35 @@
   }
 
   function setLoggedInUser(user){
+    if (!user || !user.email) return;
+    const norm = normalizeEmail(user.email);
+    user.email = norm;
     currentUser = user;
-    if (user && user.email){
-      const norm = normalizeEmail(user.email);
-      if (!accounts[norm]){
-        accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true };
-      } else {
-        accounts[norm].name = user.name || accounts[norm].name;
-        if (user.provider) accounts[norm].provider = user.provider;
-        if (user.provider === "google" || user.verified) accounts[norm].verified = true;
-      }
-      saveAccounts();
+    if (!accounts[norm]){
+      accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true };
+    } else {
+      accounts[norm].name = user.name || accounts[norm].name;
+      if (user.provider) accounts[norm].provider = user.provider;
+      if (user.provider === "google" || user.verified) accounts[norm].verified = true;
     }
+    saveAccounts();
+
     try { localStorage.setItem("ara_session_v1", JSON.stringify(user)); } catch (e){}
     const wrap = document.getElementById("profileWrap");
     const nameEl = document.getElementById("userChipName");
     const emailEl = document.getElementById("userChipEmail");
-    nameEl.textContent = user.name;
-    emailEl.textContent = user.email;
+    if (nameEl) nameEl.textContent = user.name;
+    if (emailEl) emailEl.textContent = user.email;
     renderAvatarEverywhere(user);
-    wrap.classList.add("active");
-    document.getElementById("navLoginBtn").style.display = "none";
-    document.getElementById("navSignupBtn").style.display = "none";
+    if (wrap) wrap.classList.add("active");
+    const navLoginBtn = document.getElementById("navLoginBtn");
+    const navSignupBtn = document.getElementById("navSignupBtn");
+    if (navLoginBtn) navLoginBtn.style.display = "none";
+    if (navSignupBtn) navSignupBtn.style.display = "none";
+
+    fetchHistoryFromBackend();
+    fetchActivityFromBackend();
+    syncUnsyncedAnalysesToBackend();
   }
 
   async function logoutUser(){
@@ -2871,17 +2878,14 @@
               });
               if (apiData.success && apiData.token){
                 setAuthToken(apiData.token);
-                fetchHistoryFromBackend();
               }
             } catch(err){
               // Backend sync is optional; user remains signed in via client-side state
             }
 
             showToast(toastEl, `Signed in as ${email}.`, false);
-            setTimeout(() => {
-              setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
-              closeAuth();
-            }, 500);
+            setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
+            closeAuth();
           } catch (err){
             showToast(toastEl, "Could not retrieve Google user profile. Please try again.", true);
           }
@@ -2910,6 +2914,8 @@
   // ---- Resume history (stored in MongoDB & synchronized with localStorage) ----
   const HISTORY_KEY = "ara_history_v1";
   const AUTH_TOKEN_KEY = "ara_jwt_token_v1";
+  let unsyncedPendingAnalyses = [];
+  let userActivitiesList = [];
 
   function getAuthToken(){ try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch(e){ return null; } }
   function setAuthToken(token){ try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch(e){} }
@@ -2926,16 +2932,32 @@
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(all)); } catch (e){}
   }
 
+  async function fetchActivityFromBackend(){
+    const token = getAuthToken();
+    if (!token || !currentUser) return;
+    try {
+      const data = await safeFetchJson("/api/activity", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (data.success && Array.isArray(data.activities)){
+        userActivitiesList = data.activities;
+      }
+    } catch(err){
+      console.warn("Could not fetch activity from MongoDB backend:", err);
+    }
+  }
+
   async function fetchHistoryFromBackend(){
     const token = getAuthToken();
     if (!token || !currentUser) return;
+    const normEmail = normalizeEmail(currentUser.email);
     try {
       const data = await safeFetchJson("/api/history", {
         headers: { "Authorization": "Bearer " + token }
       });
       if (data.success && Array.isArray(data.history)){
         const all = loadHistoryAll();
-        all[currentUser.email] = data.history;
+        all[normEmail] = data.history;
         saveHistoryAll(all);
         renderHistory();
       }
@@ -2944,43 +2966,71 @@
     }
   }
 
+  async function syncUnsyncedAnalysesToBackend(){
+    const token = getAuthToken();
+    if (!token || !currentUser || !unsyncedPendingAnalyses.length) return;
+    const toSync = [...unsyncedPendingAnalyses];
+    unsyncedPendingAnalyses = [];
+    for (const item of toSync){
+      try {
+        await safeFetchJson("/api/history", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify(item.payload)
+        });
+      } catch(e){}
+    }
+    fetchHistoryFromBackend();
+  }
+
   async function saveHistoryEntry(email, filename, score, verdict){
-    if (!email) return;
-    const all = loadHistoryAll();
-    if (!all[email]) all[email] = [];
-    const entry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    if (!email && currentUser) email = currentUser.email;
+    const normEmail = email ? normalizeEmail(email) : (currentUser ? normalizeEmail(currentUser.email) : null);
+    
+    const payload = {
       filename: filename || "resume",
       score: score,
       verdict: verdict,
-      date: new Date().toISOString()
+      resumeText: pendingResumeText || "",
+      detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
+      missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
+      suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
+      analysisResults: {
+        verdict: verdict,
+        score: score,
+        experience: lastAnalysisData ? lastAnalysisData.experience : null,
+        education: lastAnalysisData ? lastAnalysisData.education : null,
+        projects: lastAnalysisData ? lastAnalysisData.projects : null,
+        mode: analysisMode || "ats"
+      },
+      mode: analysisMode || "ats"
     };
-    all[email].unshift(entry);
-    if (all[email].length > 50) all[email] = all[email].slice(0, 50);
-    saveHistoryAll(all);
-    renderHistory();
+
+    if (normEmail){
+      const all = loadHistoryAll();
+      if (!all[normEmail]) all[normEmail] = [];
+      const entry = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        filename: filename || "resume",
+        score: score,
+        verdict: verdict,
+        date: new Date().toISOString()
+      };
+      const exists = all[normEmail].some(e => e.filename === entry.filename && e.score === entry.score && (Date.now() - new Date(e.date).getTime() < 10000));
+      if (!exists){
+        all[normEmail].unshift(entry);
+        if (all[normEmail].length > 50) all[normEmail] = all[normEmail].slice(0, 50);
+        saveHistoryAll(all);
+      }
+      renderHistory();
+    }
 
     const token = getAuthToken();
     if (token){
       try {
-        const payload = {
-          filename: filename || "resume",
-          score: score,
-          verdict: verdict,
-          resumeText: pendingResumeText || "",
-          detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
-          missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
-          suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
-          analysisResults: {
-            verdict: verdict,
-            score: score,
-            experience: lastAnalysisData ? lastAnalysisData.experience : null,
-            education: lastAnalysisData ? lastAnalysisData.education : null,
-            projects: lastAnalysisData ? lastAnalysisData.projects : null,
-            mode: analysisMode || "ats"
-          },
-          mode: analysisMode || "ats"
-        };
         await safeFetchJson("/api/history", {
           method: "POST",
           headers: {
@@ -2992,13 +3042,19 @@
         fetchHistoryFromBackend();
       } catch(err){
         console.warn("Could not save history to MongoDB backend:", err);
+        unsyncedPendingAnalyses.push({ payload });
       }
+    } else {
+      unsyncedPendingAnalyses.push({ payload });
     }
   }
 
   async function deleteHistoryEntry(email, id){
+    if (!email && currentUser) email = currentUser.email;
+    if (!email) return;
+    const normEmail = normalizeEmail(email);
     const all = loadHistoryAll();
-    if (all[email]) all[email] = all[email].filter(entry => entry.id !== id);
+    if (all[normEmail]) all[normEmail] = all[normEmail].filter(entry => entry.id !== id);
     saveHistoryAll(all);
     renderHistory();
 
@@ -3009,6 +3065,7 @@
           method: "DELETE",
           headers: { "Authorization": "Bearer " + token }
         });
+        fetchHistoryFromBackend();
       } catch(err){
         console.warn("Could not delete history from MongoDB backend:", err);
       }
@@ -3024,13 +3081,15 @@
 
   function renderHistory(){
     const listEl = document.getElementById("historyList");
+    if (!listEl) return;
     listEl.innerHTML = "";
     if (!currentUser){
-      listEl.innerHTML = '<div class="history-empty">Log in to see your resume history.</div>';
+      listEl.innerHTML = '<div class="history-empty">Log in to see your resume history across all devices.</div>';
       return;
     }
+    const normEmail = normalizeEmail(currentUser.email);
     const all = loadHistoryAll();
-    const entries = all[currentUser.email] || [];
+    const entries = all[normEmail] || [];
     if (!entries.length){
       listEl.innerHTML = '<div class="history-empty">No resumes analyzed yet — upload one to see it here.</div>';
       return;

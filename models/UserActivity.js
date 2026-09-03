@@ -6,6 +6,11 @@ const userActivitySchema = new mongoose.Schema({
     required: true,
     ref: "User"
   },
+  userEmail: {
+    type: String,
+    lowercase: true,
+    trim: true
+  },
   activityType: {
     type: String,
     required: true,

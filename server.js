@@ -71,11 +71,17 @@ async function connectDB() {
 connectDB();
 
 // Helper to log activities automatically into "User Activity" collection
-async function logUserActivity(userId, activityType, activityDescription) {
+async function logUserActivity(userId, activityType, activityDescription, userEmail = null) {
   try {
-    if (!userId) return;
+    if (!userId && !userEmail) return;
+    let emailToSave = userEmail ? userEmail.toLowerCase().trim() : null;
+    if (!emailToSave && userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const u = await User.findById(userId).select("email");
+      if (u && u.email) emailToSave = u.email.toLowerCase().trim();
+    }
     const activity = new UserActivity({
-      userId: userId.toString(),
+      userId: userId ? userId.toString() : "N/A",
+      userEmail: emailToSave,
       activityType,
       activityDescription: activityDescription || `${activityType} activity recorded`,
       timestamp: new Date()
@@ -664,7 +670,7 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       suggestions: Array.isArray(suggestions) ? suggestions : [],
       analysisDate: now,
       date: now,
-      userEmail: req.user.email,
+      userEmail: req.user.email ? req.user.email.toLowerCase().trim() : "",
       resumeText: resumeText || ""
     });
 
@@ -672,10 +678,10 @@ app.post("/api/history", authenticateToken, async (req, res) => {
 
     // Automatically record activity based on mode or analysis type
     if (mode === "ats") {
-      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`);
+      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`, req.user.email);
     } else {
-      await logUserActivity(userIdStr, "RESUME_ANALYSIS", `User completed resume breakdown analysis for: ${filename} (Score: ${score})`);
-      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`);
+      await logUserActivity(userIdStr, "RESUME_ANALYSIS", `User completed resume breakdown analysis for: ${filename} (Score: ${score})`, req.user.email);
+      await logUserActivity(userIdStr, "ATS_CHECK", `User ran ATS score check for: ${filename} (ATS Score: ${score})`, req.user.email);
     }
 
     return res.status(201).json({
@@ -700,25 +706,28 @@ app.post("/api/history", authenticateToken, async (req, res) => {
 app.get("/api/history", authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
     const historyList = await UserResumeAnalysis.find({
       $or: [
         { userId: userIdStr },
-        { userId: req.user._id },
-        { userEmail: req.user.email }
+        { userId: req.user._id.toString() },
+        { userEmail: userEmailNorm }
       ]
     })
-      .sort({ analysisDate: -1, date: -1 })
-      .limit(50);
+      .sort({ analysisDate: -1, date: -1, uploadDate: -1 })
+      .limit(100);
 
     const formattedList = historyList.map(entry => ({
       id: entry.analysisId || entry._id.toString(),
       filename: entry.resumeFilename || entry.filename,
       score: entry.atsScore !== undefined ? entry.atsScore : entry.score,
       verdict: entry.verdict || "Analyzed",
-      date: entry.analysisDate || entry.date,
-      detectedSkills: entry.detectedSkills,
-      missingKeywords: entry.missingKeywords
+      date: entry.analysisDate || entry.date || entry.uploadDate,
+      detectedSkills: entry.detectedSkills || [],
+      missingKeywords: entry.missingKeywords || [],
+      suggestions: entry.suggestions || [],
+      analysisResults: entry.analysisResults || {}
     }));
 
     return res.json({
@@ -731,20 +740,59 @@ app.get("/api/history", authenticateToken, async (req, res) => {
   }
 });
 
+// Get User's Activity Log
+app.get("/api/activity", authenticateToken, async (req, res) => {
+  try {
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
+
+    const activities = await UserActivity.find({
+      $or: [
+        { userId: userIdStr },
+        { userId: req.user._id.toString() },
+        { userEmail: userEmailNorm }
+      ]
+    })
+      .sort({ timestamp: -1 })
+      .limit(50);
+
+    return res.json({
+      success: true,
+      activities: activities.map(act => ({
+        id: act._id.toString(),
+        activityType: act.activityType,
+        activityDescription: act.activityDescription,
+        timestamp: act.timestamp
+      }))
+    });
+  } catch (err) {
+    console.error("Get activity error:", err);
+    return res.status(500).json({ success: false, message: "Failed to retrieve activity log from MongoDB." });
+  }
+});
+
 // Delete Resume History Entry
 app.delete("/api/history/:id", authenticateToken, async (req, res) => {
   try {
     const historyId = req.params.id;
     const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
     const deleted = await UserResumeAnalysis.findOneAndDelete({
-      $or: [
-        { analysisId: historyId },
-        { _id: mongoose.Types.ObjectId.isValid(historyId) ? historyId : null }
-      ],
-      $or: [
-        { userId: userIdStr },
-        { userEmail: req.user.email }
+      $and: [
+        {
+          $or: [
+            { analysisId: historyId },
+            { _id: mongoose.Types.ObjectId.isValid(historyId) ? historyId : null }
+          ]
+        },
+        {
+          $or: [
+            { userId: userIdStr },
+            { userId: req.user._id.toString() },
+            { userEmail: userEmailNorm }
+          ]
+        }
       ]
     });
 

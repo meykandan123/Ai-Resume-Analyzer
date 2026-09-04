@@ -3,6 +3,9 @@
   // Snapshot of the most recent analysis, used by the "Download PDF Report" button.
   let lastAnalysisData = null;
 
+  // Active authenticated user state
+  let currentUser = null;
+
   // ---- Analysis mode selection state ----
   // Holds the extracted resume text/filename between "upload" and the user
   // picking an analysis type, so the file doesn't need to be re-uploaded.

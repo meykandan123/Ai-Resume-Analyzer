@@ -2039,6 +2039,7 @@
   }
 
   function renderAvatarEverywhere(user){
+    if (!user) return;
     const account = accounts[user.email] || {};
     const photo = account.photo || null;
     const initialsText = initials(user.name);
@@ -2050,18 +2051,24 @@
     const pageInitials = document.getElementById("profilePageAvatarInitials");
     const pageImg = document.getElementById("profilePageAvatarImg");
 
-    avatarText.textContent = initialsText;
-    avatarLargeInitials.textContent = initialsText;
-    pageInitials.textContent = initialsText;
+    if (avatarText) avatarText.textContent = initialsText;
+    if (avatarLargeInitials) avatarLargeInitials.textContent = initialsText;
+    if (pageInitials) pageInitials.textContent = initialsText;
 
     if (photo){
-      avatarImg.src = photo; avatarImg.style.display = "block"; avatarText.style.display = "none";
-      avatarLargeImg.src = photo; avatarLargeImg.style.display = "block"; avatarLargeInitials.style.display = "none";
-      pageImg.src = photo; pageImg.style.display = "block"; pageInitials.style.display = "none";
+      if (avatarImg) { avatarImg.src = photo; avatarImg.style.display = "block"; }
+      if (avatarText) avatarText.style.display = "none";
+      if (avatarLargeImg) { avatarLargeImg.src = photo; avatarLargeImg.style.display = "block"; }
+      if (avatarLargeInitials) avatarLargeInitials.style.display = "none";
+      if (pageImg) { pageImg.src = photo; pageImg.style.display = "block"; }
+      if (pageInitials) pageInitials.style.display = "none";
     } else {
-      avatarImg.style.display = "none"; avatarText.style.display = "flex";
-      avatarLargeImg.style.display = "none"; avatarLargeInitials.style.display = "flex";
-      pageImg.style.display = "none"; pageInitials.style.display = "flex";
+      if (avatarImg) avatarImg.style.display = "none";
+      if (avatarText) avatarText.style.display = "flex";
+      if (avatarLargeImg) avatarLargeImg.style.display = "none";
+      if (avatarLargeInitials) avatarLargeInitials.style.display = "flex";
+      if (pageImg) pageImg.style.display = "none";
+      if (pageInitials) pageInitials.style.display = "flex";
     }
   }
 
@@ -2113,10 +2120,14 @@
     currentUser = null;
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
-    document.getElementById("profileWrap").classList.remove("active");
-    document.getElementById("profileDropdown").classList.remove("open");
-    document.getElementById("navLoginBtn").style.display = "";
-    document.getElementById("navSignupBtn").style.display = "";
+    const profileWrap = document.getElementById("profileWrap");
+    if (profileWrap) profileWrap.classList.remove("active");
+    const profileDropdown = document.getElementById("profileDropdown");
+    if (profileDropdown) profileDropdown.classList.remove("open");
+    const navLoginBtn = document.getElementById("navLoginBtn");
+    if (navLoginBtn) navLoginBtn.style.display = "";
+    const navSignupBtn = document.getElementById("navSignupBtn");
+    if (navSignupBtn) navSignupBtn.style.display = "";
     const userMenuDivider = document.getElementById("userMenuDivider");
     if (userMenuDivider) userMenuDivider.style.display = "none";
     document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
@@ -2138,17 +2149,16 @@
         const res = await fetch(fullUrl, options);
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
-          // If response is not JSON (e.g., HTML fallback page), do not waste time retrying
-          throw new Error(`HTTP ${res.status}: Non-JSON response received`);
+          // Server returned non-JSON (e.g. 404 HTML fallback or offline backend) - return clean fallback object
+          return { success: false, isNonJson: true, status: res.status, message: `Non-JSON response (${res.status})` };
         }
         const text = await res.text();
         if (!text || !text.trim()) {
-          throw new Error(`HTTP ${res.status}: Empty response body`);
+          return { success: false, isEmpty: true, status: res.status, message: `Empty response (${res.status})` };
         }
         return JSON.parse(text);
       } catch (err) {
-        if (err.message && err.message.includes("Non-JSON")) throw err;
-        if (attempt === retries) throw err;
+        if (attempt === retries) return { success: false, isError: true, message: err.message };
         await new Promise(r => setTimeout(r, 1000));
       }
     }
@@ -2208,7 +2218,8 @@
 
   function openProfilePage(){
     if (!currentUser) return;
-    document.getElementById("profileDropdown").classList.remove("open");
+    const pdd = document.getElementById("profileDropdown");
+    if (pdd) pdd.classList.remove("open");
     const account = accounts[currentUser.email] || {};
     document.getElementById("profilePageNameInput").value = currentUser.name;
     document.getElementById("profilePageEmail").textContent = currentUser.email;
@@ -2313,7 +2324,8 @@
     if (accounts[currentUser.email]) accounts[currentUser.email].name = newName;
     saveAccounts();
     currentUser.name = newName;
-    document.getElementById("userChipName").textContent = newName;
+    const chipNameEl = document.getElementById("userChipName");
+    if (chipNameEl) chipNameEl.textContent = newName;
     renderAvatarEverywhere(currentUser);
 
     profilePageToast.style.color = "#2e7d32";
@@ -2323,13 +2335,17 @@
   // ---- Round profile button dropdown (open/close on click, close on outside click) ----
   const profileBtn = document.getElementById("profileBtn");
   const profileDropdown = document.getElementById("profileDropdown");
-  profileBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    profileDropdown.classList.toggle("open");
-  });
+  if (profileBtn && profileDropdown) {
+    profileBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      profileDropdown.classList.toggle("open");
+    });
+  }
   document.addEventListener("click", (e) => {
-    if (!profileDropdown.contains(e.target) && e.target !== profileBtn){
-      profileDropdown.classList.remove("open");
+    const pdd = document.getElementById("profileDropdown");
+    const pbtn = document.getElementById("profileBtn");
+    if (pdd && !pdd.contains(e.target) && e.target !== pbtn){
+      pdd.classList.remove("open");
     }
   });
 
@@ -3244,10 +3260,14 @@
   function openHistory(){ renderHistory(); historyModal.classList.add("active"); }
   function closeHistory(){ historyModal.classList.remove("active"); }
 
-  document.getElementById("historyBtn").addEventListener("click", () => {
-    profileDropdown.classList.remove("open");
-    openHistory();
-  });
+  const historyBtn = document.getElementById("historyBtn");
+  if (historyBtn) {
+    historyBtn.addEventListener("click", () => {
+      const pdd = document.getElementById("profileDropdown");
+      if (pdd) pdd.classList.remove("open");
+      openHistory();
+    });
+  }
   document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
   historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
 
@@ -3367,7 +3387,8 @@ function closeDashboard() {}
   const dropdownDashboardBtn = document.getElementById("dropdownDashboardBtn");
   if (dropdownDashboardBtn) {
     dropdownDashboardBtn.addEventListener("click", () => {
-      profileDropdown.classList.remove("open");
+      const pdd = document.getElementById("profileDropdown");
+      if (pdd) pdd.classList.remove("open");
       openDashboard();
     });
   }
@@ -3384,7 +3405,8 @@ function closeDashboard() {}
   const profileSupportBtn = document.getElementById("profileSupportBtn");
   if (profileSupportBtn){
     profileSupportBtn.addEventListener("click", () => {
-      profileDropdown.classList.remove("open");
+      const pdd = document.getElementById("profileDropdown");
+      if (pdd) pdd.classList.remove("open");
       openSupport();
     });
   }

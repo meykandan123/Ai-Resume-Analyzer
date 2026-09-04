@@ -3274,14 +3274,29 @@
     entries.forEach(entry => {
       const row = document.createElement("div");
       row.className = "history-item";
-      const dateLabel = new Date(entry.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      
+      const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
+      const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
+      const analysisDateObj = new Date(entry.analysisDate || entry.date || Date.now());
+      
+      const uploadDateLabel = uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      const analysisDateLabel = analysisDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      
+      const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
+      const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "—";
+      const statusText = entry.verdict || entry.status || "Analyzed";
+
       row.innerHTML = `
-        <div class="history-item-score" style="background:${scoreColor(entry.score)}">${entry.score}</div>
+        <div class="history-item-score" style="background:${scoreColor(scoreVal || 0)}" title="ATS Score">${scoreDisplay}</div>
         <div class="history-item-info">
-          <div class="history-item-name">${entry.filename}</div>
-          <div class="history-item-meta">${dateLabel} — ${entry.verdict}</div>
+          <div class="history-item-name">${escapeHtml(fileNameStr)}</div>
+          <div class="history-item-meta">
+            <span>Uploaded: ${uploadDateLabel}</span> &bull; 
+            <span>Analyzed: ${analysisDateLabel}</span> &bull; 
+            <span class="history-status-tag" style="font-weight:600; color:var(--accent);">Status: ${escapeHtml(statusText)}</span>
+          </div>
         </div>
-        <button class="history-delete-btn" data-id="${entry.id}" type="button" aria-label="Delete this entry">🗑</button>
+        <button class="history-delete-btn" data-id="${entry.id || entry._id}" type="button" aria-label="Delete this entry">🗑</button>
       `;
       listEl.appendChild(row);
     });

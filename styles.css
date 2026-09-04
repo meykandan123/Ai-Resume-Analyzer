@@ -105,81 +105,6 @@
 
   .ats-verdict-sub {
     font-size: 13px;
-    color: #888;
-    max-width: 420px;
-    line-height: 1.5;
-  }
-
-  /* ============ DEDICATED SEPARATE REPORT PAGE OVERLAY ============ */
-  .report-page-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100vw; height: 100vh;
-    z-index: 2500;
-    background: var(--paper);
-    overflow-y: auto;
-  }
-  .report-page-overlay.active {
-    display: block;
-    animation: reportPageSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-  @keyframes reportPageSlide {
-    from { opacity: 0; transform: translateY(18px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .report-page-header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
-    padding: 12px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
-  }
-    background: rgba(20, 20, 28, 0.92);
-    border-bottom-color: var(--line);
-  }
-
-  .report-nav-left {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .report-back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    padding: 8px 16px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .report-back-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    transform: translateX(-2px);
-    box-shadow: 0 2px 8px var(--glow-color);
-  }
-
-  .report-file-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--mono);
     font-size: 12px;
     font-weight: 600;
     color: var(--ink);
@@ -456,6 +381,7 @@
     .nav-btn-dark, .nav-btn-light {
       padding: 7px 10px;
       font-size: 11.5px;
+    }
   }
 
   /* Logged-in profile pill button + dropdown, shown in navbar after login/signup */

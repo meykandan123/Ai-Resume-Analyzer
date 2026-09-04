@@ -2347,7 +2347,7 @@
     profilePageToast.textContent = "Profile saved successfully.";
   });
 
-  // ---- Round profile button dropdown (open/close on click, close on outside click) ----
+  // ---- Profile button dropdown (open/close on click, close on item click & outside click) ----
   const profileBtn = document.getElementById("profileBtn");
   const profileDropdown = document.getElementById("profileDropdown");
   if (profileBtn && profileDropdown) {
@@ -2355,11 +2355,16 @@
       e.stopPropagation();
       profileDropdown.classList.toggle("open");
     });
+    profileDropdown.querySelectorAll(".profile-dropdown-item").forEach(item => {
+      item.addEventListener("click", () => {
+        profileDropdown.classList.remove("open");
+      });
+    });
   }
   document.addEventListener("click", (e) => {
     const pdd = document.getElementById("profileDropdown");
     const pbtn = document.getElementById("profileBtn");
-    if (pdd && !pdd.contains(e.target) && e.target !== pbtn){
+    if (pdd && !pdd.contains(e.target) && (!pbtn || !pbtn.contains(e.target))){
       pdd.classList.remove("open");
     }
   });

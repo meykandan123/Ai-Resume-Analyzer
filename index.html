@@ -55,20 +55,19 @@
       </button>
 
       <div class="profile-dropdown" id="profileDropdown">
-        <div class="profile-dropdown-header">
-          <div class="profile-dropdown-avatar" id="dropdownAvatarWrap">
-            <span id="userAvatarLargeInitials">U</span>
-            <img id="userAvatarLargeImg" class="profile-dropdown-avatar-img" alt="" style="display:none;" />
-          </div>
-          <div class="profile-dropdown-user-info">
-            <div class="profile-dropdown-name" id="userDropdownName">User Name</div>
-            <div class="profile-dropdown-email" id="userChipEmail">user@example.com</div>
-          </div>
-        </div>
-        <button class="profile-dropdown-history" id="userProfileBtn" type="button">👤 Edit Profile</button>
-        <button class="profile-dropdown-history" id="historyBtn" type="button">📜 Resume History</button>
-        <button class="profile-dropdown-history" id="profileSupportBtn" type="button">💬 Support Session</button>
-        <button class="profile-dropdown-logout" id="userLogoutBtn" type="button">🚪 Log out</button>
+        <button class="profile-dropdown-item" id="userProfileBtn" type="button">
+          <span class="dropdown-icon">👤</span> Profile
+        </button>
+        <button class="profile-dropdown-item" id="historyBtn" type="button">
+          <span class="dropdown-icon">📜</span> Resume History
+        </button>
+        <button class="profile-dropdown-item" id="profileSupportBtn" type="button">
+          <span class="dropdown-icon">💬</span> Support
+        </button>
+        <div class="profile-dropdown-divider"></div>
+        <button class="profile-dropdown-item profile-dropdown-logout" id="userLogoutBtn" type="button">
+          <span class="dropdown-icon">🚪</span> Logout
+        </button>
       </div>
     </div>
   </div>

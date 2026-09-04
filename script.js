@@ -3708,6 +3708,12 @@ function closeDashboard() {}
     });
   }
 
+  const navSignInBtn = document.getElementById("navSignInBtn");
+  if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
+
+  const navLoginBtnRef = document.getElementById("navLoginBtn");
+  if (navLoginBtnRef) navLoginBtnRef.addEventListener("click", () => openAuth("login"));
+
   if (navActionBtn) {
     navActionBtn.addEventListener("click", () => {
       const fileInput = document.getElementById("fileInput");

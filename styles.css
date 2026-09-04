@@ -340,12 +340,8 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
   }
 
-  /* Light Gray Menu Pill Button */
-  .menu-wrap {
-    position: relative;
-  }
-
-  .nav-menu-btn {
+  /* Light Gray Pill Button (Sign In & Login) */
+  .nav-btn-light {
     background: #e5e5ea;
     color: #1c1c1e;
     border: 1px solid rgba(0, 0, 0, 0.04);
@@ -354,15 +350,16 @@
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
     transition: all 0.18s ease;
+    white-space: nowrap;
   }
 
-  .nav-menu-btn:hover {
+  .nav-btn-light:hover {
     background: #d1d1d6;
-    color: #000;
+    color: #000000;
   }
 
   .menu-dots-icon {
@@ -436,20 +433,29 @@
 
   @media (max-width: 600px) {
     .navbar {
-      width: calc(100% - 20px);
+      width: calc(100% - 16px);
       margin: 10px auto 20px auto;
-      padding: 8px 12px;
+      padding: 8px 10px;
     }
     .nav-brand-text {
-      font-size: 16px;
+      font-size: 15px;
     }
-    .nav-btn-dark {
-      padding: 8px 14px;
-      font-size: 12.5px;
-    }
-    .nav-menu-btn {
+    .nav-btn-dark, .nav-btn-light {
       padding: 8px 12px;
-      font-size: 12.5px;
+      font-size: 12px;
+    }
+    .nav-right {
+      gap: 6px;
+    }
+  }
+
+  @media (max-width: 440px) {
+    .nav-brand-text {
+      display: none;
+    }
+    .nav-btn-dark, .nav-btn-light {
+      padding: 7px 10px;
+      font-size: 11.5px;
     }
   }
 

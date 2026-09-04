@@ -2149,6 +2149,8 @@
     currentUser = null;
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
+    userActivitiesList = [];
+
     const profileWrap = document.getElementById("profileWrap");
     if (profileWrap) {
       profileWrap.style.display = "none";
@@ -2156,6 +2158,7 @@
     }
     const profileDropdown = document.getElementById("profileDropdown");
     if (profileDropdown) profileDropdown.classList.remove("open");
+
     const navLoginBtn = document.getElementById("navLoginBtn");
     if (navLoginBtn) navLoginBtn.style.display = "";
     const navSignupBtn = document.getElementById("navSignupBtn");
@@ -2164,10 +2167,16 @@
     if (navSignInBtn) navSignInBtn.style.display = "";
     const userMenuDivider = document.getElementById("userMenuDivider");
     if (userMenuDivider) userMenuDivider.style.display = "none";
+
     document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
     const navMenuDropdown = document.getElementById("navMenuDropdown");
     if (navMenuDropdown) navMenuDropdown.classList.remove("open");
-    closeProfilePage();
+
+    if (typeof closeProfilePage === "function") closeProfilePage();
+    if (typeof closeHistory === "function") closeHistory();
+    if (typeof closeSupport === "function") closeSupport();
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
@@ -3327,7 +3336,7 @@
   });
 
   const historyModal = document.getElementById("historyModal");
-  function openHistory(){ renderHistory(); historyModal.classList.add("active"); }
+  function openHistory(){ if (!currentUser) return; renderHistory(); historyModal.classList.add("active"); }
   function closeHistory(){ historyModal.classList.remove("active"); }
 
   const historyBtn = document.getElementById("historyBtn");

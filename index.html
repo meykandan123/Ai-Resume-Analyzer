@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AI Resume Analyzer</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>" />
+<link rel="icon" href="logo.png" />
 <link rel="stylesheet" href="styles.css" />
 
 <!-- PDF text extraction -->
@@ -26,34 +26,9 @@
 <!-- Full Width Left-to-Right Navigation Bar -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="#" class="nav-brand" aria-label="Airesume">
+    <a href="#" class="nav-brand" id="navBrandLogo" aria-label="Airesume">
       <div class="nav-brand-icon-wrap">
-        <svg width="40" height="34" viewBox="0 0 40 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="arGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#EA8872"/>
-              <stop offset="100%" stop-color="#D96349"/>
-            </linearGradient>
-          </defs>
-          <!-- "A" & "R" Monogram Emblem -->
-          <path d="M5 30L13.5 4H18.5L12 30H5Z" fill="url(#arGrad)"/>
-          <path d="M13.5 4H26.5C31.5 4 35 7.5 35 12C35 16.5 31.5 20 26.5 20H19" stroke="url(#arGrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M22 19.5L29 30H22.5L17 20" stroke="url(#arGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-
-          <!-- Resume Document Card in Center -->
-          <rect x="14" y="9.5" width="13" height="16" rx="2" fill="#FFF4F1" stroke="#E0775C" stroke-width="1.3"/>
-          <!-- Document Header Avatar -->
-          <circle cx="17.5" cy="13.5" r="1.5" fill="#D96349"/>
-          <path d="M15.5 18C15.5 16.6 16.3 15.8 17.5 15.8C18.7 15.8 19.5 16.6 19.5 18" fill="#D96349"/>
-          <!-- Document lines -->
-          <line x1="20.5" y1="13" x2="24.5" y2="13" stroke="#D96349" stroke-width="1.2" stroke-linecap="round"/>
-          <line x1="20.5" y1="15.5" x2="24.5" y2="15.5" stroke="#D96349" stroke-width="1.2" stroke-linecap="round"/>
-          <line x1="16" y1="20" x2="22" y2="20" stroke="#D96349" stroke-width="1.2" stroke-linecap="round"/>
-
-          <!-- Circular Badge with Checkmark -->
-          <circle cx="26" cy="24" r="5" fill="#E27559"/>
-          <path d="M24 24L25.3 25.4L28 22.4" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <img src="logo.png" alt="AI Resume Official Logo" class="nav-brand-logo-img" />
       </div>
       <span class="nav-brand-text">Airesume</span>
     </a>

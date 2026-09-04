@@ -219,6 +219,13 @@
     flex-shrink: 0;
     transition: transform 0.2s ease;
   }
+  .nav-brand-logo-img {
+    height: 38px;
+    width: auto;
+    max-width: 58px;
+    object-fit: contain;
+    display: block;
+  }
   .nav-brand:hover .nav-brand-icon-wrap {
     transform: scale(1.05);
   }

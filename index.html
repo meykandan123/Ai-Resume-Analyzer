@@ -43,10 +43,33 @@
     <button class="nav-btn-light" id="navLoginBtn" type="button">Login</button>
 
     <div class="profile-wrap" id="profileWrap" style="display:none;">
-      <button class="profile-btn" id="profileBtn" type="button" aria-label="Open profile menu">
-        <span id="userAvatar">?</span>
-        <img id="userAvatarImg" class="profile-btn-img" alt="" style="display:none;" />
+      <button class="profile-btn" id="profileBtn" type="button" aria-label="User profile menu">
+        <span class="profile-btn-avatar-circle" id="userAvatarWrap">
+          <span id="userAvatar">U</span>
+          <img id="userAvatarImg" class="profile-btn-img" alt="" style="display:none;" />
+        </span>
+        <span id="userChipName" class="profile-chip-name">User</span>
+        <svg class="profile-caret" width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 10l5 5 5-5z"/>
+        </svg>
       </button>
+
+      <div class="profile-dropdown" id="profileDropdown">
+        <div class="profile-dropdown-header">
+          <div class="profile-dropdown-avatar" id="dropdownAvatarWrap">
+            <span id="userAvatarLargeInitials">U</span>
+            <img id="userAvatarLargeImg" class="profile-dropdown-avatar-img" alt="" style="display:none;" />
+          </div>
+          <div class="profile-dropdown-user-info">
+            <div class="profile-dropdown-name" id="userDropdownName">User Name</div>
+            <div class="profile-dropdown-email" id="userChipEmail">user@example.com</div>
+          </div>
+        </div>
+        <button class="profile-dropdown-history" id="userProfileBtn" type="button">👤 Edit Profile</button>
+        <button class="profile-dropdown-history" id="historyBtn" type="button">📜 Resume History</button>
+        <button class="profile-dropdown-history" id="profileSupportBtn" type="button">💬 Support Session</button>
+        <button class="profile-dropdown-logout" id="userLogoutBtn" type="button">🚪 Log out</button>
+      </div>
     </div>
   </div>
 </nav>

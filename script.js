@@ -2089,12 +2089,17 @@
     try { localStorage.setItem("ara_session_v1", JSON.stringify(user)); } catch (e){}
     const wrap = document.getElementById("profileWrap");
     const nameEl = document.getElementById("userChipName");
+    const dropdownNameEl = document.getElementById("userDropdownName");
     const emailEl = document.getElementById("userChipEmail");
-    if (nameEl) nameEl.textContent = user.name;
-    if (emailEl) emailEl.textContent = user.email;
+
+    const displayName = user.name || norm.split("@")[0];
+    if (nameEl) nameEl.textContent = displayName;
+    if (dropdownNameEl) dropdownNameEl.textContent = displayName;
+    if (emailEl) emailEl.textContent = norm;
+
     renderAvatarEverywhere(user);
     if (wrap) {
-      wrap.style.display = "flex";
+      wrap.style.display = "inline-flex";
       wrap.classList.add("active");
     }
     const navLoginBtn = document.getElementById("navLoginBtn");

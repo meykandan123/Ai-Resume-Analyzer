@@ -1577,24 +1577,42 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  document.getElementById("chooseAtsBtn").addEventListener("click", () => selectAnalysisMode("ats"));
-  document.getElementById("chooseNormalBtn").addEventListener("click", () => selectAnalysisMode("normal"));
+  const chooseAtsBtn = document.getElementById("chooseAtsBtn");
+  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
 
-  document.getElementById("backToOptionsBtn").addEventListener("click", () => {
-    showAnalysisOptions();
-  });
+  const chooseNormalBtn = document.getElementById("chooseNormalBtn");
+  if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => selectAnalysisMode("normal"));
 
-  document.getElementById("resetBtn").addEventListener("click", resetAnalysis);
+  const backToOptionsBtn = document.getElementById("backToOptionsBtn");
+  if (backToOptionsBtn) {
+    backToOptionsBtn.addEventListener("click", () => {
+      showAnalysisOptions();
+    });
+  }
 
-  document.getElementById("navHomeLink").addEventListener("click", (e) => {
-    e.preventDefault();
-    resetAnalysis();
-  });
+  const resetBtn = document.getElementById("resetBtn");
+  if (resetBtn) resetBtn.addEventListener("click", resetAnalysis);
+
+  const navHomeLink = document.getElementById("navHomeLink");
+  if (navHomeLink) {
+    navHomeLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetAnalysis();
+    });
+  }
+
+  const navBrandLogo = document.getElementById("navBrandLogo");
+  if (navBrandLogo) {
+    navBrandLogo.addEventListener("click", (e) => {
+      e.preventDefault();
+      resetAnalysis();
+    });
+  }
 
   // ---- PDF report export (client-side, via jsPDF — no server involved) ----
   const pdfExportBtn = document.getElementById("pdfExportBtn");
-
-  pdfExportBtn.addEventListener("click", () => {
+  if (pdfExportBtn) {
+    pdfExportBtn.addEventListener("click", () => {
     if (!lastAnalysisData){
       setStatus("Analyze a resume first, then download the report.", true);
       return;
@@ -1611,6 +1629,7 @@
       setStatus("Couldn't generate the PDF report: " + err.message, true);
     }
   });
+}
 
   function generatePdfReport(data){
     const { jsPDF } = window.jspdf;

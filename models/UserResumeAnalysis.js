@@ -89,8 +89,8 @@ const userResumeAnalysisSchema = new mongoose.Schema({
     default: ""
   }
 }, {
-  collection: "resume_analysis",
+  collection: "resume_history",
   timestamps: true
 });
 
-module.exports = mongoose.model("UserResumeAnalysis", userResumeAnalysisSchema, "resume_analysis");
+module.exports = mongoose.model("UserResumeAnalysis", userResumeAnalysisSchema, "resume_history");

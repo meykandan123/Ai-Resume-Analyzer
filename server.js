@@ -67,13 +67,34 @@ async function connectDB() {
     });
     console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
 
-
-    // Automatically ensure collections exist in MongoDB database
+    // Automatically ensure collections exist in MongoDB database: users, resume_history, user_activity
     try {
       await User.createCollection();
       await UserResumeAnalysis.createCollection();
       await UserActivity.createCollection();
-      console.log("Collections verified/created in Ai-Resume-Analyzer: users, resume_analysis, user_activity");
+
+      // Legacy Collection Migration: Copy documents from resume_analysis to resume_history if any exist
+      try {
+        const db = mongoose.connection.db;
+        const collections = await db.listCollections({ name: "resume_analysis" }).toArray();
+        if (collections.length > 0) {
+          const oldDocs = await db.collection("resume_analysis").find().toArray();
+          if (oldDocs.length > 0) {
+            console.log(`Migrating ${oldDocs.length} legacy entries from resume_analysis to resume_history...`);
+            for (const doc of oldDocs) {
+              await db.collection("resume_history").updateOne(
+                { _id: doc._id },
+                { $setOnInsert: doc },
+                { upsert: true }
+              );
+            }
+          }
+        }
+      } catch (migErr) {
+        console.log("Collection migration notice:", migErr.message);
+      }
+
+      console.log("Collections verified/created in Ai-Resume-Analyzer: users, resume_history, user_activity");
     } catch (collErr) {
       console.log("Collection initialization notice:", collErr.message);
     }
@@ -313,6 +334,7 @@ app.post("/api/auth/signup", async (req, res) => {
       message: "Account created! A verification link has been sent to your email inbox.",
       email: newUser.email,
       name: newUser.name,
+      verifyToken: newUser.verifyToken,
       user: {
         _id: newUser._id,
         userId: newUser.userId,

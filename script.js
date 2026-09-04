@@ -666,9 +666,6 @@
 
     // ---- Resume Content Overview: a clean, human-readable summary of ----
     // ---- everything we were able to detect in the uploaded resume.   ----
-    function escapeHtml(str) {
-      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
 
     const coPersonalEl = document.getElementById("coPersonal");
     const personalRows = [
@@ -1895,8 +1892,10 @@
   function saveAccounts(){
     try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
   }
-  const accounts = loadAccounts();
-  let currentUser = null; // { name, email, provider }
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
 
   function normalizeEmail(email){ return email.trim().toLowerCase(); }
 

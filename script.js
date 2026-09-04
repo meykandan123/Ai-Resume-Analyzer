@@ -2093,12 +2093,17 @@
     if (nameEl) nameEl.textContent = user.name;
     if (emailEl) emailEl.textContent = user.email;
     renderAvatarEverywhere(user);
-    if (wrap) wrap.classList.add("active");
+    if (wrap) {
+      wrap.style.display = "flex";
+      wrap.classList.add("active");
+    }
     const navLoginBtn = document.getElementById("navLoginBtn");
     const navSignupBtn = document.getElementById("navSignupBtn");
+    const navSignInBtn = document.getElementById("navSignInBtn");
     const userMenuDivider = document.getElementById("userMenuDivider");
     if (navLoginBtn) navLoginBtn.style.display = "none";
     if (navSignupBtn) navSignupBtn.style.display = "none";
+    if (navSignInBtn) navSignInBtn.style.display = "none";
     if (userMenuDivider) userMenuDivider.style.display = "block";
     document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "flex");
 
@@ -2121,13 +2126,18 @@
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
     const profileWrap = document.getElementById("profileWrap");
-    if (profileWrap) profileWrap.classList.remove("active");
+    if (profileWrap) {
+      profileWrap.style.display = "none";
+      profileWrap.classList.remove("active");
+    }
     const profileDropdown = document.getElementById("profileDropdown");
     if (profileDropdown) profileDropdown.classList.remove("open");
     const navLoginBtn = document.getElementById("navLoginBtn");
     if (navLoginBtn) navLoginBtn.style.display = "";
     const navSignupBtn = document.getElementById("navSignupBtn");
     if (navSignupBtn) navSignupBtn.style.display = "";
+    const navSignInBtn = document.getElementById("navSignInBtn");
+    if (navSignInBtn) navSignInBtn.style.display = "";
     const userMenuDivider = document.getElementById("userMenuDivider");
     if (userMenuDivider) userMenuDivider.style.display = "none";
     document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");

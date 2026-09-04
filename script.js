@@ -2908,20 +2908,77 @@
     try {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
-        scope: "openid email profile",
+        scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
         callback: async (tokenResponse) => {
-          if (!tokenResponse || !tokenResponse.access_token){
+          if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
             showToast(toastEl, "Google sign-in was cancelled.", true);
             return;
           }
+
+          let profile = null;
+          const accessToken = tokenResponse.access_token;
+          const idToken = tokenResponse.id_token;
+
+          // Tier 1: Client-side userinfo v3
+          if (accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) {
+              console.warn("Client userinfo v3 fetch error:", e);
+            }
+          }
+
+          // Tier 2: Client-side userinfo v2 fallback
+          if ((!profile || !profile.email) && accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) {}
+          }
+
+          // Tier 3: Client-side tokeninfo fallback
+          if ((!profile || !profile.email) && accessToken) {
+            try {
+              const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`);
+              if (res.ok) profile = await res.json();
+            } catch (e) {}
+          }
+
+          // Tier 4: Backend server-side fetch & sync fallback (bypasses adblockers/CORS)
           try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: "Bearer " + tokenResponse.access_token }
+            const apiData = await safeFetchJson("/api/auth/google", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                name: profile ? profile.name : "", 
+                email: profile ? profile.email : "",
+                access_token: accessToken,
+                id_token: idToken
+              })
             });
-            if (!res.ok) throw new Error("userinfo request failed");
-            const profile = await res.json();
+
+            if (apiData && apiData.success && apiData.user) {
+              if (apiData.token) setAuthToken(apiData.token);
+              if (!profile || !profile.email) {
+                profile = {
+                  email: apiData.user.email,
+                  name: apiData.user.name
+                };
+              }
+            }
+          } catch(err){
+            console.warn("Backend google sync error:", err);
+          }
+
+          // Process profile if retrieved
+          if (profile && profile.email) {
             const email = normalizeEmail(profile.email);
-            const name = profile.name || email;
+            const name = profile.name || email.split("@")[0];
             const isNewAccount = !accounts[email];
             if (isNewAccount){
               accounts[email] = { name, password: null, provider: "google", verified: true };
@@ -2932,24 +2989,11 @@
             }
             saveAccounts();
 
-            try {
-              const apiData = await safeFetchJson("/api/auth/google", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: accounts[email].name, email })
-              });
-              if (apiData.success && apiData.token){
-                setAuthToken(apiData.token);
-              }
-            } catch(err){
-              // Backend sync is optional; user remains signed in via client-side state
-            }
-
             showToast(toastEl, `Signed in as ${email}.`, false);
             setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
             closeAuth();
-          } catch (err){
-            showToast(toastEl, "Could not retrieve Google user profile. Please try again.", true);
+          } else {
+            showToast(toastEl, "Could not retrieve Google profile. Please try logging in with your Email & Password.", true);
           }
         }
       });

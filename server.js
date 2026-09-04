@@ -643,10 +643,38 @@ app.post("/api/auth/reset-password", async (req, res) => {
   }
 });
 
-// Google Auth Sync
+// Google Auth Sync & Server-side Token Verification Fallback
 app.post("/api/auth/google", async (req, res) => {
   try {
-    const { name, email } = req.body;
+    let { name, email, access_token, id_token } = req.body;
+
+    // Server-to-server fallback if email is not passed directly but access_token or id_token is provided
+    if (!email && access_token) {
+      try {
+        const googleRes = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${encodeURIComponent(access_token)}`);
+        if (googleRes.ok) {
+          const gProfile = await googleRes.json();
+          email = gProfile.email;
+          name = name || gProfile.name;
+        }
+      } catch (e) {
+        console.warn("Backend Google userinfo fetch error:", e);
+      }
+    }
+
+    if (!email && (access_token || id_token)) {
+      try {
+        const tokenInfoUrl = id_token 
+          ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`
+          : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(access_token)}`;
+        const gRes = await fetch(tokenInfoUrl);
+        if (gRes.ok) {
+          const gInfo = await gRes.json();
+          email = gInfo.email;
+          name = name || gInfo.name || (email ? email.split("@")[0] : "");
+        }
+      } catch (e) {}
+    }
 
     if (!email) {
       return res.status(400).json({ success: false, message: "Email is required." });

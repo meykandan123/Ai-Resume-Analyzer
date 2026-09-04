@@ -2236,10 +2236,26 @@
     const pdd = document.getElementById("profileDropdown");
     if (pdd) pdd.classList.remove("open");
     const account = accounts[currentUser.email] || {};
-    document.getElementById("profilePageNameInput").value = currentUser.name;
-    document.getElementById("profilePageEmail").textContent = currentUser.email;
+
+    const nameInput = document.getElementById("profilePageNameInput");
+    const emailEl = document.getElementById("profilePageEmail");
+    const providerEl = document.getElementById("profilePageProvider");
+    const verifiedEl = document.getElementById("profilePageVerified");
+
+    if (nameInput) nameInput.value = currentUser.name || "";
+    if (emailEl) emailEl.textContent = currentUser.email || "—";
+
+    const provider = currentUser.provider || account.provider || "email";
+    if (providerEl) providerEl.textContent = provider === "google" ? "Google Account (OAuth)" : "Email & Password";
+
+    const isVerified = account.verified !== false;
+    if (verifiedEl) {
+      verifiedEl.textContent = isVerified ? "Verified Account ✓" : "Verification Pending";
+      verifiedEl.style.color = isVerified ? "#2e7d32" : "#d32f2f";
+    }
+
     renderAvatarEverywhere(currentUser);
-    profilePageToast.textContent = "";
+    if (profilePageToast) profilePageToast.textContent = "";
     profilePageOverlay.classList.add("active");
     document.body.style.overflow = "hidden";
   }

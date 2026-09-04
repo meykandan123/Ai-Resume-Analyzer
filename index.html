@@ -555,7 +555,7 @@
     <button class="profile-page-back" id="profilePageBackBtn" type="button">&larr; Back</button>
 
     <h1 class="profile-page-title">My Profile</h1>
-    <p class="profile-page-subtitle">Manage your photo and display name.</p>
+    <p class="profile-page-subtitle">Manage your profile photo, display name, and account details.</p>
 
     <div class="profile-page-avatar-wrap">
       <div class="profile-page-avatar" id="profilePageAvatar">
@@ -567,16 +567,26 @@
     </div>
 
     <div class="profile-page-field">
-      <label for="profilePageNameInput">Name</label>
-      <input type="text" id="profilePageNameInput" autocomplete="off" />
+      <label for="profilePageNameInput">Display Name</label>
+      <input type="text" id="profilePageNameInput" autocomplete="off" placeholder="Your Name" />
     </div>
 
     <div class="profile-page-field">
-      <label>Email</label>
+      <label>Email Address</label>
       <div class="profile-page-static" id="profilePageEmail">—</div>
     </div>
 
-    <button class="profile-page-save" id="profilePageSaveBtn" type="button">Save changes</button>
+    <div class="profile-page-field">
+      <label>Authentication Method</label>
+      <div class="profile-page-static" id="profilePageProvider">Email & Password</div>
+    </div>
+
+    <div class="profile-page-field">
+      <label>Account Status</label>
+      <div class="profile-page-static" id="profilePageVerified" style="color: #2e7d32; font-weight: 600;">Verified ✓</div>
+    </div>
+
+    <button class="profile-page-save" id="profilePageSaveBtn" type="button">Save Changes</button>
     <div class="profile-page-toast" id="profilePageToast"></div>
   </div>
 </div>

@@ -2089,14 +2089,14 @@
     if (wrap) wrap.classList.add("active");
     const navLoginBtn = document.getElementById("navLoginBtn");
     const navSignupBtn = document.getElementById("navSignupBtn");
-    const navDashBtn = document.getElementById("navDashboardBtn");
+    const userMenuDivider = document.getElementById("userMenuDivider");
     if (navLoginBtn) navLoginBtn.style.display = "none";
     if (navSignupBtn) navSignupBtn.style.display = "none";
-    if (navDashBtn) navDashBtn.style.display = "inline-flex";
+    if (userMenuDivider) userMenuDivider.style.display = "block";
+    document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "flex");
 
     fetchHistoryFromBackend();
     fetchActivityFromBackend();
-    fetchDashboardDataFromBackend();
     syncUnsyncedAnalysesToBackend();
   }
 
@@ -2117,10 +2117,12 @@
     document.getElementById("profileDropdown").classList.remove("open");
     document.getElementById("navLoginBtn").style.display = "";
     document.getElementById("navSignupBtn").style.display = "";
-    const navDashBtn = document.getElementById("navDashboardBtn");
-    if (navDashBtn) navDashBtn.style.display = "none";
+    const userMenuDivider = document.getElementById("userMenuDivider");
+    if (userMenuDivider) userMenuDivider.style.display = "none";
+    document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
+    const navMenuDropdown = document.getElementById("navMenuDropdown");
+    if (navMenuDropdown) navMenuDropdown.classList.remove("open");
     closeProfilePage();
-    closeDashboard();
   }
 
   // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
@@ -3206,24 +3208,8 @@
   historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
 
   // ---- User Dashboard System ----
-  async function fetchDashboardDataFromBackend() {
-    const token = getAuthToken();
-    if (!token || !currentUser) return null;
-    try {
-      const data = await safeFetchJson("/api/user/dashboard", {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      if (data && data.success) {
-        renderDashboardData(data);
-        return data;
-      }
-    } catch (err) {
-      console.warn("Could not fetch dashboard data from backend:", err);
-    }
-    return null;
-  }
-
-  function renderDashboardData(data) {
+  async function fetchDashboardDataFromBackend() { return null; }
+function renderDashboardData(data) {
     if (!data) return;
     const u = data.user || {};
     const s = data.stats || {};
@@ -3328,19 +3314,8 @@
   }
 
   const dashboardModal = document.getElementById("dashboardModal");
-  function openDashboard(){
-    if (!currentUser) {
-      openAuth("login");
-      return;
-    }
-    if (dashboardModal) {
-      dashboardModal.classList.add("open");
-      fetchDashboardDataFromBackend();
-    }
-  }
-  function closeDashboard(){
-    if (dashboardModal) dashboardModal.classList.remove("open");
-  }
+  function openDashboard() {}
+function closeDashboard() {}
 
   const navDashboardBtn = document.getElementById("navDashboardBtn");
   if (navDashboardBtn) navDashboardBtn.addEventListener("click", openDashboard);
@@ -3639,3 +3614,39 @@
   };
   checkForVerifyLink();
   checkForResetLink();
+
+
+  // ---- New Floating Pill Nav Bar Menu & Action Controls ----
+  const menuBtn = document.getElementById("menuBtn");
+  const navMenuDropdown = document.getElementById("navMenuDropdown");
+  const menuWrap = document.getElementById("menuWrap");
+  const navActionBtn = document.getElementById("navActionBtn");
+
+  if (menuBtn && navMenuDropdown) {
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navMenuDropdown.classList.toggle("open");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (menuWrap && !menuWrap.contains(e.target)) {
+        navMenuDropdown.classList.remove("open");
+      }
+    });
+
+    const menuItems = navMenuDropdown.querySelectorAll(".menu-item");
+    menuItems.forEach(item => {
+      item.addEventListener("click", () => {
+        navMenuDropdown.classList.remove("open");
+      });
+    });
+  }
+
+  if (navActionBtn) {
+    navActionBtn.addEventListener("click", () => {
+      const fileInput = document.getElementById("fileInput");
+      if (fileInput) fileInput.click();
+      const dropzone = document.getElementById("dropzone");
+      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+    });
+  }

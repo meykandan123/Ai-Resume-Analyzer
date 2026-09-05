@@ -230,9 +230,9 @@
   }
 
   .nav-brand-logo-img {
-    height: 22px;
+    height: 16px;
     width: auto;
-    max-width: 34px;
+    max-width: 26px;
     object-fit: contain;
     display: block;
   }

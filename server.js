@@ -862,8 +862,8 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: "fileName/filename is required." });
     }
 
-    // STRICT IDENTITY: Always save the authenticated user's MongoDB userId!
-    const authUserId = req.user.userId || req.user._id.toString();
+    // STRICT IDENTITY: Always save the authenticated user's MongoDB _id!
+    const authUserId = req.user._id ? req.user._id.toString() : (req.user.userId || req.user.id);
 
     // File reference storage: if base64 fileData provided, write to uploads/
     let savedFilePath = incomingFilePath || incomingFileUrl || "";
@@ -965,21 +965,22 @@ app.post("/api/history", authenticateToken, async (req, res) => {
 // Get User's Resume History
 app.get("/api/history", authenticateToken, async (req, res) => {
   try {
-    const userIdStr = req.user._id ? req.user._id.toString() : "";
-    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    // 1. Get logged-in user's ID from verified JWT token
+    const mongoUserId = req.user._id ? req.user._id.toString() : "";
+    const customUserId = req.user.userId ? req.user.userId.toString() : "";
 
-    const orConditions = [];
-    if (userIdStr) orConditions.push({ userId: userIdStr });
-    if (req.user.userId && req.user.userId !== userIdStr) orConditions.push({ userId: req.user.userId });
-    if (userEmailNorm) orConditions.push({ userEmail: userEmailNorm });
+    // 2. Query resume_history collection strictly for matching user IDs
+    const userIdsToMatch = Array.from(new Set([mongoUserId, customUserId].filter(Boolean)));
+    const queryFilter = userIdsToMatch.length > 1
+      ? { userId: { $in: userIdsToMatch } }
+      : { userId: mongoUserId };
 
-    const queryFilter = orConditions.length > 0 ? { $or: orConditions } : { userId: userIdStr };
-
+    // 3. Fetch matching records sorted by newest analysis date first
     let historyList = await ResumeHistory.find(queryFilter)
-      .sort({ analysisDate: -1, date: -1, uploadDate: -1, createdAt: -1 })
+      .sort({ analysisDate: -1, uploadDate: -1, createdAt: -1 })
       .limit(100);
 
-    // Seamless fallback to ResumeAnalysis if ResumeHistory collection has no records for this user
+    // Fallback: If no records found in resume_history, check ResumeAnalysis for this user
     if (!historyList || historyList.length === 0) {
       const fallbackList = await ResumeAnalysis.find(queryFilter)
         .sort({ timestamp: -1, createdAt: -1 })
@@ -1004,6 +1005,7 @@ app.get("/api/history", authenticateToken, async (req, res) => {
       }
     }
 
+    // 4. Return formatted records for current user only
     const formattedList = historyList.map(entry => ({
       id: entry.analysisId || (entry._id ? entry._id.toString() : entry.analysisId),
       _id: entry._id ? entry._id.toString() : entry.analysisId,

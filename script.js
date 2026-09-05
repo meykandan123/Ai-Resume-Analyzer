@@ -2099,11 +2099,11 @@
     if (!user || !user.email) return;
     const norm = normalizeEmail(user.email);
     user.email = norm;
-    if (user.userId || user.id || user._id) {
-      const primaryId = user.userId || user.id || user._id;
-      user.userId = primaryId;
-      user.id = primaryId;
+    if (user._id || user.id || user.userId) {
+      const primaryId = (user._id || user.id || user.userId).toString();
       user._id = primaryId;
+      user.id = primaryId;
+      user.userId = primaryId;
     }
     currentUser = user;
     if (!accounts[norm]){
@@ -2169,6 +2169,8 @@
     currentUser = null;
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
+    try { localStorage.removeItem("ara_history_cache_v1"); } catch (e){}
+    userHistoryList = [];
     userActivitiesList = [];
     unsyncedPendingAnalyses = [];
     renderHistory();
@@ -2232,6 +2234,11 @@
 
   // Restore a logged-in session on page load from MongoDB / localStorage
   async function restoreSession(){
+    try {
+      const cachedHistory = localStorage.getItem("ara_history_cache_v1");
+      if (cachedHistory) userHistoryList = JSON.parse(cachedHistory);
+    } catch(e){}
+
     const token = getAuthToken();
     if (token){
       try {
@@ -2240,15 +2247,15 @@
         });
         if (data.success && data.user){
           setLoggedInUser({
-            userId: data.user.userId || data.user._id || data.user.id,
-            id: data.user.userId || data.user._id || data.user.id,
-            _id: data.user._id || data.user.id,
+            _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+            id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+            userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
             name: data.user.name,
             email: data.user.email,
             provider: data.user.provider,
             photo: data.user.photo
           });
-          fetchHistoryFromBackend();
+          await fetchHistoryFromBackend();
           return;
         }
       } catch(err){
@@ -2274,7 +2281,16 @@
       account.verified = true;
       saveAccounts();
     }
-    setLoggedInUser({ name: account.name || saved.name, email: norm, provider: account.provider || saved.provider || "google" });
+    setLoggedInUser({
+      _id: saved._id || saved.id || saved.userId || "",
+      id: saved._id || saved.id || saved.userId || "",
+      userId: saved.userId || saved._id || saved.id || "",
+      name: account.name || saved.name,
+      email: norm,
+      provider: account.provider || saved.provider || "google",
+      photo: saved.photo || ""
+    });
+    fetchHistoryFromBackend();
   }
 
   document.getElementById("userLogoutBtn").addEventListener("click", logoutUser);
@@ -3150,6 +3166,7 @@
     const token = getAuthToken();
     if (!token){
       userHistoryList = [];
+      try { localStorage.removeItem("ara_history_cache_v1"); } catch(e){}
       renderHistory();
       return;
     }
@@ -3159,6 +3176,7 @@
       });
       if (data && data.success && Array.isArray(data.history)){
         userHistoryList = data.history;
+        try { localStorage.setItem("ara_history_cache_v1", JSON.stringify(data.history)); } catch(e){}
       }
     } catch(err){
       console.warn("Could not fetch history from MongoDB backend:", err);
@@ -3304,7 +3322,7 @@
     }
     const entries = userHistoryList || [];
     if (!entries.length){
-      listEl.innerHTML = '<div class="history-empty">No resumes analyzed yet — upload one to see it here.</div>';
+      listEl.innerHTML = '<div class="history-empty">No resume analysis history found.</div>';
       return;
     }
     entries.forEach(entry => {

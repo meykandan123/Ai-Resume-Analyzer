@@ -859,8 +859,8 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: "fileName/filename is required." });
     }
 
-    // STRICT IDENTITY: Always save the authenticated user's MongoDB _id!
-    const authUserId = req.user._id.toString();
+    // STRICT IDENTITY: Always save the authenticated user's MongoDB userId!
+    const authUserId = req.user.userId || req.user._id.toString();
 
     // File reference storage: if base64 fileData provided, write to uploads/
     let savedFilePath = incomingFilePath || incomingFileUrl || "";

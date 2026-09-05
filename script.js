@@ -2170,6 +2170,8 @@
     clearAuthToken();
     try { localStorage.removeItem("ara_session_v1"); } catch (e){}
     userActivitiesList = [];
+    unsyncedPendingAnalyses = [];
+    renderHistory();
 
     const profileWrap = document.getElementById("profileWrap");
     if (profileWrap) {

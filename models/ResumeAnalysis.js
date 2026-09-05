@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const resumeHistorySchema = new mongoose.Schema({
+const resumeAnalysisSchema = new mongoose.Schema({
   analysisId: {
     type: String,
     required: true,
@@ -25,10 +25,6 @@ const resumeHistorySchema = new mongoose.Schema({
     type: String,
     default: ""
   },
-  fileUrl: {
-    type: String,
-    default: ""
-  },
   analysisType: {
     type: String,
     default: "Resume Analysis"
@@ -37,15 +33,31 @@ const resumeHistorySchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  analysisResult: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  detectedSkills: {
+    type: [String],
+    default: []
+  },
+  missingKeywords: {
+    type: [String],
+    default: []
+  },
   verdict: {
     type: String,
     default: "Analyzed"
   },
-  uploadDate: {
-    type: Date,
-    default: Date.now
+  suggestions: {
+    type: [String],
+    default: []
   },
-  analysisDate: {
+  resumeText: {
+    type: String,
+    default: ""
+  },
+  timestamp: {
     type: Date,
     default: Date.now
   },
@@ -55,8 +67,8 @@ const resumeHistorySchema = new mongoose.Schema({
     trim: true
   }
 }, {
-  collection: "resume_history",
+  collection: "resume_analysis",
   timestamps: true
 });
 
-module.exports = mongoose.model("ResumeHistory", resumeHistorySchema, "resume_history");
+module.exports = mongoose.model("ResumeAnalysis", resumeAnalysisSchema, "resume_analysis");

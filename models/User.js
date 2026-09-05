@@ -4,7 +4,8 @@ const userSchema = new mongoose.Schema({
   userId: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    index: true
   },
   name: {
     type: String,
@@ -16,7 +17,8 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    index: true
   },
   password: {
     type: String
@@ -24,14 +26,18 @@ const userSchema = new mongoose.Schema({
   passwordHash: {
     type: String
   },
-  provider: {
-    type: String,
-    enum: ["email", "google"],
-    default: "email"
+  emailVerified: {
+    type: Boolean,
+    default: false
   },
   verified: {
     type: Boolean,
     default: false
+  },
+  provider: {
+    type: String,
+    enum: ["email", "google"],
+    default: "email"
   },
   verifyToken: {
     type: String,
@@ -53,14 +59,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ""
   },
-  registrationDate: {
-    type: Date,
-    default: Date.now
-  },
-  lastLoginDate: {
-    type: Date,
-    default: Date.now
-  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -68,18 +66,6 @@ const userSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
-  },
-  lastLogin: {
-    type: Date,
-    default: Date.now
-  },
-  lastLoginAt: {
-    type: Date,
-    default: Date.now
-  },
-  loginCount: {
-    type: Number,
-    default: 0
   }
 }, {
   collection: "users",
@@ -87,4 +73,3 @@ const userSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model("User", userSchema, "users");
-

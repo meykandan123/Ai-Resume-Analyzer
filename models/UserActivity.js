@@ -4,7 +4,30 @@ const userActivitySchema = new mongoose.Schema({
   userId: {
     type: String,
     required: true,
+    index: true,
     ref: "User"
+  },
+  activityType: {
+    type: String,
+    required: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  action: {
+    type: String
+  },
+  activityDescription: {
+    type: String
   },
   userEmail: {
     type: String,
@@ -15,27 +38,6 @@ const userActivitySchema = new mongoose.Schema({
     type: String,
     lowercase: true,
     trim: true
-  },
-  action: {
-    type: String
-  },
-  activityType: {
-    type: String,
-    required: true
-  },
-  description: {
-    type: String
-  },
-  activityDescription: {
-    type: String
-  },
-  metadata: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now
   }
 }, {
   collection: "user_activity",

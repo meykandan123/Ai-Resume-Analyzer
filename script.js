@@ -3121,26 +3121,15 @@
     });
   });
 
-  // ---- Resume history (stored in MongoDB & synchronized with localStorage) ----
-  const HISTORY_KEY = "ara_history_v1";
+  // ---- Resume History & User Activity (Source of truth: MongoDB Backend) ----
   const AUTH_TOKEN_KEY = "ara_jwt_token_v1";
   let unsyncedPendingAnalyses = [];
   let userActivitiesList = [];
+  let userHistoryList = [];
 
   function getAuthToken(){ try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch(e){ return null; } }
   function setAuthToken(token){ try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch(e){} }
   function clearAuthToken(){ try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch(e){} }
-
-  function loadHistoryAll(){
-    try {
-      const raw = localStorage.getItem(HISTORY_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch (e){ return {}; }
-  }
-
-  function saveHistoryAll(all){
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(all)); } catch (e){}
-  }
 
   async function fetchActivityFromBackend(){
     const token = getAuthToken();
@@ -3160,15 +3149,12 @@
   async function fetchHistoryFromBackend(){
     const token = getAuthToken();
     if (!token || !currentUser) return;
-    const normEmail = normalizeEmail(currentUser.email);
     try {
       const data = await safeFetchJson("/api/history", {
         headers: { "Authorization": "Bearer " + token }
       });
       if (data.success && Array.isArray(data.history)){
-        const all = loadHistoryAll();
-        all[normEmail] = data.history;
-        saveHistoryAll(all);
+        userHistoryList = data.history;
         renderHistory();
       }
     } catch(err){
@@ -3193,12 +3179,11 @@
         });
       } catch(e){}
     }
-    fetchHistoryFromBackend();
+    await fetchHistoryFromBackend();
   }
 
   async function saveHistoryEntry(email, filename, score, verdict){
     if (!email && currentUser) email = currentUser.email;
-    const normEmail = email ? normalizeEmail(email) : (currentUser ? normalizeEmail(currentUser.email) : null);
     
     const finalFilename = filename || pendingResumeFilename || "resume.pdf";
     const ext = finalFilename.split(".").pop().toLowerCase();
@@ -3238,25 +3223,6 @@
       mode: analysisMode || "ats"
     };
 
-    if (normEmail){
-      const all = loadHistoryAll();
-      if (!all[normEmail]) all[normEmail] = [];
-      const entry = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-        filename: filename || "resume",
-        score: score,
-        verdict: verdict,
-        date: new Date().toISOString()
-      };
-      const exists = all[normEmail].some(e => e.filename === entry.filename && e.score === entry.score && (Date.now() - new Date(e.date).getTime() < 10000));
-      if (!exists){
-        all[normEmail].unshift(entry);
-        if (all[normEmail].length > 50) all[normEmail] = all[normEmail].slice(0, 50);
-        saveHistoryAll(all);
-      }
-      renderHistory();
-    }
-
     const token = getAuthToken();
     if (token){
       try {
@@ -3268,7 +3234,7 @@
           },
           body: JSON.stringify(payload)
         });
-        fetchHistoryFromBackend();
+        await fetchHistoryFromBackend();
       } catch(err){
         console.warn("Could not save history to MongoDB backend:", err);
         unsyncedPendingAnalyses.push({ payload });
@@ -3279,14 +3245,6 @@
   }
 
   async function deleteHistoryEntry(email, id){
-    if (!email && currentUser) email = currentUser.email;
-    if (!email) return;
-    const normEmail = normalizeEmail(email);
-    const all = loadHistoryAll();
-    if (all[normEmail]) all[normEmail] = all[normEmail].filter(entry => entry.id !== id);
-    saveHistoryAll(all);
-    renderHistory();
-
     const token = getAuthToken();
     if (token && id){
       try {
@@ -3294,7 +3252,7 @@
           method: "DELETE",
           headers: { "Authorization": "Bearer " + token }
         });
-        fetchHistoryFromBackend();
+        await fetchHistoryFromBackend();
       } catch(err){
         console.warn("Could not delete history from MongoDB backend:", err);
       }
@@ -3316,9 +3274,7 @@
       listEl.innerHTML = '<div class="history-empty">Log in to see your resume history across all devices.</div>';
       return;
     }
-    const normEmail = normalizeEmail(currentUser.email);
-    const all = loadHistoryAll();
-    const entries = all[normEmail] || [];
+    const entries = userHistoryList || [];
     if (!entries.length){
       listEl.innerHTML = '<div class="history-empty">No resumes analyzed yet — upload one to see it here.</div>';
       return;
@@ -3360,7 +3316,11 @@
   });
 
   const historyModal = document.getElementById("historyModal");
-  function openHistory(){ if (!currentUser) return; renderHistory(); historyModal.classList.add("active"); }
+  async function openHistory(){
+    if (!currentUser) return;
+    historyModal.classList.add("active");
+    await fetchHistoryFromBackend();
+  }
   function closeHistory(){ historyModal.classList.remove("active"); }
 
   const historyBtn = document.getElementById("historyBtn");

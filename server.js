@@ -965,15 +965,18 @@ app.post("/api/history", authenticateToken, async (req, res) => {
 // Get User's Resume History
 app.get("/api/history", authenticateToken, async (req, res) => {
   try {
-    // 1. Get logged-in user's ID from verified JWT token
+    // 1. Get logged-in user's ID & email from verified JWT token
     const mongoUserId = req.user._id ? req.user._id.toString() : "";
     const customUserId = req.user.userId ? req.user.userId.toString() : "";
+    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
-    // 2. Query resume_history collection strictly for matching user IDs
-    const userIdsToMatch = Array.from(new Set([mongoUserId, customUserId].filter(Boolean)));
-    const queryFilter = userIdsToMatch.length > 1
-      ? { userId: { $in: userIdsToMatch } }
-      : { userId: mongoUserId };
+    // 2. Query resume_history collection strictly for matching user IDs or user email
+    const orConditions = [];
+    if (mongoUserId) orConditions.push({ userId: mongoUserId });
+    if (customUserId && customUserId !== mongoUserId) orConditions.push({ userId: customUserId });
+    if (userEmailNorm) orConditions.push({ userEmail: userEmailNorm });
+
+    const queryFilter = orConditions.length > 0 ? { $or: orConditions } : { userId: mongoUserId };
 
     // 3. Fetch matching records sorted by newest analysis date first
     let historyList = await ResumeHistory.find(queryFilter)

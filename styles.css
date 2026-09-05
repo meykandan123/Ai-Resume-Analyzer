@@ -179,16 +179,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(255, 255, 255, 0.78);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(182, 187, 255, 0.45);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(182, 187, 255, 0.55);
     border-radius: 999px;
-    padding: 8px 14px 8px 20px;
-    max-width: 1140px;
+    padding: 13px 22px 13px 26px;
+    max-width: 1180px;
     width: calc(100% - 32px);
     margin: 16px auto 28px auto;
-    box-shadow: 0 8px 30px rgba(160, 162, 255, 0.16), 0 2px 10px rgba(28, 32, 56, 0.04);
+    box-shadow: 0 10px 32px rgba(160, 162, 255, 0.18), 0 3px 12px rgba(28, 32, 56, 0.05);
     position: sticky;
     top: 14px;
     z-index: 1000;
@@ -196,22 +196,22 @@
   }
 
   .navbar:hover {
-    box-shadow: 0 12px 36px rgba(160, 162, 255, 0.22), 0 4px 14px rgba(28, 32, 56, 0.06);
-    border-color: rgba(160, 162, 255, 0.65);
+    box-shadow: 0 14px 40px rgba(160, 162, 255, 0.24), 0 4px 16px rgba(28, 32, 56, 0.07);
+    border-color: rgba(160, 162, 255, 0.75);
   }
 
   .nav-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
   }
 
   .nav-brand {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     font-weight: 800;
-    font-size: 22px;
+    font-size: 24px;
     color: var(--ink);
     text-decoration: none;
     letter-spacing: -0.5px;
@@ -230,9 +230,9 @@
   }
 
   .nav-brand-logo-img {
-    height: 22px;
+    height: 28px;
     width: auto;
-    max-width: 34px;
+    max-width: 40px;
     object-fit: contain;
     display: block;
   }
@@ -244,7 +244,7 @@
   .nav-brand-text {
     display: inline-block;
     font-weight: 800;
-    font-size: 22px;
+    font-size: 24px;
     background: linear-gradient(135deg, var(--ink) 25%, #4f46e5 100%);
     background-clip: text;
     -webkit-background-clip: text;
@@ -255,7 +255,7 @@
   .nav-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
   }
 
   /* Navigation Bar Home Button (Visible when logged in) */
@@ -263,13 +263,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 7px;
     background: linear-gradient(135deg, rgba(255, 243, 224, 0.95), rgba(255, 224, 178, 0.95));
     color: #d97706;
     border: 1px solid rgba(217, 119, 6, 0.25);
     border-radius: 999px;
-    padding: 8.5px 18px;
-    font-size: 13.5px;
+    padding: 10px 20px;
+    font-size: 14px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -290,8 +290,8 @@
     color: #ffffff;
     border: none;
     border-radius: 999px;
-    padding: 9.5px 22px;
-    font-size: 13.5px;
+    padding: 11px 24px;
+    font-size: 14px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -310,8 +310,8 @@
     color: var(--ink);
     border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 9px 18px;
-    font-size: 13.5px;
+    padding: 10px 20px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
@@ -2112,14 +2112,14 @@
   .support-fab:hover{ background:#d0694e; transform: translateY(-2px); }
 
   .support-modal .auth-modal{ max-width: 420px; }
-  .history-modal-box{ max-width: 460px; }
+  .history-modal-box{ max-width: 520px; }
   .history-list{
     display: flex;
     flex-direction: column;
     gap: 10px;
-    max-height: 360px;
+    max-height: 420px;
     overflow-y: auto;
-    margin-top: 6px;
+    margin-top: 8px;
   }
   .history-empty{
     text-align: center;

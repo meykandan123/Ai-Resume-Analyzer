@@ -3148,23 +3148,28 @@
 
   async function fetchHistoryFromBackend(){
     const token = getAuthToken();
-    if (!token || !currentUser) return;
+    if (!token){
+      userHistoryList = [];
+      renderHistory();
+      return;
+    }
     try {
       const data = await safeFetchJson("/api/history", {
         headers: { "Authorization": "Bearer " + token }
       });
-      if (data.success && Array.isArray(data.history)){
+      if (data && data.success && Array.isArray(data.history)){
         userHistoryList = data.history;
-        renderHistory();
       }
     } catch(err){
       console.warn("Could not fetch history from MongoDB backend:", err);
+    } finally {
+      renderHistory();
     }
   }
 
   async function syncUnsyncedAnalysesToBackend(){
     const token = getAuthToken();
-    if (!token || !currentUser || !unsyncedPendingAnalyses.length) return;
+    if (!token || !unsyncedPendingAnalyses.length) return;
     const toSync = [...unsyncedPendingAnalyses];
     unsyncedPendingAnalyses = [];
     for (const item of toSync){
@@ -3223,6 +3228,23 @@
       mode: analysisMode || "ats"
     };
 
+    // Add entry to local state immediately for instant feedback
+    const localEntry = {
+      id: "temp_" + Date.now(),
+      fileName: finalFilename,
+      filename: finalFilename,
+      fileType: fileType,
+      analysisType: analysisType,
+      atsScore: score,
+      score: score,
+      verdict: verdict,
+      uploadDate: new Date(),
+      analysisDate: new Date(),
+      date: new Date()
+    };
+    userHistoryList.unshift(localEntry);
+    renderHistory();
+
     const token = getAuthToken();
     if (token){
       try {
@@ -3245,8 +3267,13 @@
   }
 
   async function deleteHistoryEntry(email, id){
+    if (!id) return;
+    // Optimistic delete locally
+    userHistoryList = userHistoryList.filter(e => (e.id !== id && e._id !== id && e.analysisId !== id));
+    renderHistory();
+
     const token = getAuthToken();
-    if (token && id){
+    if (token){
       try {
         await safeFetchJson("/api/history/" + id, {
           method: "DELETE",
@@ -3270,7 +3297,8 @@
     const listEl = document.getElementById("historyList");
     if (!listEl) return;
     listEl.innerHTML = "";
-    if (!currentUser){
+    const token = getAuthToken();
+    if (!currentUser && !token){
       listEl.innerHTML = '<div class="history-empty">Log in to see your resume history across all devices.</div>';
       return;
     }
@@ -3285,26 +3313,25 @@
       
       const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
       const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
-      const analysisDateObj = new Date(entry.analysisDate || entry.date || Date.now());
-      
-      const uploadDateLabel = uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-      const analysisDateLabel = analysisDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
       
       const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
       const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "—";
       const statusText = entry.verdict || entry.status || "Analyzed";
+      const typeText = entry.analysisType || "Resume Analysis";
+      const idVal = entry.id || entry._id || entry.analysisId;
 
       row.innerHTML = `
         <div class="history-item-score" style="background:${scoreColor(scoreVal || 0)}" title="ATS Score">${scoreDisplay}</div>
         <div class="history-item-info">
           <div class="history-item-name">${escapeHtml(fileNameStr)}</div>
           <div class="history-item-meta">
-            <span>Uploaded: ${uploadDateLabel}</span> &bull; 
-            <span>Analyzed: ${analysisDateLabel}</span> &bull; 
-            <span class="history-status-tag" style="font-weight:600; color:var(--accent);">Status: ${escapeHtml(statusText)}</span>
+            <span class="history-type-tag" style="background:var(--subtle); padding:2px 6px; border-radius:4px; font-weight:600; font-size:11px;">${escapeHtml(typeText)}</span> &bull; 
+            <span>${dateLabel}</span> &bull; 
+            <span class="history-status-tag" style="font-weight:600; color:var(--accent);">${escapeHtml(statusText)}</span>
           </div>
         </div>
-        <button class="history-delete-btn" data-id="${entry.id || entry._id}" type="button" aria-label="Delete this entry">🗑</button>
+        <button class="history-delete-btn" data-id="${idVal}" type="button" aria-label="Delete this entry" title="Delete entry">🗑</button>
       `;
       listEl.appendChild(row);
     });
@@ -3312,16 +3339,23 @@
 
   document.getElementById("historyList").addEventListener("click", (e) => {
     const btn = e.target.closest(".history-delete-btn");
-    if (btn && currentUser) deleteHistoryEntry(currentUser.email, btn.dataset.id);
+    if (btn) {
+      const id = btn.dataset.id;
+      deleteHistoryEntry(currentUser ? currentUser.email : null, id);
+    }
   });
 
   const historyModal = document.getElementById("historyModal");
   async function openHistory(){
-    if (!currentUser) return;
+    if (!historyModal) return;
     historyModal.classList.add("active");
-    await fetchHistoryFromBackend();
+    renderHistory();
+    const token = getAuthToken();
+    if (currentUser || token) {
+      await fetchHistoryFromBackend();
+    }
   }
-  function closeHistory(){ historyModal.classList.remove("active"); }
+  function closeHistory(){ if (historyModal) historyModal.classList.remove("active"); }
 
   const historyBtn = document.getElementById("historyBtn");
   if (historyBtn) {
@@ -3332,7 +3366,9 @@
     });
   }
   document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
-  historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
+  if (historyModal) {
+    historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
+  }
 
   // ---- User Dashboard System ----
   async function fetchDashboardDataFromBackend() { return null; }

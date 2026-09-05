@@ -965,35 +965,63 @@ app.post("/api/history", authenticateToken, async (req, res) => {
 // Get User's Resume History
 app.get("/api/history", authenticateToken, async (req, res) => {
   try {
-    const userIdStr = req.user._id.toString();
+    const userIdStr = req.user._id ? req.user._id.toString() : "";
     const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
-    const historyList = await ResumeHistory.find({
-      $or: [
-        { userId: userIdStr },
-        { userId: req.user.userId },
-        { userEmail: userEmailNorm }
-      ]
-    })
-      .sort({ analysisDate: -1, date: -1, uploadDate: -1 })
+    const orConditions = [];
+    if (userIdStr) orConditions.push({ userId: userIdStr });
+    if (req.user.userId && req.user.userId !== userIdStr) orConditions.push({ userId: req.user.userId });
+    if (userEmailNorm) orConditions.push({ userEmail: userEmailNorm });
+
+    const queryFilter = orConditions.length > 0 ? { $or: orConditions } : { userId: userIdStr };
+
+    let historyList = await ResumeHistory.find(queryFilter)
+      .sort({ analysisDate: -1, date: -1, uploadDate: -1, createdAt: -1 })
       .limit(100);
 
+    // Seamless fallback to ResumeAnalysis if ResumeHistory collection has no records for this user
+    if (!historyList || historyList.length === 0) {
+      const fallbackList = await ResumeAnalysis.find(queryFilter)
+        .sort({ timestamp: -1, createdAt: -1 })
+        .limit(100);
+      
+      if (fallbackList && fallbackList.length > 0) {
+        historyList = fallbackList.map(item => ({
+          _id: item._id,
+          analysisId: item.analysisId,
+          userId: item.userId,
+          fileName: item.fileName,
+          fileType: item.fileType,
+          filePath: item.filePath,
+          fileUrl: item.filePath,
+          analysisType: item.analysisType,
+          atsScore: item.atsScore,
+          verdict: item.verdict,
+          uploadDate: item.timestamp,
+          analysisDate: item.timestamp,
+          userEmail: item.userEmail
+        }));
+      }
+    }
+
     const formattedList = historyList.map(entry => ({
-      id: entry.analysisId || entry._id.toString(),
+      id: entry.analysisId || (entry._id ? entry._id.toString() : entry.analysisId),
+      _id: entry._id ? entry._id.toString() : entry.analysisId,
+      analysisId: entry.analysisId,
       userId: entry.userId,
-      fileName: entry.fileName || entry.resumeFilename || entry.filename,
-      filename: entry.fileName || entry.resumeFilename || entry.filename,
+      fileName: entry.fileName || entry.resumeFilename || entry.filename || "resume.pdf",
+      filename: entry.fileName || entry.resumeFilename || entry.filename || "resume.pdf",
       fileType: entry.fileType || "pdf",
       filePath: entry.filePath || entry.fileUrl || "",
       fileUrl: entry.fileUrl || entry.filePath || "",
       analysisType: entry.analysisType || "Resume Analysis",
-      atsScore: entry.atsScore !== undefined ? entry.atsScore : entry.score,
-      score: entry.atsScore !== undefined ? entry.atsScore : entry.score,
+      atsScore: entry.atsScore !== undefined ? entry.atsScore : (entry.score !== undefined ? entry.score : 0),
+      score: entry.atsScore !== undefined ? entry.atsScore : (entry.score !== undefined ? entry.score : 0),
       verdict: entry.verdict || "Analyzed",
       status: entry.verdict || "Analyzed",
-      uploadDate: entry.uploadDate || entry.createdAt,
-      analysisDate: entry.analysisDate || entry.createdAt,
-      date: entry.analysisDate || entry.uploadDate
+      uploadDate: entry.uploadDate || entry.createdAt || entry.analysisDate || new Date(),
+      analysisDate: entry.analysisDate || entry.createdAt || entry.uploadDate || new Date(),
+      date: entry.analysisDate || entry.uploadDate || new Date()
     }));
 
     return res.json({

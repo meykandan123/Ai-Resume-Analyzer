@@ -2126,7 +2126,13 @@
       wrap.classList.add("active");
     }
     const navLoginBtn = document.getElementById("navLoginBtn");
+    if (navLoginBtn) navLoginBtn.style.display = "none";
     const navSignupBtn = document.getElementById("navSignupBtn");
+    if (navSignupBtn) navSignupBtn.style.display = "none";
+    const navSignInBtn = document.getElementById("navSignInBtn");
+    if (navSignInBtn) navSignInBtn.style.display = "none";
+    document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "none");
+
     const navHomeBtn = document.getElementById("navHomeBtn");
     if (navHomeBtn) navHomeBtn.style.display = "inline-flex";
     document.querySelectorAll(".logged-in-only").forEach(el => {
@@ -2177,6 +2183,7 @@
     if (userMenuDivider) userMenuDivider.style.display = "none";
 
     document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
+    document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "");
     const navMenuDropdown = document.getElementById("navMenuDropdown");
     if (navMenuDropdown) navMenuDropdown.classList.remove("open");
 

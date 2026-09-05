@@ -115,7 +115,7 @@ async function logUserActivity(userOrId, activityType, description, metadata = {
     if (userOrId instanceof mongoose.Types.ObjectId || typeof userOrId === "string") {
       targetUserId = userOrId.toString();
     } else if (userOrId && userOrId._id) {
-      targetUserId = userOrId._id.toString();
+      targetUserId = userOrId.userId || userOrId._id.toString();
       if (!emailToSave && userOrId.email) {
         emailToSave = userOrId.email.toLowerCase().trim();
       }
@@ -123,9 +123,12 @@ async function logUserActivity(userOrId, activityType, description, metadata = {
 
     if (!targetUserId) return null;
 
-    if (!emailToSave && mongoose.Types.ObjectId.isValid(targetUserId)) {
-      const u = await User.findById(targetUserId).select("email");
-      if (u && u.email) emailToSave = u.email.toLowerCase().trim();
+    if (mongoose.Types.ObjectId.isValid(targetUserId)) {
+      const u = await User.findById(targetUserId).select("email userId");
+      if (u) {
+        if (u.userId) targetUserId = u.userId;
+        if (!emailToSave && u.email) emailToSave = u.email.toLowerCase().trim();
+      }
     }
 
     if (!targetUserId) return null;
@@ -1006,14 +1009,16 @@ app.get("/api/history", authenticateToken, async (req, res) => {
 // Get User's Activity Log
 app.get("/api/activity", authenticateToken, async (req, res) => {
   try {
-    const userIdStr = req.user._id.toString();
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const mongoIdStr = req.user._id.toString();
     const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
     const activities = await UserActivity.find({
       $or: [
         { userId: userIdStr },
-        { userId: req.user.userId },
-        { userEmail: userEmailNorm }
+        { userId: mongoIdStr },
+        { userEmail: userEmailNorm },
+        { email: userEmailNorm }
       ]
     })
       .sort({ timestamp: -1 })

@@ -2099,6 +2099,12 @@
     if (!user || !user.email) return;
     const norm = normalizeEmail(user.email);
     user.email = norm;
+    if (user.userId || user.id || user._id) {
+      const primaryId = user.userId || user.id || user._id;
+      user.userId = primaryId;
+      user.id = primaryId;
+      user._id = primaryId;
+    }
     currentUser = user;
     if (!accounts[norm]){
       accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true };
@@ -2232,7 +2238,8 @@
         });
         if (data.success && data.user){
           setLoggedInUser({
-            id: data.user._id || data.user.id || data.user.userId,
+            userId: data.user.userId || data.user._id || data.user.id,
+            id: data.user.userId || data.user._id || data.user.id,
             _id: data.user._id || data.user.id,
             name: data.user.name,
             email: data.user.email,

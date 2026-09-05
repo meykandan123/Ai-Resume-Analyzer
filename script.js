@@ -2127,13 +2127,17 @@
     }
     const navLoginBtn = document.getElementById("navLoginBtn");
     const navSignupBtn = document.getElementById("navSignupBtn");
-    const navSignInBtn = document.getElementById("navSignInBtn");
-    const userMenuDivider = document.getElementById("userMenuDivider");
-    if (navLoginBtn) navLoginBtn.style.display = "none";
-    if (navSignupBtn) navSignupBtn.style.display = "none";
-    if (navSignInBtn) navSignInBtn.style.display = "none";
-    if (userMenuDivider) userMenuDivider.style.display = "block";
-    document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "flex");
+    const navHomeBtn = document.getElementById("navHomeBtn");
+    if (navHomeBtn) navHomeBtn.style.display = "inline-flex";
+    document.querySelectorAll(".logged-in-only").forEach(el => {
+      if (el.classList.contains("nav-home-btn")) {
+        el.style.display = "inline-flex";
+      } else if (el.classList.contains("profile-wrap")) {
+        el.style.display = "inline-flex";
+      } else {
+        el.style.display = "flex";
+      }
+    });
 
     fetchHistoryFromBackend();
     fetchActivityFromBackend();
@@ -3794,8 +3798,30 @@ function closeDashboard() {}
   const navSignInBtn = document.getElementById("navSignInBtn");
   if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
 
-  const navLoginBtnRef = document.getElementById("navLoginBtn");
-  if (navLoginBtnRef) navLoginBtnRef.addEventListener("click", () => openAuth("login"));
+  function goHome() {
+    if (typeof closeProfilePage === "function") closeProfilePage();
+    if (typeof closeHistory === "function") closeHistory();
+    if (typeof closeAuth === "function") closeAuth();
+    const profileDropdown = document.getElementById("profileDropdown");
+    if (profileDropdown) profileDropdown.classList.remove("open");
+    const navMenuDropdown = document.getElementById("navMenuDropdown");
+    if (navMenuDropdown) navMenuDropdown.classList.remove("open");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const navHomeBtnRef = document.getElementById("navHomeBtn");
+  if (navHomeBtnRef) navHomeBtnRef.addEventListener("click", goHome);
+
+  const userHomeDropdownBtn = document.getElementById("userHomeDropdownBtn");
+  if (userHomeDropdownBtn) userHomeDropdownBtn.addEventListener("click", goHome);
+
+  const navBrandLogoRef = document.getElementById("navBrandLogo");
+  if (navBrandLogoRef) {
+    navBrandLogoRef.addEventListener("click", (e) => {
+      e.preventDefault();
+      goHome();
+    });
+  }
 
   if (navActionBtn) {
     navActionBtn.addEventListener("click", () => {

@@ -223,23 +223,22 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    background: linear-gradient(135deg, rgba(160, 162, 255, 0.25), rgba(109, 198, 252, 0.3));
-    border-radius: 12px;
-    padding: 4px;
-    border: 1px solid rgba(160, 162, 255, 0.3);
+    background: transparent;
+    padding: 0;
+    border: none;
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .nav-brand-logo-img {
-    height: 36px;
+    height: 28px;
     width: auto;
-    max-width: 54px;
+    max-width: 44px;
     object-fit: contain;
     display: block;
   }
 
   .nav-brand:hover .nav-brand-icon-wrap {
-    transform: scale(1.06) rotate(-2deg);
+    transform: scale(1.05);
   }
 
   .nav-brand-text {

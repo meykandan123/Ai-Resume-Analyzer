@@ -1889,9 +1889,11 @@
   function loadAccounts(){
     try {
       const raw = localStorage.getItem("ara_accounts_v1");
-      return raw ? JSON.parse(raw) : {};
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
     } catch (e){ return {}; }
   }
+  let accounts = loadAccounts();
   function saveAccounts(){
     try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
   }

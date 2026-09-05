@@ -174,24 +174,30 @@
   }
 
   /* Modern Floating Pill Navbar */
+  /* Modern Floating Pill Glass Navbar (Matches Background Page UI) */
   .navbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(246, 246, 248, 0.94);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: 16px;
-    padding: 8px 12px 8px 18px;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(182, 187, 255, 0.45);
+    border-radius: 999px;
+    padding: 8px 14px 8px 20px;
     max-width: 1140px;
     width: calc(100% - 32px);
-    margin: 16px auto 32px auto;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    margin: 16px auto 28px auto;
+    box-shadow: 0 8px 30px rgba(160, 162, 255, 0.16), 0 2px 10px rgba(28, 32, 56, 0.04);
     position: sticky;
     top: 14px;
     z-index: 1000;
-    transition: all 0.2s ease;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .navbar:hover {
+    box-shadow: 0 12px 36px rgba(160, 162, 255, 0.22), 0 4px 14px rgba(28, 32, 56, 0.06);
+    border-color: rgba(160, 162, 255, 0.65);
   }
 
   .nav-left {
@@ -206,7 +212,7 @@
     gap: 10px;
     font-weight: 800;
     font-size: 22px;
-    color: #1c2038;
+    color: var(--ink);
     text-decoration: none;
     letter-spacing: -0.5px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -217,31 +223,39 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: transform 0.2s ease;
+    background: linear-gradient(135deg, rgba(160, 162, 255, 0.25), rgba(109, 198, 252, 0.3));
+    border-radius: 12px;
+    padding: 4px;
+    border: 1px solid rgba(160, 162, 255, 0.3);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
+
   .nav-brand-logo-img {
-    height: 38px;
+    height: 36px;
     width: auto;
-    max-width: 58px;
+    max-width: 54px;
     object-fit: contain;
     display: block;
   }
+
   .nav-brand:hover .nav-brand-icon-wrap {
-    transform: scale(1.05);
+    transform: scale(1.06) rotate(-2deg);
   }
 
   .nav-brand-text {
     display: inline-block;
     font-weight: 800;
     font-size: 22px;
-    color: #1c2038;
+    background: linear-gradient(135deg, var(--ink) 25%, #4f46e5 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
     letter-spacing: -0.5px;
   }
 
   .nav-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   /* Navigation Bar Home Button (Visible when logged in) */
@@ -250,65 +264,71 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: linear-gradient(135deg, #fff3e0, #ffe0b2);
-    color: #e65100;
-    border: 1px solid rgba(230, 81, 0, 0.2);
-    border-radius: 12px;
-    padding: 9px 18px;
+    background: linear-gradient(135deg, rgba(255, 243, 224, 0.95), rgba(255, 224, 178, 0.95));
+    color: #d97706;
+    border: 1px solid rgba(217, 119, 6, 0.25);
+    border-radius: 999px;
+    padding: 8.5px 18px;
     font-size: 13.5px;
     font-weight: 700;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(230, 81, 0, 0.08);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.1);
   }
 
   .nav-home-btn:hover {
     background: linear-gradient(135deg, #ffe0b2, #ffcc80);
-    border-color: rgba(230, 81, 0, 0.35);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(230, 81, 0, 0.16);
+    color: #b45309;
+    border-color: rgba(217, 119, 6, 0.4);
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 14px rgba(217, 119, 6, 0.22);
   }
 
-  /* Primary Dark Pill Action Button */
+  /* Primary Accent Pill Action Button (Upload Resume) */
   .nav-btn-dark {
-    background: #1c1c1e;
+    background: linear-gradient(135deg, #6366f1 0%, #8083ff 100%);
     color: #ffffff;
     border: none;
-    border-radius: 12px;
-    padding: 10px 22px;
+    border-radius: 999px;
+    padding: 9.5px 22px;
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.18s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
   }
 
   .nav-btn-dark:hover {
-    background: #3a3a3c;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    transform: translateY(-1.5px);
+    box-shadow: 0 6px 22px rgba(99, 102, 241, 0.48);
   }
 
-  /* Light Gray Pill Button (Sign In & Login) */
+  /* Glass Secondary Pill Button (Sign In & Login) */
   .nav-btn-light {
-    background: #e5e5ea;
-    color: #1c1c1e;
-    border: 1px solid rgba(0, 0, 0, 0.04);
-    border-radius: 12px;
-    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 9px 18px;
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.18s ease;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 6px rgba(160, 162, 255, 0.12);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
 
   .nav-btn-light:hover {
-    background: #d1d1d6;
-    color: #000000;
+    background: #ffffff;
+    color: #4f46e5;
+    border-color: #8083ff;
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 14px rgba(128, 131, 255, 0.25);
   }
 
   .menu-dots-icon {
@@ -320,10 +340,12 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    background: #ffffff;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 12px 36px rgba(160, 162, 255, 0.2);
     min-width: 200px;
     padding: 6px;
     display: none;
@@ -416,39 +438,45 @@
   .profile-wrap.active { display: inline-flex; }
 
   .profile-btn {
-    background: #e5e5ea;
-    color: #1c1c1e;
-    border: 1px solid rgba(0, 0, 0, 0.04);
-    border-radius: 12px;
-    padding: 5px 12px 5px 6px;
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 14px 5px 6px;
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    transition: all 0.18s ease;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(160, 162, 255, 0.12);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
   .profile-btn:hover {
-    background: #d1d1d6;
-    color: #000000;
+    background: #ffffff;
+    color: #4f46e5;
+    border-color: #8083ff;
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 14px rgba(128, 131, 255, 0.22);
   }
   .profile-btn:active { transform: scale(0.98); }
 
   .profile-btn-avatar-circle {
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
-    background: #1c1c1e;
+    background: linear-gradient(135deg, #6366f1, #8083ff);
     color: #ffffff;
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 12.5px;
+    font-weight: 800;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     overflow: hidden;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
   }
 
   .profile-chip-name {
@@ -477,12 +505,12 @@
     top: calc(100% + 10px);
     right: 0;
     width: 200px;
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 12px 36px rgba(160, 162, 255, 0.2);
     padding: 6px;
     opacity: 0;
     visibility: hidden;

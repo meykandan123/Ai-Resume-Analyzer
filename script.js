@@ -2104,6 +2104,11 @@
       user.id = primaryId;
       user.userId = primaryId;
     }
+    const token = user.token || (currentUser && currentUser.token) || getAuthToken();
+    if (token) {
+      user.token = token;
+      setAuthToken(token);
+    }
     currentUser = user;
     if (!accounts[norm]){
       accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true, photo: user.photo || "" };
@@ -2257,7 +2262,8 @@
           name: data.user.name,
           email: data.user.email,
           provider: data.user.provider,
-          photo: data.user.photo
+          photo: data.user.photo,
+          token: token
         });
         await fetchHistoryFromBackend();
         return;
@@ -2309,7 +2315,8 @@
             name: data.user.name,
             email: data.user.email,
             provider: data.user.provider || currentUser.provider,
-            photo: data.user.photo
+            photo: data.user.photo,
+            token: token
           });
         }
       } catch (e) {}
@@ -2394,7 +2401,8 @@
           name: res.user.name,
           email: res.user.email,
           provider: res.user.provider || currentUser.provider,
-          photo: res.user.photo
+          photo: res.user.photo,
+          token: token
         });
 
         profilePageToast.style.color = "#2e7d32";
@@ -2447,7 +2455,8 @@
         name: res.user.name,
         email: res.user.email,
         provider: res.user.provider || currentUser.provider,
-        photo: res.user.photo
+        photo: res.user.photo,
+        token: token
       });
 
       profilePageToast.style.color = "#2e7d32";
@@ -2658,10 +2667,12 @@
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
           _id: data.user._id || data.user.id,
+          userId: data.user.userId || data.user._id,
           name: data.user.name,
           email: data.user.email,
           provider: data.user.provider || "email",
-          photo: data.user.photo
+          photo: data.user.photo,
+          token: data.token
         });
         if (!accounts[normalized]){
           accounts[normalized] = { name: data.user.name, provider: "email", verified: true };
@@ -2929,7 +2940,8 @@
           name: data.user.name,
           email: data.user.email,
           provider: "email",
-          photo: data.user.photo
+          photo: data.user.photo,
+          token: data.token
         });
         accounts[email] = { name: data.user.name, password, provider: "email", verified: true, photo: data.user.photo || "" };
         saveAccounts();
@@ -3179,7 +3191,16 @@
   let userActivitiesList = [];
   let userHistoryList = [];
 
-  function getAuthToken(){ try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch(e){ return null; } }
+  function getAuthToken(){
+    try {
+      const stored = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (stored) return stored;
+      if (currentUser && currentUser.token) return currentUser.token;
+      return null;
+    } catch(e){
+      return (currentUser && currentUser.token) || null;
+    }
+  }
   function setAuthToken(token){ try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch(e){} }
   function clearAuthToken(){ try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch(e){} }
 

@@ -2063,9 +2063,8 @@
 
   function renderAvatarEverywhere(user){
     if (!user) return;
-    const account = accounts[user.email] || {};
-    const photo = account.photo || null;
-    const initialsText = initials(user.name);
+    const photo = (user && user.photo) ? user.photo : null;
+    const initialsText = initials((user && user.name) ? user.name : "");
 
     const avatarText = document.getElementById("userAvatar");
     const avatarImg = document.getElementById("userAvatarImg");
@@ -2107,11 +2106,12 @@
     }
     currentUser = user;
     if (!accounts[norm]){
-      accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true };
+      accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true, photo: user.photo || "" };
     } else {
-      accounts[norm].name = user.name || accounts[norm].name;
+      if (user.name) accounts[norm].name = user.name;
       if (user.provider) accounts[norm].provider = user.provider;
       if (user.provider === "google" || user.verified) accounts[norm].verified = true;
+      if (user.photo !== undefined) accounts[norm].photo = user.photo;
     }
     saveAccounts();
 
@@ -2232,65 +2232,52 @@
     }
   }
 
-  // Restore a logged-in session on page load from MongoDB / localStorage
+  let sessionRestorePromise = null;
+
+  // Restore a logged-in session on page load strictly from MongoDB Backend
   async function restoreSession(){
-    try {
-      const cachedHistory = localStorage.getItem("ara_history_cache_v1");
-      if (cachedHistory) userHistoryList = JSON.parse(cachedHistory);
-    } catch(e){}
-
     const token = getAuthToken();
-    if (token){
-      try {
-        const data = await safeFetchJson("/api/user/profile", {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (data.success && data.user){
-          setLoggedInUser({
-            _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
-            id: (data.user._id || data.user.id || data.user.userId || "").toString(),
-            userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
-            name: data.user.name,
-            email: data.user.email,
-            provider: data.user.provider,
-            photo: data.user.photo
-          });
-          await fetchHistoryFromBackend();
-          return;
-        }
-      } catch(err){
-        console.warn("Could not restore session from MongoDB backend:", err);
-      }
+    if (!token){
+      currentUser = null;
+      try { localStorage.removeItem("ara_session_v1"); } catch(e){}
+      userHistoryList = [];
+      renderHistory();
+      return;
     }
 
-    let saved = null;
     try {
-      const raw = localStorage.getItem("ara_session_v1");
-      saved = raw ? JSON.parse(raw) : null;
-    } catch (e){ saved = null; }
-    if (!saved || !saved.email) return;
-
-    const norm = normalizeEmail(saved.email);
-    let account = accounts[norm];
-    if (!account){
-      account = { name: saved.name || norm, password: null, provider: saved.provider || "google", verified: true };
-      accounts[norm] = account;
-      saveAccounts();
-    } else if (saved.provider === "google"){
-      account.provider = "google";
-      account.verified = true;
-      saveAccounts();
+      const data = await safeFetchJson("/api/user/profile", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (data && data.success && data.user){
+        setLoggedInUser({
+          _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+          id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+          userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
+          name: data.user.name,
+          email: data.user.email,
+          provider: data.user.provider,
+          photo: data.user.photo
+        });
+        await fetchHistoryFromBackend();
+        return;
+      } else {
+        // Token is invalid/expired on backend -> clear invalid token & session state
+        clearAuthToken();
+        currentUser = null;
+        try { localStorage.removeItem("ara_session_v1"); } catch(e){}
+        userHistoryList = [];
+        renderHistory();
+        return;
+      }
+    } catch(err){
+      console.warn("Could not restore session from MongoDB backend:", err);
+      clearAuthToken();
+      currentUser = null;
+      try { localStorage.removeItem("ara_session_v1"); } catch(e){}
+      userHistoryList = [];
+      renderHistory();
     }
-    setLoggedInUser({
-      _id: saved._id || saved.id || saved.userId || "",
-      id: saved._id || saved.id || saved.userId || "",
-      userId: saved.userId || saved._id || saved.id || "",
-      name: account.name || saved.name,
-      email: norm,
-      provider: account.provider || saved.provider || "google",
-      photo: saved.photo || ""
-    });
-    fetchHistoryFromBackend();
   }
 
   document.getElementById("userLogoutBtn").addEventListener("click", logoutUser);
@@ -2299,10 +2286,35 @@
   const profilePageOverlay = document.getElementById("profilePageOverlay");
   const profilePageToast = document.getElementById("profilePageToast");
 
-  function openProfilePage(){
+  async function openProfilePage(){
+    if (sessionRestorePromise) {
+      try { await sessionRestorePromise; } catch(e){}
+    }
     if (!currentUser) return;
     const pdd = document.getElementById("profileDropdown");
     if (pdd) pdd.classList.remove("open");
+
+    const token = getAuthToken();
+    if (token) {
+      try {
+        const data = await safeFetchJson("/api/user/profile", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        if (data && data.success && data.user) {
+          setLoggedInUser({
+            ...currentUser,
+            _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+            id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+            userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
+            name: data.user.name,
+            email: data.user.email,
+            provider: data.user.provider || currentUser.provider,
+            photo: data.user.photo
+          });
+        }
+      } catch (e) {}
+    }
+
     const account = accounts[currentUser.email] || {};
 
     const nameInput = document.getElementById("profilePageNameInput");
@@ -2353,36 +2365,45 @@
       const dataUrl = reader.result;
 
       const token = getAuthToken();
-      if (token){
-        try {
-          const res = await safeFetchJson("/api/user/profile", {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer " + token
-            },
-            body: JSON.stringify({ photo: dataUrl })
-          });
-          if (!res || !res.success) {
-            profilePageToast.style.color = "#b3261e";
-            profilePageToast.textContent = (res && res.message) ? res.message : "Failed to update profile photo in MongoDB.";
-            return;
-          }
-        } catch(err) {
-          console.error("Profile photo database update failed:", err);
-          profilePageToast.style.color = "#b3261e";
-          profilePageToast.textContent = "Database error: " + err.message;
-          return;
-        }
+      if (!token) {
+        profilePageToast.style.color = "#b3261e";
+        profilePageToast.textContent = "Authentication token missing. Please log in again.";
+        return;
       }
 
-      if (!accounts[currentUser.email]) accounts[currentUser.email] = {};
-      accounts[currentUser.email].photo = dataUrl;
-      saveAccounts();
-      renderAvatarEverywhere(currentUser);
+      try {
+        const res = await safeFetchJson("/api/user/profile", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ photo: dataUrl })
+        });
+        if (!res || !res.success || !res.user) {
+          profilePageToast.style.color = "#b3261e";
+          profilePageToast.textContent = (res && res.message) ? res.message : "Failed to update profile photo in MongoDB.";
+          return;
+        }
 
-      profilePageToast.style.color = "#2e7d32";
-      profilePageToast.textContent = "Profile photo updated successfully.";
+        setLoggedInUser({
+          ...currentUser,
+          _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+          id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+          userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
+          name: res.user.name,
+          email: res.user.email,
+          provider: res.user.provider || currentUser.provider,
+          photo: res.user.photo
+        });
+
+        profilePageToast.style.color = "#2e7d32";
+        profilePageToast.textContent = "Profile photo updated successfully.";
+      } catch(err) {
+        console.error("Profile photo database update failed:", err);
+        profilePageToast.style.color = "#b3261e";
+        profilePageToast.textContent = "Database error: " + err.message;
+      }
     };
     reader.readAsDataURL(file);
   });
@@ -2397,38 +2418,45 @@
     }
 
     const token = getAuthToken();
-    if (token){
-      try {
-        const res = await safeFetchJson("/api/user/profile", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify({ name: newName })
-        });
-        if (!res || !res.success) {
-          profilePageToast.style.color = "#b3261e";
-          profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
-          return;
-        }
-      } catch(err){
-        console.error("MongoDB profile save error:", err);
-        profilePageToast.style.color = "#b3261e";
-        profilePageToast.textContent = "Database error: " + err.message;
-        return;
-      }
+    if (!token) {
+      profilePageToast.style.color = "#b3261e";
+      profilePageToast.textContent = "Authentication token missing. Please log in again.";
+      return;
     }
 
-    if (accounts[currentUser.email]) accounts[currentUser.email].name = newName;
-    saveAccounts();
-    currentUser.name = newName;
-    const chipNameEl = document.getElementById("userChipName");
-    if (chipNameEl) chipNameEl.textContent = newName;
-    renderAvatarEverywhere(currentUser);
+    try {
+      const res = await safeFetchJson("/api/user/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ name: newName })
+      });
+      if (!res || !res.success || !res.user) {
+        profilePageToast.style.color = "#b3261e";
+        profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
+        return;
+      }
 
-    profilePageToast.style.color = "#2e7d32";
-    profilePageToast.textContent = "Profile saved successfully.";
+      setLoggedInUser({
+        ...currentUser,
+        _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+        id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+        userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
+        name: res.user.name,
+        email: res.user.email,
+        provider: res.user.provider || currentUser.provider,
+        photo: res.user.photo
+      });
+
+      profilePageToast.style.color = "#2e7d32";
+      profilePageToast.textContent = "Profile saved successfully.";
+    } catch(err){
+      console.error("MongoDB profile save error:", err);
+      profilePageToast.style.color = "#b3261e";
+      profilePageToast.textContent = "Database error: " + err.message;
+    }
   });
 
   // ---- Profile button dropdown (open/close on click, close on item click & outside click) ----
@@ -2897,12 +2925,13 @@
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
           _id: data.user._id || data.user.id,
+          userId: data.user.userId || data.user._id,
           name: data.user.name,
           email: data.user.email,
           provider: "email",
           photo: data.user.photo
         });
-        accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
+        accounts[email] = { name: data.user.name, password, provider: "email", verified: true, photo: data.user.photo || "" };
         saveAccounts();
         showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
         fetchHistoryFromBackend();
@@ -3084,33 +3113,40 @@
 
             if (apiData && apiData.success && apiData.user) {
               if (apiData.token) setAuthToken(apiData.token);
-              if (!profile || !profile.email) {
-                profile = {
-                  email: apiData.user.email,
-                  name: apiData.user.name
-                };
-              }
+              showToast(toastEl, `Signed in as ${apiData.user.email}.`, false);
+              setLoggedInUser({
+                _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+                id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+                userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
+                name: apiData.user.name,
+                email: apiData.user.email,
+                provider: apiData.user.provider || "google",
+                photo: apiData.user.photo || ""
+              });
+              closeAuth();
+              return;
             }
           } catch(err){
             console.warn("Backend google sync error:", err);
           }
 
-          // Process profile if retrieved
+          // Fallback if backend OAuth API was unreachable offline
           if (profile && profile.email) {
             const email = normalizeEmail(profile.email);
             const name = profile.name || email.split("@")[0];
             const isNewAccount = !accounts[email];
             if (isNewAccount){
-              accounts[email] = { name, password: null, provider: "google", verified: true };
+              accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
             } else {
               accounts[email].verified = true;
               accounts[email].provider = "google";
               if (name) accounts[email].name = name;
+              if (profile.picture) accounts[email].photo = profile.picture;
             }
             saveAccounts();
 
             showToast(toastEl, `Signed in as ${email}.`, false);
-            setLoggedInUser({ name: accounts[email].name, email, provider: "google" });
+            setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
             closeAuth();
           } else {
             showToast(toastEl, "Could not retrieve Google profile. Please try logging in with your Email & Password.", true);
@@ -3166,7 +3202,6 @@
     const token = getAuthToken();
     if (!token){
       userHistoryList = [];
-      try { localStorage.removeItem("ara_history_cache_v1"); } catch(e){}
       renderHistory();
       return;
     }
@@ -3176,10 +3211,12 @@
       });
       if (data && data.success && Array.isArray(data.history)){
         userHistoryList = data.history;
-        try { localStorage.setItem("ara_history_cache_v1", JSON.stringify(data.history)); } catch(e){}
+      } else {
+        userHistoryList = [];
       }
     } catch(err){
       console.warn("Could not fetch history from MongoDB backend:", err);
+      userHistoryList = [];
     } finally {
       renderHistory();
     }
@@ -3368,10 +3405,10 @@
     if (!historyModal) return;
     historyModal.classList.add("active");
     renderHistory();
-    const token = getAuthToken();
-    if (currentUser || token) {
-      await fetchHistoryFromBackend();
+    if (sessionRestorePromise) {
+      try { await sessionRestorePromise; } catch(e){}
     }
+    await fetchHistoryFromBackend();
   }
   function closeHistory(){ if (historyModal) historyModal.classList.remove("active"); }
 
@@ -3389,8 +3426,23 @@
   }
 
   // ---- User Dashboard System ----
-  async function fetchDashboardDataFromBackend() { return null; }
-function renderDashboardData(data) {
+  async function fetchDashboardDataFromBackend() {
+    const token = getAuthToken();
+    if (!token) return null;
+    try {
+      const data = await safeFetchJson("/api/user/dashboard", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (data && data.success) {
+        return data;
+      }
+    } catch(err) {
+      console.warn("Could not fetch dashboard data from MongoDB backend:", err);
+    }
+    return null;
+  }
+
+  function renderDashboardData(data) {
     if (!data) return;
     const u = data.user || {};
     const s = data.stats || {};
@@ -3495,8 +3547,21 @@ function renderDashboardData(data) {
   }
 
   const dashboardModal = document.getElementById("dashboardModal");
-  function openDashboard() {}
-function closeDashboard() {}
+  async function openDashboard() {
+    if (!dashboardModal) return;
+    dashboardModal.classList.add("active");
+    if (sessionRestorePromise) {
+      try { await sessionRestorePromise; } catch(e){}
+    }
+    const data = await fetchDashboardDataFromBackend();
+    if (data) {
+      renderDashboardData(data);
+    }
+  }
+
+  function closeDashboard() {
+    if (dashboardModal) dashboardModal.classList.remove("active");
+  }
 
   const navDashboardBtn = document.getElementById("navDashboardBtn");
   if (navDashboardBtn) navDashboardBtn.addEventListener("click", openDashboard);
@@ -3763,7 +3828,7 @@ function closeDashboard() {}
     }
   };
 
-  restoreSession();
+  sessionRestorePromise = restoreSession();
 
   // ---- DEBUG HELPER — list every signed-up account on this browser ----
   //

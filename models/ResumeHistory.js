@@ -8,7 +8,7 @@ const resumeHistorySchema = new mongoose.Schema({
     index: true
   },
   userId: {
-    type: String,
+    type: mongoose.Schema.Types.Mixed,
     required: true,
     index: true,
     ref: "User"
@@ -40,6 +40,26 @@ const resumeHistorySchema = new mongoose.Schema({
   verdict: {
     type: String,
     default: "Analyzed"
+  },
+  analysisResult: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  detectedSkills: {
+    type: [String],
+    default: []
+  },
+  missingKeywords: {
+    type: [String],
+    default: []
+  },
+  suggestions: {
+    type: [String],
+    default: []
+  },
+  resumeText: {
+    type: String,
+    default: ""
   },
   uploadDate: {
     type: Date,

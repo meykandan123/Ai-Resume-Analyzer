@@ -3065,6 +3065,9 @@
       if (auth && helpers && helpers.signInWithPopup && helpers.GoogleAuthProvider) {
         try {
           const provider = new helpers.GoogleAuthProvider();
+          if (provider && provider.setCustomParameters) {
+            provider.setCustomParameters({ prompt: 'select_account' });
+          }
           const result = await helpers.signInWithPopup(auth, provider);
           if (result && result.user) {
             const gUser = result.user;
@@ -3121,6 +3124,9 @@
             if (helpers.signInWithRedirect) {
               try {
                 const provider = new helpers.GoogleAuthProvider();
+                if (provider && provider.setCustomParameters) {
+                  provider.setCustomParameters({ prompt: 'select_account' });
+                }
                 await helpers.signInWithRedirect(auth, provider);
                 return;
               } catch (redirErr) {
@@ -3898,6 +3904,7 @@
     }
   }
   setupFirebaseAuthStateListener();
+  checkFirebaseRedirectResult();
 
   // ---- DEBUG HELPER — list every signed-up account on this browser ----
   //

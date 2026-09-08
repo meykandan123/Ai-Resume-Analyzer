@@ -308,7 +308,16 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
 app.get("/api/config", (req, res) => {
   res.json({
     success: true,
-    googleClientId: process.env.GOOGLE_CLIENT_ID || ""
+    googleClientId: process.env.GOOGLE_CLIENT_ID || "",
+    firebaseConfig: {
+      apiKey: process.env.FIREBASE_API_KEY || "AIzaSyCSLQ6HzZDgt-vx7O-4RKZJRhGCT3O-0bQ",
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN || "resume-analyzer-a7d57.firebaseapp.com",
+      projectId: process.env.FIREBASE_PROJECT_ID || "resume-analyzer-a7d57",
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "resume-analyzer-a7d57.firebasestorage.app",
+      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "356703491313",
+      appId: process.env.FIREBASE_APP_ID || "1:356703491313:web:546f57b08bbf126da68550",
+      measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-V9GGGHW78G"
+    }
   });
 });
 
@@ -794,8 +803,24 @@ app.post("/api/auth/google", async (req, res) => {
   try {
     let { name, email, access_token, id_token } = req.body;
 
-    // Server-to-server fallback if email is not passed directly but access_token or id_token is provided
-    if (!email && access_token) {
+    // Server-side Token Verification for Firebase / Google tokens
+    if (id_token || access_token) {
+      try {
+        const tokenInfoUrl = id_token 
+          ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`
+          : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(access_token)}`;
+        const gRes = await fetch(tokenInfoUrl);
+        if (gRes.ok) {
+          const gInfo = await gRes.json();
+          if (gInfo.email) {
+            email = gInfo.email;
+            name = name || gInfo.name || (email ? email.split("@")[0] : "");
+          }
+        }
+      } catch (e) {
+        console.warn("Backend Google token verification notice:", e);
+      }
+    } else if (!email && access_token) {
       try {
         const googleRes = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${encodeURIComponent(access_token)}`);
         if (googleRes.ok) {
@@ -806,20 +831,6 @@ app.post("/api/auth/google", async (req, res) => {
       } catch (e) {
         console.warn("Backend Google userinfo fetch error:", e);
       }
-    }
-
-    if (!email && (access_token || id_token)) {
-      try {
-        const tokenInfoUrl = id_token 
-          ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`
-          : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(access_token)}`;
-        const gRes = await fetch(tokenInfoUrl);
-        if (gRes.ok) {
-          const gInfo = await gRes.json();
-          email = gInfo.email;
-          name = name || gInfo.name || (email ? email.split("@")[0] : "");
-        }
-      } catch (e) {}
     }
 
     if (!email) {

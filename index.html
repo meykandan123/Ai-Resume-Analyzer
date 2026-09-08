@@ -662,7 +662,7 @@
 </div>
 
 <!-- Google Identity Services SDK for Google OAuth -->
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer onerror="window.gsiScriptFailed=true;"></script>
 <script src="script.js"></script>
 
 </body>

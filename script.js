@@ -3087,10 +3087,12 @@
   }
 
   function signInWithGoogle(toastEl, isSignupFlow){
-    const clientUnconfigured = AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");
-    const sdkUnavailable = !window.google || !google.accounts || !google.accounts.oauth2;
+    if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
+      showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection, DNS settings, or ad-blocker.", true);
+      return;
+    }
 
-    if (clientUnconfigured || sdkUnavailable){
+    if (!AUTH_CONFIG || !AUTH_CONFIG.GOOGLE_CLIENT_ID || AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")) {
       showToast(toastEl, "Google Sign-In is not configured yet. Add a valid Google OAuth Client ID in AUTH_CONFIG.", true);
       return;
     }
@@ -3101,7 +3103,7 @@
         scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
         error_callback: (err) => {
           console.warn("Google OAuth Error:", err);
-          showToast(toastEl, "Google OAuth Error: Please check your Google OAuth Client ID and authorized origins.", true);
+          showToast(toastEl, "Unable to connect to Google OAuth service. Please check your network connection or DNS settings.", true);
         },
         callback: async (tokenResponse) => {
           if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){

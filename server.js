@@ -31,8 +31,15 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-// Serve static frontend and uploaded resume files
-app.use(express.static(path.join(__dirname)));
+// Handle JSON body parser syntax errors with application/json content-type
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ success: false, message: "Invalid JSON payload format." });
+  }
+  next(err);
+});
+
+// Serve uploaded resume files statically
 app.use("/uploads", express.static(uploadsDir));
 
 // Helper: Save Uploaded Resume File to Disk
@@ -1370,9 +1377,22 @@ app.get("/api/user/dashboard", authenticateToken, async (req, res) => {
   }
 });
 
+// Serve static frontend files (CSS, JS, assets)
+app.use(express.static(path.join(__dirname)));
+
 // 404 Handler for API endpoints
 app.use("/api", (req, res) => {
   return res.status(404).json({ success: false, message: "API endpoint not found." });
+});
+
+// Global API error handler
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err);
+  if (res.headersSent) return next(err);
+  if (req.path && req.path.startsWith("/api")) {
+    return res.status(500).json({ success: false, message: "Internal server error: " + (err.message || "Unknown error") });
+  }
+  next(err);
 });
 
 // Fallback to index.html for SPA routing

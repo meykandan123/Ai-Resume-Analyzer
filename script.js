@@ -2216,14 +2216,19 @@
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
   async function safeFetchJson(url, options, retries = 1) {
-    const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : url;
+    const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : (url.startsWith("/api/") ? `http://${currentHost}:5000${url}` : url);
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(fullUrl, options);
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
-          // Server returned non-JSON (e.g. 404 HTML fallback or offline backend) - return clean fallback object
-          return { success: false, isNonJson: true, status: res.status, message: `Server returned non-JSON response (${res.status}).` };
+          return {
+            success: false,
+            isNonJson: true,
+            isOffline: true,
+            status: res.status,
+            message: `Backend server is offline or unreachable on port 5000. Please start server with 'node server.js'.`
+          };
         }
         const text = await res.text();
         if (!text || !text.trim()) {
@@ -2235,8 +2240,9 @@
           return {
             success: false,
             isError: true,
+            isOffline: true,
             status: 0,
-            message: `Connection Refused: Backend server is offline at ${API_BASE || "http://127.0.0.1:5000"}. Please start server with 'node server.js'.`
+            message: `Backend server is offline at http://${currentHost}:5000. Please start server with 'node server.js'.`
           };
         }
         await new Promise(r => setTimeout(r, 800));
@@ -2870,7 +2876,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })
       });
-      if (data.success && data.requireVerification){
+      if (data && data.success && data.requireVerification){
         accounts[email] = { name, password, provider: "email", verified: false };
         saveAccounts();
         signupPanel.reset();
@@ -2878,7 +2884,7 @@
         showVerifyPendingScreen(email);
         showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
         return;
-      } else if (data.success && data.token){
+      } else if (data && data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
@@ -2898,7 +2904,7 @@
           checkPasswordsMatch();
         }, 700);
         return;
-      } else if (!data.success && data.message){
+      } else if (data && !data.success && !data.isOffline && data.message){
         showToast(signupToast, data.message, true);
         return;
       }
@@ -2940,7 +2946,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
       });
-      if (data.success && data.token){
+      if (data && data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
@@ -2961,10 +2967,10 @@
           loginPanel.reset();
         }, 700);
         return;
-      } else if (!data.success && data.requireVerification){
+      } else if (data && !data.success && data.requireVerification){
         showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email.", true);
         return;
-      } else if (!data.success && data.message){
+      } else if (data && !data.success && !data.isOffline && data.message){
         showToast(loginToast, data.message, true);
         return;
       }

@@ -1791,6 +1791,40 @@
     ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
   };
 
+  // User accounts storage helper
+  function loadAccounts(){
+    try {
+      const raw = localStorage.getItem("ara_accounts_v1");
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (e){ return {}; }
+  }
+  let accounts = loadAccounts();
+
+  function saveAccounts(){
+    try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  function normalizeEmail(email){
+    if (!email) return "";
+    return String(email).trim().toLowerCase();
+  }
+
+  function isValidEmail(email){
+    if (!email) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
+  }
+
+  function generateResetToken(){
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+
   // Safe stubs (all site emails are routed via backend SMTP transport)
   function sendEmailStub(fields){
     return Promise.resolve(true);

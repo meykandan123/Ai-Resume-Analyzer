@@ -1794,7 +1794,10 @@
   // Attempt loading GOOGLE_CLIENT_ID from server environment
   try {
     fetch("/api/config")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) return null;
+        return res.json();
+      })
       .then(data => {
         if (data && data.googleClientId) {
           AUTH_CONFIG.GOOGLE_CLIENT_ID = data.googleClientId;

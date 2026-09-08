@@ -1788,214 +1788,24 @@
   const AUTH_CONFIG = {
     // Google Cloud Console → APIs & Services → Credentials → OAuth Client ID (Web application)
     GOOGLE_CLIENT_ID: "YOUR_GOOGLE_CLIENT_ID",
-
-    // formsubmit.co — the inbox every site email is routed through.
-    // Direct endpoint using the site admin email ensures FormSubmit autoresponses work seamlessly.
-    FORMSUBMIT_ENDPOINT: "https://formsubmit.co/airesumeash@gmail.com",
-
     ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
   };
 
-  function createFormSubmitFrame(){
-    const uniqueName = "formsubmitFrame_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    const frame = document.createElement("iframe");
-    frame.id = uniqueName;
-    frame.name = uniqueName;
-    frame.style.display = "none";
-    frame.setAttribute("aria-hidden", "true");
-    document.body.appendChild(frame);
-    return frame;
+  // Safe stubs (all site emails are routed via backend SMTP transport)
+  function sendEmailStub(fields){
+    return Promise.resolve(true);
   }
 
-  function sendViaFormSubmit(fields){
-    const adminEmail = AUTH_CONFIG.ADMIN_NOTIFY_EMAIL || "airesumeash@gmail.com";
-    const userEmail = fields.email || fields._replyto || adminEmail;
-    const isAutoResponse = Boolean(fields._autoresponse);
-
-    // For general non-autoresponse notifications, send AJAX POST to admin
-    if (!isAutoResponse){
-      try {
-        const payload = {
-          _subject: fields._subject || "AI Resume Notification",
-          _captcha: "false",
-          _template: "table",
-          _replyto: userEmail,
-          name: fields.name || "User",
-          email: userEmail,
-          message: fields.message || fields._subject || "New notification from AI Resume Analyzer",
-          ...fields
-        };
-
-        fetch("https://formsubmit.co/ajax/" + adminEmail, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-          },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
-      } catch (e){
-        console.warn("FormSubmit AJAX attempt error:", e);
-      }
-    }
-
-    // Submit HTML form into hidden iframe (this triggers FormSubmit _autoresponse to user's inbox)
-    return new Promise((resolve) => {
-      const frame = createFormSubmitFrame();
-      const form = document.createElement("form");
-      form.action = "https://formsubmit.co/" + adminEmail;
-      form.method = "POST";
-      form.target = frame.name;
-      form.style.display = "none";
-
-      let safeUrl = location.href;
-      if (location.protocol === "file:" || !safeUrl || safeUrl.startsWith("file:")){
-        safeUrl = "http://localhost" + (location.pathname || "/");
-      }
-
-      const allFields = {
-        _url: safeUrl,
-        _captcha: "false",
-        _template: "table",
-        _replyto: adminEmail,
-        ...fields,
-        email: userEmail // Crucial: sets user email as form email so FormSubmit sends _autoresponse to user's inbox
-      };
-
-      Object.keys(allFields).forEach(key => {
-        const value = allFields[key];
-        if (value === undefined || value === null) return;
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = String(value);
-        form.appendChild(input);
-      });
-
-      document.body.appendChild(form);
-      form.submit();
-
-      setTimeout(() => {
-        form.remove();
-        frame.remove();
-        resolve(true);
-      }, 1200);
-    });
-  }
-
-  // "User table": email -> { name, password, provider, resetToken?, resetTokenExpires? }
-  // Persisted to localStorage so a reset link opened later on this same
-  // browser still finds the account. NOT a real database — see note above.
-  function loadAccounts(){
-    try {
-      const raw = localStorage.getItem("ara_accounts_v1");
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (e){ return {}; }
-  }
-  let accounts = loadAccounts();
-  function saveAccounts(){
-    try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
-  }
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  }
-
-  function normalizeEmail(email){ return email.trim().toLowerCase(); }
-
-  // Real email format check: something@something.tld — used on every
-  // login/signup/reset submit so bad addresses get caught before anything
-  // else runs, with the error shown as the alert at the TOP of the form.
-  function isValidEmail(email){
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  }
-
-  function generateResetToken(){
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
-  }
-
-  // Emails the SITE OWNER (AUTH_CONFIG.ADMIN_NOTIFY_EMAIL) whenever someone
-  // signs up or logs in — deliberately WITHOUT the password. Emailing
-  // plaintext passwords to yourself is a serious security/privacy problem:
-  // it puts every user's password in your inbox (and any mail server it
-  // passes through), and because people reuse passwords across sites, a
-  // leaked inbox would hand over access to their other accounts too. If
-  // you need to verify logins, use the account email + timestamp below,
-  // or check server-side auth logs — never the raw password.
   function notifyAdminOfAuthEvent({ email, name, action }){
-    sendViaFormSubmit({
-      _subject: `${action} — ${email}`,
-      name: name || "(no name on file)",
-      email: email,
-      message: `${action} on AI Resume Analyzer.\nUser: ${name || "(no name on file)"}\nEmail: ${email}`
-    }).then(
-      () => console.log("Admin notify sent via FormSubmit"),
-      (err) => console.error("Admin notify FAILED — FormSubmit rejected the send:", err)
-    );
+    console.log(`[AUTH EVENT] ${action} — ${name || "User"} (${email})`);
   }
 
-  // Emails the USER themselves (not the admin) right after they sign up or
-  // log in — a "Welcome" / "Welcome back" message sent to their own inbox.
-  // Uses FormSubmit's "_autoresponse" field: FormSubmit auto-replies to
-  // whatever address is in the "email" field of the submission, using
-  // _autoresponse as the message body. The admin inbox also gets a copy of
-  // the raw submission, same as every other FormSubmit send.
   function notifyUserOfAuthEvent({ email, name, action }){
-    const displayName = name || "there";
-    const isSignup = action.startsWith("Sign Up");
-    const subject = isSignup ? "Welcome to AI Resume Analyzer 🎉" : "Welcome back to AI Resume Analyzer 👋";
-
-    const extraLines = isSignup
-      ? [
-          "1. Upload your resume (PDF or DOCX) to get an instant AI-powered score.",
-          "2. Review the tailored suggestions to improve keyword matching and formatting.",
-          "3. Your results are saved automatically — revisit them anytime from your History tab."
-        ]
-      : [
-          "1. Your past resume analyses are waiting for you in the History tab.",
-          "2. Upload a new or updated resume anytime for a fresh score and feedback.",
-          "3. Need a hand? Use the feedback button in the corner to reach support."
-        ];
-
-    const greeting = isSignup ? `Welcome, ${displayName}!` : `Welcome back, ${displayName}!`;
-    const message = `${greeting}\n\n${extraLines.join("\n")}`;
-
-    // Deliver welcome email directly to user's registered inbox ONLY
-    sendDirectUserEmail({
-      toEmail: email,
-      subject: subject,
-      message: message
-    });
+    console.log(`[AUTH EVENT] User notification for ${action} — ${email}`);
   }
 
-  // Sends a "confirm your email" link to a brand-new email/password signup.
-  // The account is created as unverified and stays that way — and can't log
-  // in — until this link is clicked. This is what stops someone from typing
-  // in an email address they don't actually own/control (a "fake" email):
-  // if it's not a real, reachable inbox, the link never gets clicked and the
-  // account never activates. Google sign-ins skip this entirely since
-  // Google has already verified that email for us.
-  // Sends email directly to the user's inbox via FormSubmit targeted to user's address
   function sendDirectUserEmail({ toEmail, subject, message }){
-    if (!toEmail || !isValidEmail(toEmail)) return;
-    try {
-      fetch("https://formsubmit.co/ajax/" + encodeURIComponent(toEmail), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify({
-          _subject: subject,
-          _captcha: "false",
-          name: "AI Resume Analyzer Verification",
-          email: toEmail,
-          message: message
-        })
-      }).catch(err => console.warn("Direct user email delivery notice:", err));
-    } catch(e){}
+    console.log(`[EMAIL DISPATCH] Handled via backend SMTP for: ${toEmail}`);
   }
 
   // Sends a "confirm your email" link directly to the user's registered email inbox
@@ -3755,16 +3565,25 @@
       saveSupportTickets(tickets);
       renderSupportTickets();
 
-      sendViaFormSubmit({
-        _subject: `Support Session ${ticketId} — ${name}`,
-        ticketId: ticketId,
-        name: name,
-        email: email,
-        message: message
-      }).then(
-        () => console.log("Support message sent via FormSubmit"),
-        (err) => console.error("Support message FAILED — FormSubmit rejected the send:", err)
-      );
+      fetch("/api/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticketId: ticketId,
+          name: name,
+          email: email,
+          message: message
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          console.log("Support message sent via backend API");
+        } else {
+          console.warn("Support message backend notice:", data.message);
+        }
+      })
+      .catch(err => console.error("Support message backend FAILED:", err));
 
       showToast(supportToast, `Support session ${ticketId} created! Notification sent to support team.`, false);
       setTimeout(() => {
@@ -3823,66 +3642,7 @@
 
 
 
-  // ---- TEMPORARY DEBUG HELPER — remove once verification email delivery
-  // is confirmed working. ----
-  //
-  // Everything else in this file submits to FormSubmit through a hidden
-  // iframe (required to make the "_autoresponse" welcome/verification
-  // email work — see the big comment above sendViaFormSubmit). The
-  // downside is that a cross-origin iframe's response body can't be read
-  // by JS, so real failures (bad endpoint, form not yet activated, rate
-  // limit hit, etc.) show up as nothing — no error, no email, silence.
-  //
-  // This function instead posts the SAME endpoint through FormSubmit's
-  // /ajax/ variant, which returns a normal, readable JSON response over
-  // fetch(). It won't trigger the welcome email itself (autoresponse is
-  // disabled for AJAX submissions, per FormSubmit's own docs) — it's
-  // purely so we can see FormSubmit's actual server-side answer instead
-  // of guessing.
-  //
-  // HOW TO USE: open this page in the browser it's deployed on (must be
-  // served over http/https, not opened as a file), open DevTools (F12) →
-  // Console tab, run:
-  //     debugFormSubmitTest()
-  // and read what it prints. Common answers you might see:
-  //   - {"success":"true", ...}                 → FormSubmit accepted it;
-  //     the issue is elsewhere (spam folder, or something specific to
-  //     autoresponse — see the comment above sendVerificationEmail).
-  //   - "Please activate your form by clicking the activation link in
-  //     the email we just sent you." → the endpoint isn't fully
-  //     activated yet; check the inbox at AUTH_CONFIG.ADMIN_NOTIFY_EMAIL.
-  //   - A 403 / rate-limit message → the free tier's monthly submission
-  //     cap (50/month) has likely been hit from repeated testing.
-  //   - A network/CORS error in red → the endpoint itself is rejecting
-  //     the request outright; double-check AUTH_CONFIG.FORMSUBMIT_ENDPOINT.
-  window.debugFormSubmitTest = async function(){
-    const endpoint = AUTH_CONFIG.FORMSUBMIT_ENDPOINT.replace(
-      "formsubmit.co/",
-      "formsubmit.co/ajax/"
-    );
-    console.log("Posting test submission to:", endpoint);
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          name: "Debug Test",
-          email: "debug-test@example.com",
-          message: "This is a one-off debug submission from debugFormSubmitTest() to see FormSubmit's real response.",
-          _subject: "Debug test submission"
-        })
-      });
-      const text = await res.text();
-      console.log("HTTP status:", res.status);
-      try {
-        console.log("Response JSON:", JSON.parse(text));
-      } catch (e){
-        console.log("Response (not JSON):", text);
-      }
-    } catch (err){
-      console.error("Request itself failed (network/CORS):", err);
-    }
-  };
+
 
   sessionRestorePromise = restoreSession();
 

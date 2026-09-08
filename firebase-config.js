@@ -1,6 +1,18 @@
 // Firebase configuration and initialization
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  updateProfile
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -15,6 +27,7 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
 let analytics = null;
 try {
   if (typeof window !== "undefined") {
@@ -24,11 +37,51 @@ try {
   console.warn("Firebase Analytics initialization notice:", err.message || err);
 }
 
-// Expose globally on window object for accessibility across scripts
+// Initialize Firebase Auth
+let auth = null;
+try {
+  auth = getAuth(app);
+} catch (err) {
+  console.warn("Firebase Auth initialization notice:", err.message || err);
+}
+
+const firebaseAuthHelpers = {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  updateProfile
+};
+
+// Expose globally on window object for accessibility across non-module scripts
 if (typeof window !== "undefined") {
   window.firebaseApp = app;
   window.firebaseAnalytics = analytics;
   window.firebaseConfig = firebaseConfig;
+  window.firebaseAuth = auth;
+  window.firebaseAuthHelpers = firebaseAuthHelpers;
+  window.GoogleAuthProvider = GoogleAuthProvider;
 }
 
-export { app, analytics, firebaseConfig };
+export {
+  app,
+  analytics,
+  auth,
+  firebaseConfig,
+  firebaseAuthHelpers,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  updateProfile
+};
+

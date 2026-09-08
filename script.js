@@ -1801,6 +1801,13 @@
   }
   let accounts = loadAccounts();
 
+  function getFirebaseAuth() {
+    return window.firebaseAuth || null;
+  }
+  function getFirebaseAuthHelpers() {
+    return window.firebaseAuthHelpers || null;
+  }
+
   function saveAccounts(){
     try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
   }
@@ -1850,6 +1857,15 @@
     account.verifyToken = token;
     account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid exactly 5 minutes
     if (accounts[email]) saveAccounts();
+
+    // Trigger Firebase Auth Email Verification if Firebase user is logged in
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && auth.currentUser && helpers && helpers.sendEmailVerification) {
+      helpers.sendEmailVerification(auth.currentUser).catch(err => {
+        console.warn("Firebase Auth sendEmailVerification notice:", err.message || err);
+      });
+    }
 
     let origin = location.origin;
     let pathname = location.pathname;
@@ -2005,6 +2021,12 @@
   }
 
   async function logoutUser(){
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.signOut) {
+      try { await helpers.signOut(auth); } catch (e) {}
+    }
+
     const token = getAuthToken();
     if (token) {
       try {
@@ -2452,6 +2474,15 @@
       return;
     }
 
+    // Trigger Firebase Auth Password Reset Email Session
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.sendPasswordResetEmail) {
+      helpers.sendPasswordResetEmail(auth, email).catch(err => {
+        console.warn("Firebase Auth sendPasswordResetEmail notice:", err.message || err);
+      });
+    }
+
     try {
       const data = await safeFetchJson("/api/auth/forgot-password", {
         method: "POST",
@@ -2728,6 +2759,26 @@
       return;
     }
 
+    // 1. Firebase Auth Signup & Email Verification Session
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.createUserWithEmailAndPassword) {
+      try {
+        const userCredential = await helpers.createUserWithEmailAndPassword(auth, email, password);
+        if (userCredential && userCredential.user) {
+          if (helpers.updateProfile) {
+            await helpers.updateProfile(userCredential.user, { displayName: name }).catch(() => {});
+          }
+          if (helpers.sendEmailVerification) {
+            await helpers.sendEmailVerification(userCredential.user).catch(() => {});
+          }
+        }
+      } catch (fbErr) {
+        console.warn("Firebase Auth createUser notice:", fbErr.message || fbErr);
+      }
+    }
+
+    // 2. MongoDB Backend Sync
     try {
       const data = await safeFetchJson("/api/auth/signup", {
         method: "POST",
@@ -2798,6 +2849,18 @@
       return;
     }
 
+    // 1. Firebase Auth Login Session
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.signInWithEmailAndPassword) {
+      try {
+        await helpers.signInWithEmailAndPassword(auth, email, password);
+      } catch (fbErr) {
+        console.warn("Firebase Auth signIn notice:", fbErr.message || fbErr);
+      }
+    }
+
+    // 2. MongoDB Backend Sync
     try {
       const data = await safeFetchJson("/api/auth/login", {
         method: "POST",
@@ -2930,7 +2993,60 @@
     backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
   }
 
-  function signInWithGoogle(toastEl, isSignupFlow){
+  async function signInWithGoogle(toastEl, isSignupFlow){
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+
+    // 1. Try Firebase Auth Google Popup first
+    if (auth && helpers && helpers.signInWithPopup && helpers.GoogleAuthProvider) {
+      try {
+        const provider = new helpers.GoogleAuthProvider();
+        const result = await helpers.signInWithPopup(auth, provider);
+        if (result && result.user) {
+          const gUser = result.user;
+          const email = normalizeEmail(gUser.email);
+          const name = gUser.displayName || email.split("@")[0];
+          const photo = gUser.photoURL || "";
+          let idToken = "";
+          try { idToken = await gUser.getIdToken(); } catch(e){}
+
+          // Sync with MongoDB Backend /api/auth/google
+          const data = await safeFetchJson("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, id_token: idToken })
+          });
+
+          if (data && data.success && data.token) {
+            setAuthToken(data.token);
+            setLoggedInUser({
+              id: data.user._id || data.user.id || data.user.userId,
+              _id: data.user._id || data.user.id,
+              userId: data.user.userId || data.user._id,
+              name: data.user.name || name,
+              email: data.user.email || email,
+              provider: "google",
+              photo: data.user.photo || photo,
+              token: data.token
+            });
+            accounts[email] = { name: data.user.name || name, provider: "google", verified: true, photo: data.user.photo || photo };
+            saveAccounts();
+            showToast(toastEl, `Signed in as ${email}.`, false);
+            fetchHistoryFromBackend();
+            closeAuth();
+            return;
+          }
+        }
+      } catch (fbErr) {
+        console.warn("Firebase Google Sign-In popup notice/fallback:", fbErr.message || fbErr);
+        if (fbErr.code === "auth/popup-closed-by-user") {
+          showToast(toastEl, "Google sign-in was cancelled.", true);
+          return;
+        }
+      }
+    }
+
+    // 2. Fallback to Google Identity Services (GIS)
     if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
       showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection or ad-blocker.", true);
       return;
@@ -3636,6 +3752,48 @@
 
 
   sessionRestorePromise = restoreSession();
+
+  function setupFirebaseAuthStateListener() {
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.onAuthStateChanged) {
+      helpers.onAuthStateChanged(auth, async (fbUser) => {
+        if (fbUser && fbUser.email && !currentUser) {
+          const email = normalizeEmail(fbUser.email);
+          const token = getAuthToken();
+          if (token) {
+            await restoreSession();
+          } else {
+            try {
+              const data = await safeFetchJson("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: fbUser.displayName || email.split("@")[0],
+                  email: email
+                })
+              });
+              if (data && data.success && data.token) {
+                setAuthToken(data.token);
+                setLoggedInUser({
+                  id: data.user._id || data.user.id || data.user.userId,
+                  _id: data.user._id || data.user.id,
+                  userId: data.user.userId || data.user._id,
+                  name: data.user.name || fbUser.displayName,
+                  email: data.user.email || email,
+                  provider: data.user.provider || "google",
+                  photo: data.user.photo || fbUser.photoURL || "",
+                  token: data.token
+                });
+                fetchHistoryFromBackend();
+              }
+            } catch (e) {}
+          }
+        }
+      });
+    }
+  }
+  setupFirebaseAuthStateListener();
 
   // ---- DEBUG HELPER — list every signed-up account on this browser ----
   //

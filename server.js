@@ -198,22 +198,92 @@ const checkDbConnection = (req, res, next) => {
   next();
 };
 
+let nodemailer;
+try { nodemailer = require("nodemailer"); } catch(e){}
+
+// Rate Limiter for Auth Routes
+const authRateLimitMap = new Map();
+const authRateLimiter = (req, res, next) => {
+  const ip = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const maxRequests = 30;
+
+  const record = authRateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
+  if (now > record.resetTime) {
+    record.count = 0;
+    record.resetTime = now + windowMs;
+  }
+  record.count += 1;
+  authRateLimitMap.set(ip, record);
+
+  if (record.count > maxRequests) {
+    return res.status(429).json({
+      success: false,
+      message: "Too many authentication requests from this IP. Please try again later."
+    });
+  }
+  next();
+};
+
 app.use("/api", checkDbConnection);
+app.use("/api/auth/signup", authRateLimiter);
+app.use("/api/auth/login", authRateLimiter);
+app.use("/api/auth/resend-verification", authRateLimiter);
+app.use("/api/auth/verify", authRateLimiter);
+
+// Express route for email verification URL
+app.get("/verify-email", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
 // Helper: Generate Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
 };
 
-// Helper: Generate Random Verification Token
+// Helper: Generate Random Verification Token (32-byte secure hex string)
 const generateVerifyToken = () => {
   return crypto.randomBytes(32).toString("hex");
 };
 
-// Helper: Send email directly to user's registered email inbox via FormSubmit API
-const sendEmailToUser = async (toEmail, subject, message) => {
+// Helper: Hash Verification Token with SHA-256 (Never store plain tokens in DB)
+const hashToken = (token) => {
+  if (!token || typeof token !== "string") return "";
+  return crypto.createHash("sha256").update(token).digest("hex");
+};
+
+// Helper: Send email directly to user's registered email inbox
+const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
   if (!toEmail || typeof toEmail !== "string") return false;
   const normalized = toEmail.toLowerCase().trim();
+
+  // Try Nodemailer SMTP if configured in environment
+  if (nodemailer && process.env.SMTP_HOST && process.env.SMTP_USER) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_SECURE === "true",
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || `"AI Resume Analyzer" <${process.env.SMTP_USER}>`,
+        to: normalized,
+        subject: subject,
+        text: textMessage,
+        html: htmlMessage || `<div style="font-family:sans-serif; padding:20px;">${textMessage.replace(/\n/g, "<br/>")}</div>`
+      });
+      return true;
+    } catch (smtpErr) {
+      console.warn("SMTP email delivery failed, falling back to HTTP transport:", smtpErr.message);
+    }
+  }
+
+  // Fallback via FormSubmit API
   try {
     const response = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(normalized)}`, {
       method: "POST",
@@ -226,7 +296,7 @@ const sendEmailToUser = async (toEmail, subject, message) => {
         _captcha: "false",
         name: "AI Resume Analyzer",
         email: normalized,
-        message: message
+        message: textMessage
       })
     });
     return response.ok;
@@ -258,8 +328,9 @@ app.post("/api/auth/signup", async (req, res) => {
     // Hash password using bcrypt - NEVER store plain text
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const verifyToken = generateVerifyToken();
-    const verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    const rawVerifyToken = generateVerifyToken();
+    const hashedVerifyToken = hashToken(rawVerifyToken);
+    const verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000); // Exactly 5 minutes
     const _id = new mongoose.Types.ObjectId();
     const userId = _id.toString();
     const now = new Date();
@@ -274,7 +345,7 @@ app.post("/api/auth/signup", async (req, res) => {
       provider: "email",
       emailVerified: false,
       verified: false,
-      verifyToken,
+      verifyToken: hashedVerifyToken,
       verifyTokenExpires,
       createdAt: now,
       updatedAt: now
@@ -295,24 +366,40 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const host = req.get("host") || "localhost:5000";
     const protocol = req.protocol || "http";
-    const verifyLink = `${protocol}://${host}/?verifyEmail=${encodeURIComponent(newUser.email)}&verifyToken=${verifyToken}`;
-    const verificationMessage =
+    const appUrl = (process.env.APP_URL || process.env.BASE_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+    const verifyLink = `${appUrl}/verify-email?token=${rawVerifyToken}&email=${encodeURIComponent(newUser.email)}`;
+
+    const textMessage =
       `Hi ${newUser.name || "there"},\n\n` +
-      `Welcome to AI Resume Analyzer!\n` +
-      `Please confirm your email address by clicking the link below:\n\n` +
+      `Thank you for creating an account with AI Resume Analyzer!\n` +
+      `Please verify your email address to complete your registration by clicking the link below:\n\n` +
       `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
       `If you didn't create this account, you can safely ignore this email.`;
 
-    sendEmailToUser(newUser.email, "Confirm your email — AI Resume Analyzer", verificationMessage).catch(() => {});
+    const htmlMessage =
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
+      `<h2 style="color: #4f46e5; text-align: center;">Verify Your Account</h2>` +
+      `<p>Hi <strong>${newUser.name || "there"}</strong>,</p>` +
+      `<p>Thank you for signing up for AI Resume Analyzer! Please verify your email address to complete your registration and activate your account.</p>` +
+      `<div style="text-align: center; margin: 30px 0;">` +
+      `<a href="${verifyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify My Account</a>` +
+      `</div>` +
+      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}">${verifyLink}</a></p>` +
+      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This verification link is valid for exactly 5 minutes.</p>` +
+      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
+      `<p style="font-size: 12px; color: #888;">If you didn't create an account, please ignore this email.</p>` +
+      `</div>`;
+
+    sendEmailToUser(newUser.email, "Verify Your Account", textMessage, htmlMessage).catch(() => {});
 
     return res.status(201).json({
       success: true,
       requireVerification: true,
-      message: "Account created! A verification link has been sent to your email inbox.",
+      message: "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.",
       email: newUser.email,
       name: newUser.name,
-      verifyToken: newUser.verifyToken,
+      verifyToken: rawVerifyToken,
       user: {
         _id: newUser._id,
         userId: newUser.userId,
@@ -331,33 +418,62 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
-// Email Verification Endpoint
-app.post("/api/auth/verify", async (req, res) => {
+// Email Verification Endpoint (Supports both POST & GET)
+const verifyEmailHandler = async (req, res) => {
   try {
-    const { email, token } = req.body;
+    const email = req.body?.email || req.query?.email || req.body?.verifyEmail || req.query?.verifyEmail;
+    const token = req.body?.token || req.query?.token || req.body?.verifyToken || req.query?.verifyToken;
 
-    if (!email || !token) {
-      return res.status(400).json({ success: false, message: "Email and verification token are required." });
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Verification token is required." });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
+    const hashedIncomingToken = hashToken(token);
+    const normalizedEmail = email ? email.toLowerCase().trim() : null;
+
+    // Search user by hashed token OR by raw token (for backward compatibility) OR by email
+    let user = await User.findOne({
+      $or: [
+        { verifyToken: hashedIncomingToken },
+        { verifyToken: token },
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+      ]
+    });
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "Account not found." });
+      return res.status(404).json({ success: false, message: "Verification link is invalid or account not found." });
     }
 
     const userIdStr = user.userId || user._id.toString();
 
-    // Verification token must match, be present, and not be expired
-    if (!user.verifyToken || user.verifyToken !== token || !user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
-      if (user.verified) {
-        return res.status(400).json({ success: false, message: "Your email is already verified. Please log in with your email and password." });
+    // Check if already verified
+    if (user.verified || user.emailVerified) {
+      if (!user.verifyToken || (user.verifyToken !== hashedIncomingToken && user.verifyToken !== token)) {
+        return res.json({
+          success: true,
+          verified: true,
+          message: "Email verified successfully! Your account is now verified. You can log in.",
+          user: { _id: user._id, userId: userIdStr, name: user.name, email: user.email, emailVerified: true }
+        });
       }
-      return res.status(400).json({ success: false, message: "Verification link is invalid or has expired." });
     }
 
-    // Mark user as verified and clear verification token immediately (single-use)
+    // Check token match
+    const tokenMatches = user.verifyToken && (user.verifyToken === hashedIncomingToken || user.verifyToken === token);
+    if (!tokenMatches) {
+      return res.status(400).json({ success: false, message: "Verification link is invalid or has already been used." });
+    }
+
+    // Check expiration (exactly 5 minutes limit)
+    if (!user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
+      return res.status(400).json({
+        success: false,
+        isExpired: true,
+        message: "Verification link expired. Please request a new verification link."
+      });
+    }
+
+    // Mark user as verified and invalidate token (single-use)
     const now = new Date();
     user.emailVerified = true;
     user.verified = true;
@@ -366,15 +482,14 @@ app.post("/api/auth/verify", async (req, res) => {
     user.updatedAt = now;
     await user.save();
 
-    // Automatically record email verification and login activities
+    // Log activities
     await logUserActivity(user._id, "email verification", `User verified email address: ${user.email}`, { email: user.email });
-    await logUserActivity(user._id, "login", `User logged in after email verification: ${user.email}`, { email: user.email, provider: user.provider });
 
     const jwtToken = generateToken(user._id);
 
     return res.json({
       success: true,
-      message: "Email verified successfully! You are now logged in.",
+      message: "Email verified successfully! Your account is now verified. You can log in.",
       token: jwtToken,
       user: {
         _id: user._id,
@@ -393,7 +508,10 @@ app.post("/api/auth/verify", async (req, res) => {
     console.error("Verification error:", err);
     return res.status(500).json({ success: false, message: "Server error during verification." });
   }
-});
+};
+
+app.post("/api/auth/verify", verifyEmailHandler);
+app.get("/api/auth/verify", verifyEmailHandler);
 
 // Resend Verification Email Token
 app.post("/api/auth/resend-verification", async (req, res) => {
@@ -408,33 +526,50 @@ app.post("/api/auth/resend-verification", async (req, res) => {
       return res.status(404).json({ success: false, message: "Account not found." });
     }
 
-    if (user.verified) {
+    if (user.verified || user.emailVerified) {
       return res.json({ success: true, message: "Email is already verified. Please log in normally." });
     }
 
-    const verifyToken = generateVerifyToken();
-    user.verifyToken = verifyToken;
-    user.verifyTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
+    const rawVerifyToken = generateVerifyToken();
+    const hashedVerifyToken = hashToken(rawVerifyToken);
+    user.verifyToken = hashedVerifyToken;
+    user.verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000); // Fresh 5 minutes
     await user.save();
 
     const host = req.get("host") || "localhost:5000";
     const protocol = req.protocol || "http";
-    const verifyLink = `${protocol}://${host}/?verifyEmail=${encodeURIComponent(user.email)}&verifyToken=${verifyToken}`;
-    const verificationMessage =
-      `Hi ${user.name || "there"},\n\n` +
-      `Welcome to AI Resume Analyzer!\n` +
-      `Please confirm your email address by clicking the link below:\n\n` +
-      `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n\n` +
-      `If you didn't create this account, you can safely ignore this email.`;
+    const appUrl = (process.env.APP_URL || process.env.BASE_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+    const verifyLink = `${appUrl}/verify-email?token=${rawVerifyToken}&email=${encodeURIComponent(user.email)}`;
 
-    sendEmailToUser(user.email, "Confirm your email — AI Resume Analyzer", verificationMessage).catch(() => {});
+    const textMessage =
+      `Hi ${user.name || "there"},\n\n` +
+      `Please verify your email address to complete your registration by clicking the link below:\n\n` +
+      `${verifyLink}\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
+      `If you didn't request this email, you can safely ignore it.`;
+
+    const htmlMessage =
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
+      `<h2 style="color: #4f46e5; text-align: center;">Verify Your Account</h2>` +
+      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
+      `<p>Here is your new verification link. Please verify your email address to activate your account.</p>` +
+      `<div style="text-align: center; margin: 30px 0;">` +
+      `<a href="${verifyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify My Account</a>` +
+      `</div>` +
+      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}">${verifyLink}</a></p>` +
+      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This verification link is valid for exactly 5 minutes.</p>` +
+      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
+      `<p style="font-size: 12px; color: #888;">If you didn't request a new link, please ignore this email.</p>` +
+      `</div>`;
+
+    sendEmailToUser(user.email, "Verify Your Account", textMessage, htmlMessage).catch(() => {});
 
     return res.json({
       success: true,
-      message: "Fresh verification link generated for your email inbox.",
+      message: "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.",
       email: user.email,
-      name: user.name
+      name: user.name,
+      verifyToken: rawVerifyToken
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Server error resending verification." });
@@ -453,7 +588,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     const normalizedIdentifier = identifier.toLowerCase();
 
-    // 1. Find the user using the existing email or userId
+    // Find user using email or userId
     const user = await User.findOne({
       $or: [
         { email: normalizedIdentifier },
@@ -471,11 +606,13 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
-    if (!user.verified) {
+    // Check verification status
+    if (!user.verified && !user.emailVerified) {
       return res.status(401).json({
         success: false,
         requireVerification: true,
-        message: "Please verify your email before logging in."
+        message: "Please verify your email before logging in. We have sent a verification link to your email.",
+        email: user.email
       });
     }
 
@@ -495,7 +632,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     const userIdStr = updatedUser.userId || updatedUser._id.toString();
 
-    // Record login activity in user_activity collection
+    // Record login activity
     await logUserActivity(updatedUser._id, "login", `User logged in with email: ${updatedUser.email}`, { email: updatedUser.email, provider: updatedUser.provider });
 
     const token = generateToken(updatedUser._id);

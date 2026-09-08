@@ -1787,7 +1787,7 @@
   // =================================================================
   const AUTH_CONFIG = {
     // Google Cloud Console → APIs & Services → Credentials → OAuth Client ID (Web application)
-    GOOGLE_CLIENT_ID: "1066854237177-h6aq1utfrd5ek3i1dr8anacd4ses57u8.apps.googleusercontent.com",
+    GOOGLE_CLIENT_ID: "YOUR_GOOGLE_CLIENT_ID",
 
     // formsubmit.co — the inbox every site email is routed through.
     // Direct endpoint using the site admin email ensures FormSubmit autoresponses work seamlessly.
@@ -2004,7 +2004,7 @@
 
     const token = serverToken || account.verifyToken || generateResetToken();
     account.verifyToken = token;
-    account.verifyTokenExpires = Date.now() + 15 * 60 * 1000; // link valid 15 minutes
+    account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid exactly 5 minutes
     if (accounts[email]) saveAccounts();
 
     let origin = location.origin;
@@ -2013,16 +2013,15 @@
       origin = "http://localhost:5000";
     }
 
-    const verifyLink = `${origin}${pathname}?verifyEmail=${encodeURIComponent(email)}&verifyToken=${token}`;
+    const verifyLink = `${origin}/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
     const displayName = name || account.name || "there";
 
     const welcomeMessage =
       `Hi ${displayName},\n\n` +
-      `Welcome to AI Resume Analyzer!\n` +
+      `Thank you for creating an account with AI Resume Analyzer!\n` +
       `Please confirm your email address by clicking the link below:\n\n` +
       `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 15 minutes.\n` +
-      `Clicking this link will verify your account so you can log in on any of your devices (phone, laptop, tablet).\n\n` +
+      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
       `If you didn't create this account, you can safely ignore this email.`;
 
     console.log("Sending verification email directly to user inbox:", { to: email });
@@ -2030,7 +2029,7 @@
     // Deliver email directly to user's registered inbox ONLY
     sendDirectUserEmail({
       toEmail: email,
-      subject: "Confirm your email — AI Resume Analyzer",
+      subject: "Verify Your Account",
       message: welcomeMessage
     });
 
@@ -2657,13 +2656,13 @@
   // account to verified, open the login panel with email prefilled, and prompt to log in ----
   async function checkForVerifyLink(){
     const params = new URLSearchParams(location.search);
-    const email = params.get("verifyEmail");
-    const token = params.get("verifyToken");
-    if (!email || !token) return;
+    const token = params.get("token") || params.get("verifyToken");
+    const email = params.get("email") || params.get("verifyEmail");
 
-    const normalized = normalizeEmail(email);
+    if (!token) return;
 
-    // Call MongoDB Backend Verification Endpoint
+    const normalized = email ? normalizeEmail(email) : "";
+
     try {
       const data = await safeFetchJson("/api/auth/verify", {
         method: "POST",
@@ -2877,6 +2876,7 @@
         signupPanel.reset();
         checkPasswordsMatch();
         showVerifyPendingScreen(email);
+        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
         return;
       } else if (data.success && data.token){
         setAuthToken(data.token);
@@ -2918,6 +2918,7 @@
     signupPanel.reset();
     checkPasswordsMatch();
     showVerifyPendingScreen(email);
+    showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
@@ -2961,7 +2962,7 @@
         }, 700);
         return;
       } else if (!data.success && data.requireVerification){
-        showToast(loginToast, data.message || "Please verify your email before logging in.", true);
+        showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email.", true);
         return;
       } else if (!data.success && data.message){
         showToast(loginToast, data.message, true);
@@ -2978,7 +2979,7 @@
     }
 
     if (!account.verified){
-      showToast(loginToast, "Please verify your email before logging in.", true);
+      showToast(loginToast, "Please verify your email before logging in. We have sent a verification link to your email.", true);
       return;
     }
 
@@ -3007,10 +3008,10 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
       });
-      if (data.success && data.verifyToken){
-        sendVerificationEmail(email, data.name || "", data.verifyToken);
+      if (data.success && (data.verifyToken || data.message)){
+        if (data.verifyToken) sendVerificationEmail(email, data.name || "", data.verifyToken);
         showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, `A fresh confirmation link has been sent to ${email}.`, false);
+        showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
         return;
       } else if (!data.success && data.message === "Email is already verified. Please log in normally."){
         showToast(loginToast, data.message, false);
@@ -3029,7 +3030,7 @@
 
     sendVerificationEmail(email, account ? account.name : "");
     showVerifyPendingScreen(email);
-    showToast(verifyPendingToast, `A fresh confirmation link has been sent to ${email}.`, false);
+    showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
   });
 
   // ---- Pending Verification Panel buttons ----
@@ -3044,9 +3045,9 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: currentPendingVerifyEmail })
         });
-        if (data.success && data.verifyToken){
-          sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
-          showToast(verifyPendingToast, `A fresh verification email has been sent to ${currentPendingVerifyEmail}. Please check your inbox and spam folder.`, false);
+        if (data.success && (data.verifyToken || data.message)){
+          if (data.verifyToken) sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
+          showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
           return;
         }
       } catch(err){
@@ -3056,7 +3057,7 @@
       const account = accounts[currentPendingVerifyEmail];
       const name = account ? account.name : "";
       sendVerificationEmail(currentPendingVerifyEmail, name);
-      showToast(verifyPendingToast, `A fresh verification email has been sent to ${currentPendingVerifyEmail}. Please check your inbox and spam folder.`, false);
+      showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
     });
   }
 
@@ -3078,6 +3079,10 @@
       const client = google.accounts.oauth2.initTokenClient({
         client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
         scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+        error_callback: (err) => {
+          console.warn("Google OAuth Error:", err);
+          showToast(toastEl, "Google OAuth Error: Please check your Google OAuth Client ID and authorized origins.", true);
+        },
         callback: async (tokenResponse) => {
           if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
             showToast(toastEl, "Google sign-in was cancelled.", true);

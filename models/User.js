@@ -69,7 +69,16 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   collection: "users",
-  timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
+  timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+userSchema.virtual("isVerified").get(function() {
+  return Boolean(this.verified || this.emailVerified);
+}).set(function(val) {
+  this.verified = Boolean(val);
+  this.emailVerified = Boolean(val);
 });
 
 module.exports = mongoose.model("User", userSchema, "users");

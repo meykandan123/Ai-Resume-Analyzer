@@ -1791,21 +1791,6 @@
     ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
   };
 
-  // Attempt loading GOOGLE_CLIENT_ID from server environment
-  try {
-    fetch("/api/config")
-      .then(res => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then(data => {
-        if (data && data.googleClientId) {
-          AUTH_CONFIG.GOOGLE_CLIENT_ID = data.googleClientId;
-        }
-      })
-      .catch(() => {});
-  } catch (e) {}
-
   // User accounts storage helper
   function loadAccounts(){
     try {
@@ -2958,33 +2943,6 @@
     const normalized = normalizeEmail(googleEmail);
     const name = normalized.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 
-    try {
-      const apiData = await safeFetchJson("/api/auth/google", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email: normalized })
-      });
-
-      if (apiData && apiData.success && apiData.user) {
-        if (apiData.token) setAuthToken(apiData.token);
-        showToast(toastEl, `Signed in as ${apiData.user.email} via Google.`, false);
-        setLoggedInUser({
-          _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-          id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-          userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
-          name: apiData.user.name,
-          email: apiData.user.email,
-          provider: "google",
-          photo: apiData.user.photo || ""
-        });
-        closeAuth();
-        return;
-      }
-    } catch(e) {
-      console.warn("Backend google sync error:", e);
-    }
-
-    // Local account fallback if backend offline
     if (!accounts[normalized]) {
       accounts[normalized] = { name, password: null, provider: "google", verified: true };
     } else {
@@ -3017,7 +2975,6 @@
 
             let profile = null;
             const accessToken = tokenResponse.access_token;
-            const idToken = tokenResponse.id_token;
 
             if (accessToken) {
               try {
@@ -3037,37 +2994,6 @@
                 });
                 if (res.ok) profile = await res.json();
               } catch (e) {}
-            }
-
-            try {
-              const apiData = await safeFetchJson("/api/auth/google", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                  name: profile ? profile.name : "", 
-                  email: profile ? profile.email : "",
-                  access_token: accessToken,
-                  id_token: idToken
-                })
-              });
-
-              if (apiData && apiData.success && apiData.user) {
-                if (apiData.token) setAuthToken(apiData.token);
-                showToast(toastEl, `Signed in as ${apiData.user.email}.`, false);
-                setLoggedInUser({
-                  _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-                  id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-                  userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
-                  name: apiData.user.name,
-                  email: apiData.user.email,
-                  provider: apiData.user.provider || "google",
-                  photo: apiData.user.photo || ""
-                });
-                closeAuth();
-                return;
-              }
-            } catch(err){
-              console.warn("Backend google sync error:", err);
             }
 
             if (profile && profile.email) {

@@ -2208,15 +2208,29 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
+  // Determine Backend API Base URL
+  // On production (e.g. Render/HTTPS), relative URLs (/api/...) use current origin securely without hardcoding HTTP or port 5000.
+  // In local dev (Live Server, file://, or non-5000 port), target local backend server on port 5000.
+  const isLocalDev = (
+    location.protocol === "file:" ||
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1" ||
+    (location.port && location.port !== "5000" && location.protocol !== "https:")
+  );
+
   const currentHost = (location.hostname === "localhost" || !location.hostname) ? "127.0.0.1" : location.hostname;
-  const API_BASE = (location.protocol === "file:" || (location.port && location.port !== "5000"))
-    ? `${location.protocol === "file:" ? "http:" : location.protocol}//${currentHost}:5000`
+  const devProtocol = location.protocol === "file:" ? "http:" : location.protocol;
+
+  const API_BASE = isLocalDev
+    ? `${devProtocol}//${currentHost}:5000`
     : "";
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
   async function safeFetchJson(url, options, retries = 1) {
-    const fullUrl = (url.startsWith("/api/") && API_BASE) ? (API_BASE + url) : (url.startsWith("/api/") ? `http://${currentHost}:5000${url}` : url);
+    const fullUrl = (url.startsWith("/api/") && API_BASE)
+      ? (API_BASE + url)
+      : url;
+
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(fullUrl, options);
@@ -2227,7 +2241,7 @@
             isNonJson: true,
             isOffline: true,
             status: res.status,
-            message: `Backend server is offline or unreachable on port 5000. Please start server with 'node server.js'.`
+            message: `Backend server is offline or unreachable. Please start your server with 'node server.js'.`
           };
         }
         const text = await res.text();
@@ -2242,7 +2256,7 @@
             isError: true,
             isOffline: true,
             status: 0,
-            message: `Backend server is offline at http://${currentHost}:5000. Please start server with 'node server.js'.`
+            message: `Backend server is offline or unreachable. Please start server with 'node server.js'.`
           };
         }
         await new Promise(r => setTimeout(r, 800));

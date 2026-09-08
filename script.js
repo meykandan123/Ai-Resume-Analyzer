@@ -2930,102 +2930,81 @@
     backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
   }
 
-  async function promptGoogleFallback(toastEl) {
-    const defaultEmail = "user@gmail.com";
-    const googleEmail = prompt("Sign in with Google Account:\nEnter your Google Email address:", defaultEmail);
-    if (!googleEmail) return;
-
-    if (!isValidEmail(googleEmail)) {
-      showToast(toastEl, "Please enter a valid Google email address.", true);
+  function signInWithGoogle(toastEl, isSignupFlow){
+    if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
+      showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection or ad-blocker.", true);
       return;
     }
 
-    const normalized = normalizeEmail(googleEmail);
-    const name = normalized.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-
-    if (!accounts[normalized]) {
-      accounts[normalized] = { name, password: null, provider: "google", verified: true };
-    } else {
-      accounts[normalized].verified = true;
-      accounts[normalized].provider = "google";
+    if (!AUTH_CONFIG || !AUTH_CONFIG.GOOGLE_CLIENT_ID || AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")) {
+      showToast(toastEl, "Please configure your Google OAuth Client ID in AUTH_CONFIG.GOOGLE_CLIENT_ID to enable Google Sign-In.", true);
+      return;
     }
-    saveAccounts();
-    showToast(toastEl, `Signed in as ${normalized} via Google.`, false);
-    setLoggedInUser({ name: accounts[normalized].name || name, email: normalized, provider: "google" });
-    closeAuth();
-  }
 
-  function signInWithGoogle(toastEl, isSignupFlow){
-    const hasRealClientId = AUTH_CONFIG && AUTH_CONFIG.GOOGLE_CLIENT_ID && !AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
+        scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+        error_callback: (err) => {
+          console.warn("Google OAuth Error:", err);
+          showToast(toastEl, "Unable to connect to Google OAuth service. Please verify your Client ID and Authorized Origins.", true);
+        },
+        callback: async (tokenResponse) => {
+          if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
+            showToast(toastEl, "Google sign-in was cancelled.", true);
+            return;
+          }
 
-    if (hasRealClientId && !window.gsiScriptFailed && window.google && google.accounts && google.accounts.oauth2) {
-      try {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
-          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
-          error_callback: (err) => {
-            console.warn("Google OAuth Error:", err);
-            promptGoogleFallback(toastEl);
-          },
-          callback: async (tokenResponse) => {
-            if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
-              showToast(toastEl, "Google sign-in was cancelled.", true);
-              return;
-            }
+          let profile = null;
+          const accessToken = tokenResponse.access_token;
 
-            let profile = null;
-            const accessToken = tokenResponse.access_token;
-
-            if (accessToken) {
-              try {
-                const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                  headers: { Authorization: "Bearer " + accessToken }
-                });
-                if (res.ok) profile = await res.json();
-              } catch (e) {
-                console.warn("Client userinfo v3 fetch error:", e);
-              }
-            }
-
-            if ((!profile || !profile.email) && accessToken) {
-              try {
-                const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-                  headers: { Authorization: "Bearer " + accessToken }
-                });
-                if (res.ok) profile = await res.json();
-              } catch (e) {}
-            }
-
-            if (profile && profile.email) {
-              const email = normalizeEmail(profile.email);
-              const name = profile.name || email.split("@")[0];
-              const isNewAccount = !accounts[email];
-              if (isNewAccount){
-                accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
-              } else {
-                accounts[email].verified = true;
-                accounts[email].provider = "google";
-                if (name) accounts[email].name = name;
-                if (profile.picture) accounts[email].photo = profile.picture;
-              }
-              saveAccounts();
-
-              showToast(toastEl, `Signed in as ${email}.`, false);
-              setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
-              closeAuth();
-            } else {
-              promptGoogleFallback(toastEl);
+          if (accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) {
+              console.warn("Client userinfo v3 fetch error:", e);
             }
           }
-        });
-        client.requestAccessToken();
-        return;
-      } catch (e){
-        console.warn("Google Sign-In GIS init error:", e);
-      }
-    }
 
-    promptGoogleFallback(toastEl);
+          if ((!profile || !profile.email) && accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) {}
+          }
+
+          if (profile && profile.email) {
+            const email = normalizeEmail(profile.email);
+            const name = profile.name || email.split("@")[0];
+            const isNewAccount = !accounts[email];
+            if (isNewAccount){
+              accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
+            } else {
+              accounts[email].verified = true;
+              accounts[email].provider = "google";
+              if (name) accounts[email].name = name;
+              if (profile.picture) accounts[email].photo = profile.picture;
+            }
+            saveAccounts();
+
+            showToast(toastEl, `Signed in as ${email}.`, false);
+            setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
+            closeAuth();
+          } else {
+            showToast(toastEl, "Could not retrieve Google profile. Please try again.", true);
+          }
+        }
+      });
+      client.requestAccessToken();
+    } catch (e){
+      console.warn("Google Sign-In GIS init error:", e);
+      showToast(toastEl, "Google Sign-In initialization failed. Please check your Client ID.", true);
+    }
   }
 
   // If this page was opened from a password-reset email link, jump

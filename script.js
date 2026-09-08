@@ -3903,8 +3903,88 @@
       });
     }
   }
+  async function checkEmailVerificationURLParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("token") || urlParams.get("verifyToken");
+    const email = urlParams.get("email") || urlParams.get("verifyEmail");
+    const pathname = window.location.pathname || "";
+
+    if (token || pathname.includes("verify-email")) {
+      if (!token) return;
+      try {
+        const data = await safeFetchJson("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, email })
+        });
+
+        if (data && data.success && data.token) {
+          setAuthToken(data.token);
+          const normEmail = normalizeEmail(data.user?.email || email);
+          const name = data.user?.name || (normEmail ? normEmail.split("@")[0] : "User");
+          
+          setLoggedInUser({
+            id: data.user._id || data.user.id || data.user.userId,
+            _id: data.user._id || data.user.id,
+            userId: data.user.userId || data.user._id,
+            name: name,
+            email: normEmail,
+            provider: data.user.provider || "email",
+            photo: data.user.photo || "",
+            token: data.token
+          });
+
+          if (normEmail) {
+            accounts[normEmail] = {
+              ...(accounts[normEmail] || {}),
+              name: name,
+              provider: "email",
+              verified: true
+            };
+            saveAccounts();
+          }
+
+          fetchHistoryFromBackend();
+          closeAuth();
+          showToast(loginToast, `Email verified successfully! Welcome, ${name}!`, false);
+          
+          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+          if (!cleanPath) cleanPath = "/";
+          window.history.replaceState({}, document.title, cleanPath);
+          return;
+        } else if (data && !data.success && data.message) {
+          openAuth("login");
+          showToast(loginToast, data.message, true);
+          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+          if (!cleanPath) cleanPath = "/";
+          window.history.replaceState({}, document.title, cleanPath);
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend verification error during URL check:", err);
+      }
+
+      // Local storage fallback verification if backend is unavailable
+      if (email) {
+        const normEmail = normalizeEmail(email);
+        const account = accounts[normEmail];
+        if (account) {
+          account.verified = true;
+          saveAccounts();
+          setLoggedInUser({ name: account.name, email: normEmail, provider: "email" });
+          closeAuth();
+          showToast(loginToast, `Email verified successfully! Welcome, ${account.name}!`, false);
+          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+          if (!cleanPath) cleanPath = "/";
+          window.history.replaceState({}, document.title, cleanPath);
+        }
+      }
+    }
+  }
+
   setupFirebaseAuthStateListener();
   checkFirebaseRedirectResult();
+  checkEmailVerificationURLParams();
 
   // ---- DEBUG HELPER — list every signed-up account on this browser ----
   //

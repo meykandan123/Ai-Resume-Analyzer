@@ -300,6 +300,14 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
   return true;
 };
 
+// Public Configuration Endpoint
+app.get("/api/config", (req, res) => {
+  res.json({
+    success: true,
+    googleClientId: process.env.GOOGLE_CLIENT_ID || ""
+  });
+});
+
 // ==================== AUTH ROUTES ====================
 
 // Sign Up

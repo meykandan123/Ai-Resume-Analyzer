@@ -1791,6 +1791,18 @@
     ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
   };
 
+  // Attempt loading GOOGLE_CLIENT_ID from server environment
+  try {
+    fetch("/api/config")
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.googleClientId) {
+          AUTH_CONFIG.GOOGLE_CLIENT_ID = data.googleClientId;
+        }
+      })
+      .catch(() => {});
+  } catch (e) {}
+
   // User accounts storage helper
   function loadAccounts(){
     try {

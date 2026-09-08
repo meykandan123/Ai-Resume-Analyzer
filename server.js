@@ -28,7 +28,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use((req, res, next) => {
-  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
   next();
 });
 app.use(cors());

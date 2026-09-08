@@ -3031,6 +3031,11 @@
             saveAccounts();
             fetchHistoryFromBackend();
             closeAuth();
+          } else {
+            accounts[email] = { name, provider: "google", verified: true, photo };
+            saveAccounts();
+            setLoggedInUser({ name, email, provider: "google", photo });
+            closeAuth();
           }
         }
       } catch (err) {
@@ -3092,6 +3097,14 @@
               saveAccounts();
               showToast(toastEl, `Signed in as ${email}.`, false);
               fetchHistoryFromBackend();
+              closeAuth();
+              return;
+            } else {
+              // Local fallback for Firebase Google Sign-In user
+              accounts[email] = { name, provider: "google", verified: true, photo };
+              saveAccounts();
+              showToast(toastEl, `Signed in as ${email}.`, false);
+              setLoggedInUser({ name, email, provider: "google", photo });
               closeAuth();
               return;
             }

@@ -3042,6 +3042,9 @@
         if (fbErr.code === "auth/popup-closed-by-user") {
           showToast(toastEl, "Google sign-in was cancelled.", true);
           return;
+        } else if (fbErr.code === "auth/unauthorized-domain") {
+          showToast(toastEl, "This domain is not authorized for Google Sign-In in Firebase Console. Please add this domain to Authorized Domains in Firebase Console.", true);
+          return;
         }
       }
     }

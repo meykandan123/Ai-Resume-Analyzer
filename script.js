@@ -3097,7 +3097,7 @@
             }
           }
         } catch (fbErr) {
-          console.warn("Firebase Google Sign-In notice/fallback:", fbErr.code || fbErr.message || fbErr);
+          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
           if (fbErr.code === "auth/cancelled-popup-request") {
             // Ignore silently as this is the result of overlapping requests
             console.warn("Firebase sign-in popup cancelled due to concurrent request.");
@@ -3120,6 +3120,13 @@
             return;
           } else if (fbErr.code === "auth/unauthorized-domain") {
             showToast(toastEl, "This domain is not authorized for Google Sign-In in Firebase Console. Please add this domain to Authorized Domains in Firebase Console.", true);
+            return;
+          } else if (fbErr.code === "auth/operation-not-allowed") {
+            showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please enable Google provider under Authentication -> Sign-in method.", true);
+            return;
+          } else {
+            // Display the specific Firebase error message and return so GIS fallback isn't falsely triggered
+            showToast(toastEl, fbErr.message || "Google Sign-In failed. Please try again.", true);
             return;
           }
         }

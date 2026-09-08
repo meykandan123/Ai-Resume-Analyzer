@@ -1244,6 +1244,6 @@ app.use((req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`AI Resume Analyzer server running on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`AI Resume Analyzer server running on http://localhost:${PORT} and http://127.0.0.1:${PORT}`);
 });

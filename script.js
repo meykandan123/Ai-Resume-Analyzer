@@ -2210,8 +2210,9 @@
   }
 
   // Determine Backend API Base URL (connects to Node.js server on port 5000 if frontend is opened via Live Server or file)
+  const currentHost = (location.hostname === "localhost" || !location.hostname) ? "127.0.0.1" : location.hostname;
   const API_BASE = (location.protocol === "file:" || (location.port && location.port !== "5000"))
-    ? `${location.protocol === "file:" ? "http:" : location.protocol}//${location.hostname || "localhost"}:5000`
+    ? `${location.protocol === "file:" ? "http:" : location.protocol}//${currentHost}:5000`
     : "";
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
@@ -2223,7 +2224,7 @@
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
           // Server returned non-JSON (e.g. 404 HTML fallback or offline backend) - return clean fallback object
-          return { success: false, isNonJson: true, status: res.status, message: `Non-JSON response (${res.status})` };
+          return { success: false, isNonJson: true, status: res.status, message: `Server returned non-JSON response (${res.status}).` };
         }
         const text = await res.text();
         if (!text || !text.trim()) {
@@ -2231,8 +2232,15 @@
         }
         return JSON.parse(text);
       } catch (err) {
-        if (attempt === retries) return { success: false, isError: true, message: err.message };
-        await new Promise(r => setTimeout(r, 1000));
+        if (attempt === retries) {
+          return {
+            success: false,
+            isError: true,
+            status: 0,
+            message: `Connection Refused: Backend server is offline at ${API_BASE || "http://127.0.0.1:5000"}. Please start server with 'node server.js'.`
+          };
+        }
+        await new Promise(r => setTimeout(r, 800));
       }
     }
   }

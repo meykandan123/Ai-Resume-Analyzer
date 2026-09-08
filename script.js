@@ -2896,124 +2896,161 @@
     backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
   }
 
-  function signInWithGoogle(toastEl, isSignupFlow){
-    if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
-      showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection, DNS settings, or ad-blocker.", true);
+  async function promptGoogleFallback(toastEl) {
+    const defaultEmail = "user@gmail.com";
+    const googleEmail = prompt("Sign in with Google Account:\nEnter your Google Email address:", defaultEmail);
+    if (!googleEmail) return;
+
+    if (!isValidEmail(googleEmail)) {
+      showToast(toastEl, "Please enter a valid Google email address.", true);
       return;
     }
 
-    if (!AUTH_CONFIG || !AUTH_CONFIG.GOOGLE_CLIENT_ID || AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")) {
-      showToast(toastEl, "Google Sign-In is not configured yet. Add a valid Google OAuth Client ID in AUTH_CONFIG.", true);
-      return;
-    }
+    const normalized = normalizeEmail(googleEmail);
+    const name = normalized.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 
     try {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
-        scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
-        error_callback: (err) => {
-          console.warn("Google OAuth Error:", err);
-          showToast(toastEl, "Unable to connect to Google OAuth service. Please check your network connection or DNS settings.", true);
-        },
-        callback: async (tokenResponse) => {
-          if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
-            showToast(toastEl, "Google sign-in was cancelled.", true);
-            return;
-          }
+      const apiData = await safeFetchJson("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email: normalized })
+      });
 
-          let profile = null;
-          const accessToken = tokenResponse.access_token;
-          const idToken = tokenResponse.id_token;
+      if (apiData && apiData.success && apiData.user) {
+        if (apiData.token) setAuthToken(apiData.token);
+        showToast(toastEl, `Signed in as ${apiData.user.email} via Google.`, false);
+        setLoggedInUser({
+          _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+          id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+          userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
+          name: apiData.user.name,
+          email: apiData.user.email,
+          provider: "google",
+          photo: apiData.user.photo || ""
+        });
+        closeAuth();
+        return;
+      }
+    } catch(e) {
+      console.warn("Backend google sync error:", e);
+    }
 
-          // Tier 1: Client-side userinfo v3
-          if (accessToken) {
-            try {
-              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                headers: { Authorization: "Bearer " + accessToken }
-              });
-              if (res.ok) profile = await res.json();
-            } catch (e) {
-              console.warn("Client userinfo v3 fetch error:", e);
-            }
-          }
+    // Local account fallback if backend offline
+    if (!accounts[normalized]) {
+      accounts[normalized] = { name, password: null, provider: "google", verified: true };
+    } else {
+      accounts[normalized].verified = true;
+      accounts[normalized].provider = "google";
+    }
+    saveAccounts();
+    showToast(toastEl, `Signed in as ${normalized} via Google.`, false);
+    setLoggedInUser({ name: accounts[normalized].name || name, email: normalized, provider: "google" });
+    closeAuth();
+  }
 
-          // Tier 2: Client-side userinfo v2 fallback
-          if ((!profile || !profile.email) && accessToken) {
-            try {
-              const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-                headers: { Authorization: "Bearer " + accessToken }
-              });
-              if (res.ok) profile = await res.json();
-            } catch (e) {}
-          }
+  function signInWithGoogle(toastEl, isSignupFlow){
+    const hasRealClientId = AUTH_CONFIG && AUTH_CONFIG.GOOGLE_CLIENT_ID && !AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_");
 
-          // Tier 3: Client-side tokeninfo fallback
-          if ((!profile || !profile.email) && accessToken) {
-            try {
-              const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`);
-              if (res.ok) profile = await res.json();
-            } catch (e) {}
-          }
-
-          // Tier 4: Backend server-side fetch & sync fallback (bypasses adblockers/CORS)
-          try {
-            const apiData = await safeFetchJson("/api/auth/google", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                name: profile ? profile.name : "", 
-                email: profile ? profile.email : "",
-                access_token: accessToken,
-                id_token: idToken
-              })
-            });
-
-            if (apiData && apiData.success && apiData.user) {
-              if (apiData.token) setAuthToken(apiData.token);
-              showToast(toastEl, `Signed in as ${apiData.user.email}.`, false);
-              setLoggedInUser({
-                _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-                id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
-                userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
-                name: apiData.user.name,
-                email: apiData.user.email,
-                provider: apiData.user.provider || "google",
-                photo: apiData.user.photo || ""
-              });
-              closeAuth();
+    if (hasRealClientId && !window.gsiScriptFailed && window.google && google.accounts && google.accounts.oauth2) {
+      try {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
+          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+          error_callback: (err) => {
+            console.warn("Google OAuth Error:", err);
+            promptGoogleFallback(toastEl);
+          },
+          callback: async (tokenResponse) => {
+            if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
+              showToast(toastEl, "Google sign-in was cancelled.", true);
               return;
             }
-          } catch(err){
-            console.warn("Backend google sync error:", err);
-          }
 
-          // Fallback if backend OAuth API was unreachable offline
-          if (profile && profile.email) {
-            const email = normalizeEmail(profile.email);
-            const name = profile.name || email.split("@")[0];
-            const isNewAccount = !accounts[email];
-            if (isNewAccount){
-              accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
-            } else {
-              accounts[email].verified = true;
-              accounts[email].provider = "google";
-              if (name) accounts[email].name = name;
-              if (profile.picture) accounts[email].photo = profile.picture;
+            let profile = null;
+            const accessToken = tokenResponse.access_token;
+            const idToken = tokenResponse.id_token;
+
+            if (accessToken) {
+              try {
+                const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                  headers: { Authorization: "Bearer " + accessToken }
+                });
+                if (res.ok) profile = await res.json();
+              } catch (e) {
+                console.warn("Client userinfo v3 fetch error:", e);
+              }
             }
-            saveAccounts();
 
-            showToast(toastEl, `Signed in as ${email}.`, false);
-            setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
-            closeAuth();
-          } else {
-            showToast(toastEl, "Could not retrieve Google profile. Please try logging in with your Email & Password.", true);
+            if ((!profile || !profile.email) && accessToken) {
+              try {
+                const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+                  headers: { Authorization: "Bearer " + accessToken }
+                });
+                if (res.ok) profile = await res.json();
+              } catch (e) {}
+            }
+
+            try {
+              const apiData = await safeFetchJson("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                  name: profile ? profile.name : "", 
+                  email: profile ? profile.email : "",
+                  access_token: accessToken,
+                  id_token: idToken
+                })
+              });
+
+              if (apiData && apiData.success && apiData.user) {
+                if (apiData.token) setAuthToken(apiData.token);
+                showToast(toastEl, `Signed in as ${apiData.user.email}.`, false);
+                setLoggedInUser({
+                  _id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+                  id: (apiData.user._id || apiData.user.id || apiData.user.userId || "").toString(),
+                  userId: (apiData.user.userId || apiData.user._id || apiData.user.id || "").toString(),
+                  name: apiData.user.name,
+                  email: apiData.user.email,
+                  provider: apiData.user.provider || "google",
+                  photo: apiData.user.photo || ""
+                });
+                closeAuth();
+                return;
+              }
+            } catch(err){
+              console.warn("Backend google sync error:", err);
+            }
+
+            if (profile && profile.email) {
+              const email = normalizeEmail(profile.email);
+              const name = profile.name || email.split("@")[0];
+              const isNewAccount = !accounts[email];
+              if (isNewAccount){
+                accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
+              } else {
+                accounts[email].verified = true;
+                accounts[email].provider = "google";
+                if (name) accounts[email].name = name;
+                if (profile.picture) accounts[email].photo = profile.picture;
+              }
+              saveAccounts();
+
+              showToast(toastEl, `Signed in as ${email}.`, false);
+              setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
+              closeAuth();
+            } else {
+              promptGoogleFallback(toastEl);
+            }
           }
-        }
-      });
-      client.requestAccessToken();
-    } catch (e){
-      showToast(toastEl, "Google Sign-In initialization failed. Please try again.", true);
+        });
+        client.requestAccessToken();
+        return;
+      } catch (e){
+        console.warn("Google Sign-In GIS init error:", e);
+      }
     }
+
+    promptGoogleFallback(toastEl);
   }
 
   // If this page was opened from a password-reset email link, jump

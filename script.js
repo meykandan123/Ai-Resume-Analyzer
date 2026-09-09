@@ -2659,9 +2659,12 @@
 
   function checkForResetLink(){
     const params = new URLSearchParams(location.search);
-    const email = params.get("resetEmail");
-    const token = params.get("resetToken");
-    if (!email || !token) return;
+    const email = params.get("email") || params.get("resetEmail");
+    const token = params.get("token") || params.get("resetToken");
+    const pathname = window.location.pathname || "";
+
+    if (!token && !pathname.includes("reset-password")) return;
+    if (!token || !email) return;
 
     const normalized = normalizeEmail(email);
     pendingResetEmail = normalized;
@@ -2689,15 +2692,15 @@
     }
 
     const params = new URLSearchParams(location.search);
-    const token = params.get("resetToken");
+    const token = params.get("token") || params.get("resetToken");
 
     try {
       const data = await safeFetchJson("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: pendingResetEmail, token, newPassword: pw })
+        body: JSON.stringify({ email: pendingResetEmail, token, password: pw })
       });
-      if (data.success){
+      if (data && data.success){
         const account = accounts[pendingResetEmail];
         if (account){
           account.password = pw;
@@ -2705,9 +2708,11 @@
           delete account.resetTokenExpires;
           saveAccounts();
         }
-        showToast(resetToast, "Password updated successfully! Redirecting to login...", false);
+        showToast(resetToast, "🎉 Password updated successfully! Redirecting to login...", false);
         setTimeout(() => {
-          history.replaceState({}, "", location.pathname);
+          let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
+          if (!cleanPath) cleanPath = "/";
+          history.replaceState({}, document.title, cleanPath);
           const emailForLogin = pendingResetEmail;
           pendingResetEmail = null;
           resetPanel.reset();
@@ -2717,7 +2722,7 @@
           showToast(loginToast, "Password updated! Please log in with your new password.", false);
         }, 1400);
         return;
-      } else if (!data.success && data.message){
+      } else if (data && !data.success && data.message){
         showToast(resetToast, data.message, true);
         return;
       }
@@ -2735,7 +2740,9 @@
 
     showToast(resetToast, "Password updated successfully! Redirecting to login...", false);
     setTimeout(() => {
-      history.replaceState({}, "", location.pathname); // strip the reset params from the URL
+      let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
+      if (!cleanPath) cleanPath = "/";
+      history.replaceState({}, document.title, cleanPath); // strip the reset params from the URL
       const emailForLogin = pendingResetEmail;
       pendingResetEmail = null;
       resetPanel.reset();

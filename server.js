@@ -28,6 +28,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors());
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
@@ -238,9 +242,16 @@ app.use("/api/auth/signup", authRateLimiter);
 app.use("/api/auth/login", authRateLimiter);
 app.use("/api/auth/resend-verification", authRateLimiter);
 app.use("/api/auth/verify", authRateLimiter);
+app.use("/api/auth/forgot-password", authRateLimiter);
+app.use("/api/auth/reset-password", authRateLimiter);
 
 // Express route for email verification URL
 app.get("/verify-email", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// Express route for password reset URL
+app.get("/reset-password", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
@@ -608,6 +619,161 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Server error resending verification." });
+  }
+});
+
+// Request Password Reset Link (Forgot Password)
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ success: false, message: "Valid email address is required." });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // For security reasons, send generic confirmation message even if user not found
+    if (!user || user.provider !== "email") {
+      return res.json({
+        success: true,
+        message: "If an account with that email exists, a password reset link has been sent to your Inbox or Spam/Junk folder."
+      });
+    }
+
+    const rawResetToken = generateVerifyToken(); // 32-byte random hex string
+    const hashedResetToken = hashToken(rawResetToken);
+    const resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // Valid for 15 minutes
+
+    user.resetToken = hashedResetToken;
+    user.resetTokenExpires = resetTokenExpires;
+    user.updatedAt = new Date();
+    await user.save();
+
+    // Log Activity in Database
+    await logUserActivity(
+      user._id,
+      "password reset request",
+      `Password reset link requested for email: ${user.email}`,
+      { email: user.email },
+      user.email
+    );
+
+    const host = req.get("host") || "localhost:5000";
+    const protocol = req.protocol || "http";
+    const appUrl = (process.env.APP_URL || process.env.BASE_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+    const resetLink = `${appUrl}/reset-password?token=${rawResetToken}&email=${encodeURIComponent(user.email)}`;
+
+    const textMessage =
+      `Hi ${user.name || "there"},\n\n` +
+      `You requested to reset your password for AI Resume Analyzer.\n` +
+      `Click the link below to set a new password:\n\n` +
+      `${resetLink}\n\n` +
+      `⏰ IMPORTANT: This link is valid for 15 minutes.\n` +
+      `If you don't see this email in your primary inbox, please check your Spam or Junk folder.\n\n` +
+      `If you didn't request a password reset, you can safely ignore this email.`;
+
+    const htmlMessage =
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
+      `<h2 style="color: #4f46e5; text-align: center;">Reset Your Password</h2>` +
+      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
+      `<p>We received a request to reset your password for AI Resume Analyzer. Click the button below to choose a new password:</p>` +
+      `<div style="text-align: center; margin: 30px 0;">` +
+      `<a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>` +
+      `</div>` +
+      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${resetLink}">${resetLink}</a></p>` +
+      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This reset link is valid for 15 minutes.</p>` +
+      `<p style="font-size: 12px; color: #4b5563;">💡 If you don't see this email in your inbox, please check your <strong>Spam / Junk folder</strong>.</p>` +
+      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
+      `<p style="font-size: 12px; color: #888;">If you did not request a password reset, your account is safe and you can ignore this email.</p>` +
+      `</div>`;
+
+    sendEmailToUser(user.email, "Reset Your Password - AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+
+    return res.json({
+      success: true,
+      message: "If an account with that email exists, a password reset link has been sent to your Inbox or Spam/Junk folder."
+    });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    return res.status(500).json({ success: false, message: "Server error processing password reset request." });
+  }
+});
+
+// Perform Password Reset (Submit new password with token)
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { email, token, password } = req.body;
+    if (!email || !token || !password) {
+      return res.status(400).json({ success: false, message: "Email, reset token, and new password are required." });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const hashedIncomingToken = hashToken(token);
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+      $or: [
+        { resetToken: hashedIncomingToken },
+        { resetToken: token }
+      ]
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Password reset link is invalid or has already been used." });
+    }
+
+    // Check expiration (15 minutes)
+    if (!user.resetTokenExpires || user.resetTokenExpires < new Date()) {
+      return res.status(400).json({
+        success: false,
+        isExpired: true,
+        message: "Password reset link has expired. Please request a new reset link."
+      });
+    }
+
+    // Hash new password using bcrypt
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    const now = new Date();
+
+    user.password = hashedPassword;
+    user.passwordHash = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpires = null;
+    user.updatedAt = now;
+    await user.save();
+
+    // Verify DB save
+    const verifiedUser = await User.findById(user._id);
+    if (!verifiedUser) {
+      console.warn("Retrying database update for password reset...");
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { password: hashedPassword, passwordHash: hashedPassword, resetToken: null, resetTokenExpires: null, updatedAt: now } }
+      );
+    }
+
+    // Log Activity in Database
+    await logUserActivity(
+      user._id,
+      "password reset success",
+      `Password reset successfully completed for email: ${user.email}`,
+      { email: user.email },
+      user.email
+    );
+
+    return res.json({
+      success: true,
+      message: "Password updated successfully! You can now log in with your new password."
+    });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    return res.status(500).json({ success: false, message: "Server error completing password reset." });
   }
 });
 

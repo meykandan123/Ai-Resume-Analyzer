@@ -69,11 +69,20 @@ try {
   MongoMemoryServer = require("mongodb-memory-server").MongoMemoryServer;
 } catch (e) {}
 
-// Automated Schema Migration Routine for Legacy Data Compatibility
+// Automated Schema Migration Routine for Legacy Data & Index Compatibility
 async function migrateDatabaseSchema() {
   try {
     const db = mongoose.connection.db;
     if (!db) return;
+
+    // 0. Drop obsolete/conflicting legacy indexes if they exist
+    try {
+      const raIndexes = await db.collection("resume_analysis").indexes();
+      if (raIndexes.some(idx => idx.name === "analysisId_1")) {
+        await db.collection("resume_analysis").dropIndex("analysisId_1");
+        console.log("Dropped legacy index 'analysisId_1' from resume_analysis.");
+      }
+    } catch (e) {}
 
     // 1. Migrate user_activity (Consolidate legacy single activity docs into user-wise container)
     const legacyActivities = await db.collection("user_activity").find({
@@ -113,6 +122,28 @@ async function migrateDatabaseSchema() {
         await db.collection("user_activity").deleteOne({ _id: act._id });
       }
       console.log("Activity collection migration completed successfully.");
+    }
+
+    // Merge duplicate user_activity container docs per userId if any exist
+    const dupActivities = await db.collection("user_activity").aggregate([
+      { $group: { _id: "$userId", docs: { $push: "$$ROOT" }, count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 }, _id: { $ne: null } } }
+    ]).toArray();
+
+    for (const group of dupActivities) {
+      const mainDoc = group.docs[0];
+      let mergedActivities = mainDoc.activities || [];
+      for (let i = 1; i < group.docs.length; i++) {
+        const otherDoc = group.docs[i];
+        if (Array.isArray(otherDoc.activities)) {
+          mergedActivities = mergedActivities.concat(otherDoc.activities);
+        }
+        await db.collection("user_activity").deleteOne({ _id: otherDoc._id });
+      }
+      await db.collection("user_activity").updateOne(
+        { _id: mainDoc._id },
+        { $set: { activities: mergedActivities, updatedAt: new Date() } }
+      );
     }
 
     // 2. Migrate resume_history (Consolidate legacy history docs into user-wise container)
@@ -190,6 +221,28 @@ async function migrateDatabaseSchema() {
       console.log("Resume history collection migration completed successfully.");
     }
 
+    // Merge duplicate resume_history container docs per userId if any exist
+    const dupHistories = await db.collection("resume_history").aggregate([
+      { $group: { _id: "$userId", docs: { $push: "$$ROOT" }, count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 }, _id: { $ne: null } } }
+    ]).toArray();
+
+    for (const group of dupHistories) {
+      const mainDoc = group.docs[0];
+      let mergedHistory = mainDoc.history || [];
+      for (let i = 1; i < group.docs.length; i++) {
+        const otherDoc = group.docs[i];
+        if (Array.isArray(otherDoc.history)) {
+          mergedHistory = mergedHistory.concat(otherDoc.history);
+        }
+        await db.collection("resume_history").deleteOne({ _id: otherDoc._id });
+      }
+      await db.collection("resume_history").updateOne(
+        { _id: mainDoc._id },
+        { $set: { history: mergedHistory, updatedAt: new Date() } }
+      );
+    }
+
     // 3. Clean up duplicates in resume_analysis to enforce unique compound index
     const duplicates = await ResumeAnalysis.aggregate([
       {
@@ -246,28 +299,8 @@ async function connectDB() {
       console.log("Collection initialization notice:", collErr.message);
     }
   } catch (err) {
-    console.warn("Could not connect to configured MONGODB_URI (" + MONGODB_URI + ").");
-    if (MongoMemoryServer) {
-      try {
-        console.log("Starting in-memory MongoDB server as fallback...");
-        const mongoServer = await MongoMemoryServer.create();
-        const uri = mongoServer.getUri();
-        await mongoose.connect(uri, { dbName: "Ai-Resume-Analyzer" });
-        console.log("Connected to In-Memory MongoDB database successfully:", uri);
-        await User.createCollection();
-        await UserActivity.createCollection();
-        await ResumeHistory.createCollection();
-        await ResumeAnalysis.createCollection();
-        await User.syncIndexes();
-        await UserActivity.syncIndexes();
-        await ResumeHistory.syncIndexes();
-        await ResumeAnalysis.syncIndexes();
-        return;
-      } catch (memErr) {
-        console.error("MongoMemoryServer error:", memErr.message);
-      }
-    }
-    console.error("MongoDB server not available. Ensure local mongod is running or update MONGODB_URI in .env");
+    console.error("MongoDB Connection Failed! MONGODB_URI:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
+    console.error("Error details:", err.message);
   }
 }
 connectDB();
@@ -371,6 +404,49 @@ const checkDbConnection = (req, res, next) => {
   }
   next();
 };
+
+// Database Health Check Endpoint (STEP 15)
+app.get("/api/health/db", async (req, res) => {
+  try {
+    const isConnected = mongoose.connection.readyState === 1;
+    const dbName = mongoose.connection.db ? mongoose.connection.db.databaseName : "Ai-Resume-Analyzer";
+    let pingOk = false;
+    let collectionsList = [];
+
+    if (isConnected && mongoose.connection.db) {
+      try {
+        await mongoose.connection.db.admin().ping();
+        pingOk = true;
+        const colls = await mongoose.connection.db.listCollections().toArray();
+        collectionsList = colls.map(c => c.name);
+      } catch (pingErr) {
+        pingOk = false;
+      }
+    }
+
+    if (isConnected && pingOk) {
+      return res.json({
+        server: "ok",
+        mongodb: "connected",
+        database: dbName,
+        collections: collectionsList
+      });
+    } else {
+      return res.status(503).json({
+        server: "ok",
+        mongodb: "disconnected",
+        database: dbName,
+        error: "MongoDB connection is down or ping failed."
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      server: "ok",
+      mongodb: "error",
+      error: err.message
+    });
+  }
+});
 
 let nodemailer;
 try { nodemailer = require("nodemailer"); } catch(e){}

@@ -2813,8 +2813,6 @@
         body: JSON.stringify({ name, email, password })
       });
       if (data && data.success && data.requireVerification){
-        accounts[email] = { name, password, provider: "email", verified: false };
-        saveAccounts();
         signupPanel.reset();
         checkPasswordsMatch();
         showVerifyPendingScreen(email);
@@ -2825,13 +2823,12 @@
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
           _id: data.user._id || data.user.id,
+          userId: data.user.userId || data.user._id,
           name: data.user.name,
           email: data.user.email,
           provider: "email",
           photo: data.user.photo
         });
-        accounts[email] = { name: data.user.name, password, provider: "email", verified: true };
-        saveAccounts();
         showToast(signupToast, `Account created! Welcome, ${data.user.name}!`, false);
         fetchHistoryFromBackend();
         setTimeout(() => {
@@ -2840,27 +2837,18 @@
           checkPasswordsMatch();
         }, 700);
         return;
-      } else if (data && !data.success && !data.isOffline && data.message){
+      } else if (data && !data.success && data.message){
         showToast(signupToast, data.message, true);
+        return;
+      } else {
+        showToast(signupToast, "Signup failed. Could not connect to database.", true);
         return;
       }
     } catch(err){
-      console.warn("Backend unavailable, using local signup fallback:", err);
-    }
-
-    if (accounts[email]){
-      showToast(signupToast, "An account with that email already exists. Try logging in instead.", true);
+      console.error("MongoDB signup API error:", err);
+      showToast(signupToast, "Signup failed: " + (err.message || "Database network error."), true);
       return;
     }
-
-    accounts[email] = { name, password, provider: "email", verified: false };
-    saveAccounts();
-    sendVerificationEmail(email, name);
-
-    signupPanel.reset();
-    checkPasswordsMatch();
-    showVerifyPendingScreen(email);
-    showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
   });
 
   document.getElementById("googleSignupBtn").addEventListener("click", () => signInWithGoogle(signupToast, true));
@@ -2906,8 +2894,6 @@
           photo: data.user.photo,
           token: data.token
         });
-        accounts[email] = { name: data.user.name, password, provider: "email", verified: true, photo: data.user.photo || "" };
-        saveAccounts();
         showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
         fetchHistoryFromBackend();
         setTimeout(() => {
@@ -2918,31 +2904,18 @@
       } else if (data && !data.success && data.requireVerification){
         showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email.", true);
         return;
-      } else if (data && !data.success && !data.isOffline && data.message){
+      } else if (data && !data.success && data.message){
         showToast(loginToast, data.message, true);
+        return;
+      } else {
+        showToast(loginToast, "Login failed. Could not connect to database.", true);
         return;
       }
     } catch(err){
-      console.warn("Backend unavailable, using local login fallback:", err);
-    }
-
-    const account = accounts[email];
-    if (!account || account.provider !== "email" || account.password !== password){
-      showToast(loginToast, "Incorrect email or password. Please try again.", true);
+      console.error("MongoDB login API error:", err);
+      showToast(loginToast, "Login failed: " + (err.message || "Database network error."), true);
       return;
     }
-
-    if (!account.verified){
-      showToast(loginToast, "Please verify your email before logging in. We have sent a verification link to your email.", true);
-      return;
-    }
-
-    showToast(loginToast, `Welcome back, ${account.name}!`, false);
-    setTimeout(() => {
-      setLoggedInUser({ name: account.name, email, provider: "email" });
-      closeAuth();
-      loginPanel.reset();
-    }, 700);
   });
 
   document.getElementById("googleLoginBtn").addEventListener("click", () => signInWithGoogle(loginToast, false));
@@ -3054,15 +3027,10 @@
               photo: data.user.photo || photo,
               token: data.token
             });
-            accounts[email] = { name: data.user.name || name, provider: "google", verified: true, photo: data.user.photo || photo };
-            saveAccounts();
             fetchHistoryFromBackend();
             closeAuth();
           } else {
-            accounts[email] = { name, provider: "google", verified: true, photo };
-            saveAccounts();
-            setLoggedInUser({ name, email, provider: "google", photo });
-            closeAuth();
+            showToast(loginToast, (data && data.message) || "Google authentication failed on MongoDB backend.", true);
           }
         }
       } catch (err) {
@@ -3123,19 +3091,12 @@
                 photo: data.user.photo || photo,
                 token: data.token
               });
-              accounts[email] = { name: data.user.name || name, provider: "google", verified: true, photo: data.user.photo || photo };
-              saveAccounts();
               showToast(toastEl, `Signed in as ${email}.`, false);
               fetchHistoryFromBackend();
               closeAuth();
               return;
             } else {
-              // Local fallback for Firebase Google Sign-In user
-              accounts[email] = { name, provider: "google", verified: true, photo };
-              saveAccounts();
-              showToast(toastEl, `Signed in as ${email}.`, false);
-              setLoggedInUser({ name, email, provider: "google", photo });
-              closeAuth();
+              showToast(toastEl, (data && data.message) || "Google sign-in failed on MongoDB database.", true);
               return;
             }
           }

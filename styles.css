@@ -174,7 +174,7 @@
     padding:0 0 80px;
   }
 
-  /* Minimalist Clean Header Bar (Increased Breath & Vertical Height) */
+  /* Minimalist Clean Header Bar (Generous Breath & Spacious Sizing) */
   .navbar {
     width: 100%;
     position: sticky;
@@ -183,13 +183,13 @@
     right: 0;
     z-index: 1000;
     background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
     border-bottom: 1px solid #e2e8f0;
-    box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.04), 0 1px 3px -1px rgba(15, 23, 42, 0.02);
-    padding: 0 40px;
-    height: 80px;
-    margin: 0 0 28px 0;
+    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.04), 0 2px 4px -2px rgba(15, 23, 42, 0.02);
+    padding: 0 52px;
+    height: 96px;
+    margin: 0 0 32px 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -197,7 +197,7 @@
   }
 
   .nav-container {
-    max-width: 1280px;
+    max-width: 1360px;
     width: 100%;
     display: flex;
     align-items: center;
@@ -207,18 +207,18 @@
   .nav-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 20px;
   }
 
   .nav-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-weight: 700;
-    font-size: 22px;
+    gap: 14px;
+    font-weight: 800;
+    font-size: 25px;
     color: #0f172a;
     text-decoration: none;
-    letter-spacing: -0.4px;
+    letter-spacing: -0.5px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 
@@ -230,44 +230,44 @@
   }
 
   .nav-brand-logo-img {
-    height: 36px;
+    height: 42px;
     width: auto;
-    max-width: 48px;
+    max-width: 56px;
     object-fit: contain;
     display: block;
     transition: transform 0.2s ease;
   }
 
   .nav-brand:hover .nav-brand-logo-img {
-    transform: scale(1.05);
+    transform: scale(1.06);
   }
 
   .nav-brand-text {
     display: inline-block;
     font-weight: 800;
-    font-size: 22px;
+    font-size: 25px;
     color: #0f172a;
-    letter-spacing: -0.4px;
+    letter-spacing: -0.5px;
   }
 
   .nav-brand-badge {
     display: inline-flex;
     align-items: center;
-    padding: 3px 8px;
-    font-size: 10.5px;
+    padding: 4px 10px;
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
     border-radius: 999px;
     background: #e0f2fe;
     color: #0284c7;
-    margin-left: 2px;
+    margin-left: 4px;
     text-transform: uppercase;
   }
 
   .nav-right {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
   }
 
   /* Navigation Bar Home Button (Visible when logged in) */
@@ -275,13 +275,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: 8px;
     background: #f1f5f9;
     color: #334155;
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-size: 14px;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.18s ease;
@@ -291,7 +291,7 @@
     background: #e2e8f0;
     color: #0f172a;
     border-color: #94a3b8;
-    transform: translateY(-1px);
+    transform: translateY(-1.5px);
   }
 
   /* Primary High-Contrast Action Button (Upload Resume) */
@@ -299,23 +299,23 @@
     background: #0f172a;
     color: #ffffff;
     border: 1px solid #0f172a;
-    border-radius: 8px;
-    padding: 10px 22px;
-    font-size: 14px;
+    border-radius: 10px;
+    padding: 12px 26px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.18s ease;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.08);
   }
 
   .nav-btn-dark:hover {
     background: #1e293b;
     border-color: #1e293b;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    transform: translateY(-1.5px);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
   }
 
   /* Secondary Clean Pill Button (Sign In & Login) */
@@ -323,9 +323,9 @@
     background: #ffffff;
     color: #334155;
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-size: 14px;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
@@ -339,7 +339,7 @@
     background: #f8fafc;
     color: #0f172a;
     border-color: #94a3b8;
-    transform: translateY(-1px);
+    transform: translateY(-1.5px);
   }
 
   .menu-dots-icon {

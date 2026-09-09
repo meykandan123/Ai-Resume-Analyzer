@@ -4002,14 +4002,26 @@
   const navSignInBtn = document.getElementById("navSignInBtn");
   if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
 
-  function goHome() {
+  async function goHome() {
     if (typeof closeProfilePage === "function") closeProfilePage();
     if (typeof closeHistory === "function") closeHistory();
     if (typeof closeAuth === "function") closeAuth();
+    if (typeof closeSupport === "function") closeSupport();
     const profileDropdown = document.getElementById("profileDropdown");
     if (profileDropdown) profileDropdown.classList.remove("open");
     const navMenuDropdown = document.getElementById("navMenuDropdown");
     if (navMenuDropdown) navMenuDropdown.classList.remove("open");
+
+    // Sync user state & history with backend when returning Home
+    if (getAuthToken()) {
+      try {
+        if (typeof restoreSession === "function") await restoreSession();
+        if (typeof fetchHistoryFromBackend === "function") await fetchHistoryFromBackend();
+      } catch (err) {
+        console.warn("Backend sync notice on Home navigation:", err);
+      }
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 

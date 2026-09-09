@@ -1896,22 +1896,45 @@
     return verifyLink;
   }
 
-  function showToast(el, msg, isError){
+  function hideToast(el){
     if (!el) return;
+    el.style.display = "none";
+    if (el._toastTimer) {
+      clearTimeout(el._toastTimer);
+      el._toastTimer = null;
+    }
+  }
+
+  function showToast(el, msg, isError, autoHideMs = 6000){
+    if (!el) return;
+    hideToast(el);
     el.textContent = msg;
     el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
+    el.title = "Click to dismiss";
+    if (!el._hasClickListener) {
+      el.addEventListener("click", () => hideToast(el));
+      el._hasClickListener = true;
+    }
     el.style.display = "block";
+    if (autoHideMs && autoHideMs > 0) {
+      el._toastTimer = setTimeout(() => hideToast(el), autoHideMs);
+    }
   }
 
-  function showToastHTML(el, html, isError){
+  function showToastHTML(el, html, isError, autoHideMs = 6000){
     if (!el) return;
+    hideToast(el);
     el.innerHTML = html;
     el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
+    el.title = "Click to dismiss";
+    if (!el._hasClickListener) {
+      el.addEventListener("click", () => hideToast(el));
+      el._hasClickListener = true;
+    }
     el.style.display = "block";
-  }
-
-  function hideToast(el){
-    el.style.display = "none";
+    if (autoHideMs && autoHideMs > 0) {
+      el._toastTimer = setTimeout(() => hideToast(el), autoHideMs);
+    }
   }
 
   function initials(name){
@@ -2459,6 +2482,22 @@
   authModal.addEventListener("click", (e) => { if (e.target === authModal) closeAuth(); });
   tabLogin.addEventListener("click", () => showPanel("login"));
   tabSignup.addEventListener("click", () => showPanel("signup"));
+
+  // Auto-clear error toasts as soon as user clicks or types in any auth input field
+  document.querySelectorAll("#loginPanel input, #signupPanel input, #forgotPanel input, #resetPanel input").forEach(input => {
+    input.addEventListener("input", () => {
+      hideToast(loginToast);
+      hideToast(signupToast);
+      hideToast(forgotToast);
+      hideToast(resetToast);
+    });
+    input.addEventListener("focus", () => {
+      hideToast(loginToast);
+      hideToast(signupToast);
+      hideToast(forgotToast);
+      hideToast(resetToast);
+    });
+  });
 
   // ---- Forgot password: request the email ----
   document.getElementById("forgotLinkBtn").addEventListener("click", () => showPanel("forgot"));

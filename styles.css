@@ -945,11 +945,17 @@
 
   .auth-toast {
     margin-top: 12px;
-    padding: 10px;
+    padding: 10px 14px;
     border-radius: 8px;
     font-size: 13px;
     text-align: center;
     display: none;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .auth-toast:hover {
+    opacity: 0.92;
   }
   .auth-toast.success {
     background: #e9f5ea;

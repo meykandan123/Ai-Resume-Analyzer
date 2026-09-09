@@ -18,7 +18,7 @@ const ResumeAnalysis = require("./models/ResumeAnalysis");
 const app = express();
 app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/Ai-Resume-Analyzer";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://meykandan07_db_user:QRFnlYDYLZlBOpVL@ai-resume-analyzer.v8ua4uo.mongodb.net/Ai-Resume-Analyzer?retryWrites=true&w=majority";
 const JWT_SECRET = process.env.JWT_SECRET || "ai_resume_secret_key_987654321";
 
 // Ensure uploads folder exists and serve statically
@@ -30,7 +30,7 @@ if (!fs.existsSync(uploadsDir)) {
 // Middleware
 app.use(cors());
 app.use((req, res, next) => {
-  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
   next();
 });
 app.use(express.json({ limit: "25mb" }));

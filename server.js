@@ -460,11 +460,24 @@ const verifyEmailHandler = async (req, res) => {
     // Check if already verified
     if (user.verified || user.emailVerified) {
       if (!user.verifyToken || (user.verifyToken !== hashedIncomingToken && user.verifyToken !== token)) {
+        const jwtToken = generateToken(user._id);
         return res.json({
           success: true,
           verified: true,
           message: "Email verified successfully! Your account is now verified. You can log in.",
-          user: { _id: user._id, userId: userIdStr, name: user.name, email: user.email, emailVerified: true }
+          token: jwtToken,
+          user: {
+            _id: user._id,
+            id: user._id,
+            userId: userIdStr,
+            name: user.name,
+            email: user.email,
+            emailVerified: true,
+            provider: user.provider,
+            photo: user.photo,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+          }
         });
       }
     }
@@ -493,6 +506,16 @@ const verifyEmailHandler = async (req, res) => {
     user.updatedAt = now;
     await user.save();
 
+    // Verify database update persistence in MongoDB
+    const verifiedCheck = await User.findById(user._id);
+    if (!verifiedCheck || (!verifiedCheck.verified && !verifiedCheck.emailVerified)) {
+      console.warn("Retrying database update for user verification...");
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { verified: true, emailVerified: true, verifyToken: null, verifyTokenExpires: null, updatedAt: now } }
+      );
+    }
+
     // Log activities
     await logUserActivity(user._id, "email verification", `User verified email address: ${user.email}`, { email: user.email });
 
@@ -500,6 +523,7 @@ const verifyEmailHandler = async (req, res) => {
 
     return res.json({
       success: true,
+      verified: true,
       message: "Email verified successfully! Your account is now verified. You can log in.",
       token: jwtToken,
       user: {
@@ -698,20 +722,37 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 
     const host = req.get("host") || "localhost:5000";
     const protocol = req.protocol || "http";
-    const resetLink = `${protocol}://${host}/?resetEmail=${encodeURIComponent(user.email)}&resetToken=${resetToken}`;
-    const resetMessage =
+    const appUrl = (process.env.APP_URL || process.env.BASE_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+    const resetLink = `${appUrl}/?resetEmail=${encodeURIComponent(user.email)}&resetToken=${resetToken}`;
+
+    const textMessage =
       `Hi ${user.name || "there"},\n\n` +
       `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
       `${resetLink}\n\n` +
-      `⏰ IMPORTANT: This password reset link is valid for 15 minutes.\n\n` +
+      `⏰ IMPORTANT: This password reset link is valid for 15 minutes. Please check your Inbox or Spam/Junk folder.\n\n` +
       `If you didn't request a password reset, you can safely ignore this email.`;
 
+    const htmlMessage =
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
+      `<h2 style="color: #4f46e5; text-align: center;">Reset Your Password</h2>` +
+      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
+      `<p>We received a request to reset your password for AI Resume Analyzer. Click the button below to choose a new password:</p>` +
+      `<div style="text-align: center; margin: 30px 0;">` +
+      `<a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>` +
+      `</div>` +
+      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${resetLink}">${resetLink}</a></p>` +
+      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This password reset link is valid for 15 minutes. Please check your Inbox or Spam/Junk folder.</p>` +
+      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
+      `<p style="font-size: 12px; color: #888;">If you didn't request a password reset, please ignore this email.</p>` +
+      `</div>`;
+
     // Send email directly to THAT USER's registered email address
-    await sendEmailToUser(user.email, "Reset your password — AI Resume Analyzer", resetMessage);
+    await sendEmailToUser(user.email, "Reset your password — AI Resume Analyzer", textMessage, htmlMessage);
 
     return res.json({
       success: true,
-      message: `Password reset link sent to ${user.email}! Please check your inbox and spam folder (valid for 15 minutes).`,
+      resetToken,
+      message: `Password reset link sent to ${user.email}! Please check your Inbox or Spam/Junk folder (valid for 15 minutes).`,
       email: user.email
     });
   } catch (err) {

@@ -2549,13 +2549,18 @@
   // ---- Email verification: the link in the confirmation email lands back
   // here with ?verifyEmail=...&verifyToken=... — validate it, flip the
   // account to verified, open the login panel with email prefilled, and prompt to log in ----
+  let isVerificationProcessing = false;
   async function checkForVerifyLink(){
+    if (isVerificationProcessing) return;
     const params = new URLSearchParams(location.search);
     const token = params.get("token") || params.get("verifyToken");
     const email = params.get("email") || params.get("verifyEmail");
+    const pathname = window.location.pathname || "";
 
+    if (!token && !pathname.includes("verify-email")) return;
     if (!token) return;
 
+    isVerificationProcessing = true;
     const normalized = email ? normalizeEmail(email) : "";
 
     try {
@@ -2564,45 +2569,44 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalized, token })
       });
-      if (data.success && data.token){
-        setAuthToken(data.token);
-        setLoggedInUser({
-          id: data.user._id || data.user.id || data.user.userId,
-          _id: data.user._id || data.user.id,
-          userId: data.user.userId || data.user._id,
-          name: data.user.name,
-          email: data.user.email,
-          provider: data.user.provider || "email",
-          photo: data.user.photo,
-          token: data.token
-        });
-        if (!accounts[normalized]){
-          accounts[normalized] = { name: data.user.name, provider: "email", verified: true };
-          saveAccounts();
-        } else {
-          accounts[normalized].verified = true;
+      if (data && data.success){
+        const verifiedEmail = normalizeEmail(data.user?.email || normalized);
+        if (verifiedEmail){
+          if (!accounts[verifiedEmail]){
+            accounts[verifiedEmail] = { name: data.user?.name || verifiedEmail, provider: "email", verified: true };
+          } else {
+            accounts[verifiedEmail].verified = true;
+          }
           saveAccounts();
         }
 
-        notifyUserOfAuthEvent({ email: data.user.email, name: data.user.name, action: "Sign Up" });
+        notifyUserOfAuthEvent({ email: verifiedEmail, name: data.user?.name || verifiedEmail, action: "Sign Up" });
 
-        fetchHistoryFromBackend();
-        closeAuth();
-        history.replaceState({}, "", location.pathname);
-
-        const statusEl = document.getElementById("status");
-        if (statusEl){
-          statusEl.innerHTML = `<div class="auth-toast success" style="margin:20px auto; max-width:550px; text-align:center; font-size:14px; padding:14px 20px; display:block; border-radius:8px;">
-            🎉 Email verified successfully in MongoDB! Welcome to your dashboard, <strong>${data.user.name}</strong>.
-          </div>`;
-          setTimeout(() => { if (statusEl.firstChild) statusEl.innerHTML = ""; }, 6000);
+        // Open login panel & prefill email so user can use login
+        authModal.classList.add("active");
+        showPanel("login");
+        const loginEmailInput = document.getElementById("loginEmail");
+        if (loginEmailInput && verifiedEmail) {
+          loginEmailInput.value = verifiedEmail;
         }
+        const loginPasswordInput = document.getElementById("loginPassword");
+        if (loginPasswordInput) {
+          setTimeout(() => loginPasswordInput.focus(), 300);
+        }
+
+        showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
+
+        let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+        if (!cleanPath) cleanPath = "/";
+        history.replaceState({}, document.title, cleanPath);
         return;
-      } else if (!data.success && data.message){
+      } else if (data && !data.success && data.message){
         authModal.classList.add("active");
         showPanel("login");
         showToast(loginToast, data.message, true);
-        history.replaceState({}, "", location.pathname);
+        let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+        if (!cleanPath) cleanPath = "/";
+        history.replaceState({}, document.title, cleanPath);
         return;
       }
     } catch(err){
@@ -2614,7 +2618,9 @@
       authModal.classList.add("active");
       showPanel("login");
       showToast(loginToast, "Account not found. Please sign up to create your account.", true);
-      history.replaceState({}, "", location.pathname);
+      let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+      if (!cleanPath) cleanPath = "/";
+      history.replaceState({}, document.title, cleanPath);
       return;
     }
 
@@ -2625,16 +2631,30 @@
       authModal.classList.add("active");
       showPanel("login");
       showToast(loginToast, isExpired ? "Verification link expired. Click 'Resend confirmation' for a new link." : "Verification link is invalid or used.", true);
-      history.replaceState({}, "", location.pathname);
+      let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+      if (!cleanPath) cleanPath = "/";
+      history.replaceState({}, document.title, cleanPath);
       return;
     }
 
     account.verified = true;
     saveAccounts();
-    notifyUserOfAuthEvent({ email: normalized, name: account.name || normalized, action: "Sign Up" });
-    setLoggedInUser({ name: account.name || normalized, email: normalized, provider: "email" });
-    closeAuth();
-    history.replaceState({}, "", location.pathname);
+
+    authModal.classList.add("active");
+    showPanel("login");
+    const loginEmailInput = document.getElementById("loginEmail");
+    if (loginEmailInput && normalized) {
+      loginEmailInput.value = normalized;
+    }
+    const loginPasswordInput = document.getElementById("loginPassword");
+    if (loginPasswordInput) {
+      setTimeout(() => loginPasswordInput.focus(), 300);
+    }
+
+    showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
+    let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+    if (!cleanPath) cleanPath = "/";
+    history.replaceState({}, document.title, cleanPath);
   }
 
   function checkForResetLink(){
@@ -3904,82 +3924,7 @@
     }
   }
   async function checkEmailVerificationURLParams() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get("token") || urlParams.get("verifyToken");
-    const email = urlParams.get("email") || urlParams.get("verifyEmail");
-    const pathname = window.location.pathname || "";
-
-    if (token || pathname.includes("verify-email")) {
-      if (!token) return;
-      try {
-        const data = await safeFetchJson("/api/auth/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, email })
-        });
-
-        if (data && data.success && data.token) {
-          setAuthToken(data.token);
-          const normEmail = normalizeEmail(data.user?.email || email);
-          const name = data.user?.name || (normEmail ? normEmail.split("@")[0] : "User");
-          
-          setLoggedInUser({
-            id: data.user._id || data.user.id || data.user.userId,
-            _id: data.user._id || data.user.id,
-            userId: data.user.userId || data.user._id,
-            name: name,
-            email: normEmail,
-            provider: data.user.provider || "email",
-            photo: data.user.photo || "",
-            token: data.token
-          });
-
-          if (normEmail) {
-            accounts[normEmail] = {
-              ...(accounts[normEmail] || {}),
-              name: name,
-              provider: "email",
-              verified: true
-            };
-            saveAccounts();
-          }
-
-          fetchHistoryFromBackend();
-          closeAuth();
-          showToast(loginToast, `Email verified successfully! Welcome, ${name}!`, false);
-          
-          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-          if (!cleanPath) cleanPath = "/";
-          window.history.replaceState({}, document.title, cleanPath);
-          return;
-        } else if (data && !data.success && data.message) {
-          openAuth("login");
-          showToast(loginToast, data.message, true);
-          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-          if (!cleanPath) cleanPath = "/";
-          window.history.replaceState({}, document.title, cleanPath);
-          return;
-        }
-      } catch (err) {
-        console.warn("Backend verification error during URL check:", err);
-      }
-
-      // Local storage fallback verification if backend is unavailable
-      if (email) {
-        const normEmail = normalizeEmail(email);
-        const account = accounts[normEmail];
-        if (account) {
-          account.verified = true;
-          saveAccounts();
-          setLoggedInUser({ name: account.name, email: normEmail, provider: "email" });
-          closeAuth();
-          showToast(loginToast, `Email verified successfully! Welcome, ${account.name}!`, false);
-          let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-          if (!cleanPath) cleanPath = "/";
-          window.history.replaceState({}, document.title, cleanPath);
-        }
-      }
-    }
+    await checkForVerifyLink();
   }
 
   setupFirebaseAuthStateListener();

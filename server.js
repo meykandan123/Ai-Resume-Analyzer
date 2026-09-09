@@ -13,6 +13,7 @@ require("dotenv").config();
 const User = require("./models/User");
 const UserActivity = require("./models/UserActivity");
 const ResumeHistory = require("./models/ResumeHistory");
+const ResumeAnalysis = require("./models/ResumeAnalysis");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -35,7 +36,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-// Handle JSON body parser syntax errors with application/json content-type
+// Handle JSON body parser syntax errors
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
     return res.status(400).json({ success: false, message: "Invalid JSON payload format." });
@@ -68,6 +69,152 @@ try {
   MongoMemoryServer = require("mongodb-memory-server").MongoMemoryServer;
 } catch (e) {}
 
+// Automated Schema Migration Routine for Legacy Data Compatibility
+async function migrateDatabaseSchema() {
+  try {
+    const db = mongoose.connection.db;
+    if (!db) return;
+
+    // 1. Migrate user_activity (Consolidate legacy single activity docs into user-wise container)
+    const legacyActivities = await db.collection("user_activity").find({
+      $or: [
+        { activityType: { $exists: true } },
+        { action: { $exists: true } }
+      ],
+      activities: { $exists: false }
+    }).toArray();
+
+    if (legacyActivities.length > 0) {
+      console.log(`Migrating ${legacyActivities.length} legacy activity record(s) into user-wise containers...`);
+      for (const act of legacyActivities) {
+        const uId = (act.userId || act.user_id || act.userEmail || act.email || "").toString();
+        if (!uId) continue;
+
+        const actType = act.activityType || act.action || "general";
+        const desc = act.description || act.activityDescription || `${actType} activity recorded`;
+        const time = act.timestamp || act.createdAt || new Date();
+        const uEmail = act.email || act.userEmail || "";
+
+        await UserActivity.findOneAndUpdate(
+          { userId: uId },
+          {
+            $setOnInsert: { userId: uId },
+            $set: { email: uEmail, updatedAt: new Date() },
+            $push: {
+              activities: {
+                activityType: actType,
+                description: desc,
+                timestamp: time
+              }
+            }
+          },
+          { upsert: true }
+        );
+        await db.collection("user_activity").deleteOne({ _id: act._id });
+      }
+      console.log("Activity collection migration completed successfully.");
+    }
+
+    // 2. Migrate resume_history (Consolidate legacy history docs into user-wise container)
+    const legacyHistory = await db.collection("resume_history").find({
+      $or: [
+        { fileName: { $exists: true } },
+        { analysisId: { $exists: true } }
+      ],
+      history: { $exists: false }
+    }).toArray();
+
+    if (legacyHistory.length > 0) {
+      console.log(`Migrating ${legacyHistory.length} legacy history record(s) into user-wise containers...`);
+      for (const hist of legacyHistory) {
+        const uId = (hist.userId || hist.user_id || hist.userEmail || hist.email || "").toString();
+        if (!uId) continue;
+
+        const resId = hist.analysisId || hist._id.toString();
+        const fname = hist.fileName || hist.filename || "resume.pdf";
+        const uDate = hist.uploadDate || hist.analysisDate || hist.createdAt || new Date();
+        const aType = hist.analysisType || "normal";
+        const aScore = Number(hist.atsScore !== undefined ? hist.atsScore : (hist.score || 0));
+        const uEmail = hist.userEmail || hist.email || "";
+
+        await ResumeHistory.findOneAndUpdate(
+          { userId: uId },
+          {
+            $setOnInsert: { userId: uId },
+            $set: { email: uEmail, updatedAt: new Date() },
+            $push: {
+              history: {
+                resumeId: resId,
+                fileName: fname,
+                uploadedAt: uDate,
+                analysisType: aType,
+                atsScore: aScore,
+                status: "analyzed"
+              }
+            }
+          },
+          { upsert: true }
+        );
+
+        // Also ensure a corresponding record exists in resume_analysis
+        const rText = hist.resumeText || "";
+        const rHash = crypto.createHash("sha256").update(rText || (fname + uId)).digest("hex");
+        await ResumeAnalysis.findOneAndUpdate(
+          { userId: uId, resumeHash: rHash, analysisType: aType },
+          {
+            $setOnInsert: {
+              userId: uId,
+              resumeId: resId,
+              resumeHash: rHash,
+              analysisType: aType,
+              firstUploadedAt: uDate
+            },
+            $set: {
+              email: uEmail,
+              fileName: fname,
+              atsScore: aScore,
+              extractedData: {
+                skills: hist.detectedSkills || [],
+                education: [],
+                experience: []
+              },
+              analysisResult: hist.analysisResult || {},
+              lastUpdatedAt: uDate
+            }
+          },
+          { upsert: true }
+        );
+
+        await db.collection("resume_history").deleteOne({ _id: hist._id });
+      }
+      console.log("Resume history collection migration completed successfully.");
+    }
+
+    // 3. Clean up duplicates in resume_analysis to enforce unique compound index
+    const duplicates = await ResumeAnalysis.aggregate([
+      {
+        $group: {
+          _id: { userId: "$userId", resumeHash: "$resumeHash", analysisType: "$analysisType" },
+          docs: { $push: "$_id" },
+          count: { $sum: 1 }
+        }
+      },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+
+    if (duplicates.length > 0) {
+      console.log(`Resolving ${duplicates.length} duplicate group(s) in resume_analysis...`);
+      for (const group of duplicates) {
+        const removeIds = group.docs.slice(0, group.docs.length - 1);
+        await db.collection("resume_analysis").deleteMany({ _id: { $in: removeIds } });
+      }
+      console.log("Duplicate resume_analysis records resolved.");
+    }
+  } catch (migErr) {
+    console.warn("Schema migration notice:", migErr.message);
+  }
+}
+
 // Connect to MongoDB
 async function connectDB() {
   try {
@@ -78,13 +225,23 @@ async function connectDB() {
     });
     console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
 
-    // Automatically ensure collections exist in MongoDB database: users, user_activity, resume_history
+    // Ensure collections exist and sync unique indexes
     try {
       await User.createCollection();
       await UserActivity.createCollection();
       await ResumeHistory.createCollection();
+      await ResumeAnalysis.createCollection();
 
-      console.log("Collections verified/created in Ai-Resume-Analyzer: users, user_activity, resume_history");
+      // Run automatic legacy data migration
+      await migrateDatabaseSchema();
+
+      // Build & Sync indexes for all 4 collections
+      await User.syncIndexes();
+      await UserActivity.syncIndexes();
+      await ResumeHistory.syncIndexes();
+      await ResumeAnalysis.syncIndexes();
+
+      console.log("Verified 4 MongoDB collections & unique indexes: users, user_activity, resume_history, resume_analysis");
     } catch (collErr) {
       console.log("Collection initialization notice:", collErr.message);
     }
@@ -100,6 +257,11 @@ async function connectDB() {
         await User.createCollection();
         await UserActivity.createCollection();
         await ResumeHistory.createCollection();
+        await ResumeAnalysis.createCollection();
+        await User.syncIndexes();
+        await UserActivity.syncIndexes();
+        await ResumeHistory.syncIndexes();
+        await ResumeAnalysis.syncIndexes();
         return;
       } catch (memErr) {
         console.error("MongoMemoryServer error:", memErr.message);
@@ -110,31 +272,37 @@ async function connectDB() {
 }
 connectDB();
 
-// Helper to log activities automatically into "User Activity" collection
+// Helper to log activities atomically into user_activity collection (1 document per user)
 async function logUserActivity(userOrId, activityType, description, metadata = {}, userEmail = null) {
   try {
-    // STRICT RULE: Do NOT save activities for anonymous / unauthenticated users
     if (!userOrId && !userEmail) return null;
 
     let targetUserId = null;
-    let emailToSave = userEmail ? userEmail.toLowerCase().trim() : null;
+    let nameToSave = "";
+    let emailToSave = userEmail ? userEmail.toLowerCase().trim() : "";
 
-    if (userOrId instanceof mongoose.Types.ObjectId || typeof userOrId === "string") {
+    if (typeof userOrId === "string") {
+      targetUserId = userOrId;
+    } else if (userOrId instanceof mongoose.Types.ObjectId) {
       targetUserId = userOrId.toString();
-    } else if (userOrId && userOrId._id) {
-      targetUserId = userOrId.userId || userOrId._id.toString();
-      if (!emailToSave && userOrId.email) {
-        emailToSave = userOrId.email.toLowerCase().trim();
-      }
+    } else if (userOrId && (userOrId.userId || userOrId._id)) {
+      targetUserId = (userOrId.userId || userOrId._id).toString();
+      if (!nameToSave && userOrId.name) nameToSave = userOrId.name;
+      if (!emailToSave && userOrId.email) emailToSave = userOrId.email.toLowerCase().trim();
     }
 
-    if (!targetUserId) return null;
-
-    if (mongoose.Types.ObjectId.isValid(targetUserId)) {
-      const u = await User.findById(targetUserId).select("email userId");
+    if (targetUserId) {
+      const u = await User.findOne({
+        $or: [
+          { userId: targetUserId },
+          { _id: mongoose.Types.ObjectId.isValid(targetUserId) ? targetUserId : null },
+          ...(emailToSave ? [{ email: emailToSave }] : [])
+        ]
+      }).select("userId name email");
       if (u) {
-        if (u.userId) targetUserId = u.userId;
-        if (!emailToSave && u.email) emailToSave = u.email.toLowerCase().trim();
+        targetUserId = u.userId || u._id.toString();
+        if (!nameToSave) nameToSave = u.name || "";
+        if (!emailToSave) emailToSave = u.email ? u.email.toLowerCase().trim() : "";
       }
     }
 
@@ -144,28 +312,23 @@ async function logUserActivity(userOrId, activityType, description, metadata = {
     const descText = description || `${actType} activity recorded`;
     const now = new Date();
 
-    const activity = new UserActivity({
-      userId: targetUserId,
-      email: emailToSave,
-      userEmail: emailToSave,
-      activityType: actType,
-      action: actType,
-      description: descText,
-      activityDescription: descText,
-      metadata: metadata || {},
-      timestamp: now
-    });
+    const result = await UserActivity.findOneAndUpdate(
+      { userId: targetUserId },
+      {
+        $setOnInsert: { userId: targetUserId },
+        $set: { name: nameToSave, email: emailToSave, updatedAt: now },
+        $push: {
+          activities: {
+            activityType: actType,
+            description: descText,
+            timestamp: now
+          }
+        }
+      },
+      { upsert: true, returnDocument: "after" }
+    );
 
-    await activity.save();
-
-    // Verify that the MongoDB insert operation actually succeeds
-    const verifiedActivity = await UserActivity.findById(activity._id);
-    if (!verifiedActivity) {
-      console.error(`MongoDB activity insert verification failed for [${actType}]`);
-      return null;
-    }
-
-    return verifiedActivity;
+    return result;
   } catch (err) {
     console.error(`Failed to log activity [${activityType}]:`, err.message);
     return null;
@@ -265,7 +428,7 @@ const generateVerifyToken = () => {
   return crypto.randomBytes(32).toString("hex");
 };
 
-// Helper: Hash Verification Token with SHA-256 (Never store plain tokens in DB)
+// Helper: Hash Verification Token with SHA-256
 const hashToken = (token) => {
   if (!token || typeof token !== "string") return "";
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -282,7 +445,6 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
   const pass = process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS;
   const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || `"AI Resume Analyzer" <${user || "no-reply@ai-resume-analyzer.com"}>`;
 
-  // Send via Nodemailer SMTP if credentials are configured in environment
   if (nodemailer && host && user && pass) {
     try {
       const transporter = nodemailer.createTransport({
@@ -306,7 +468,6 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
     }
   }
 
-  // Simulated backend send for local dev / unconfigured SMTP environment
   console.log(`[Backend Email Service - Dev Log] Subject: '${subject}' | To: ${normalized}`);
   return true;
 };
@@ -341,18 +502,16 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Do not create duplicate users with the same email
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ success: false, message: "An account with this email already exists." });
     }
 
-    // Hash password using bcrypt - NEVER store plain text
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const rawVerifyToken = generateVerifyToken();
     const hashedVerifyToken = hashToken(rawVerifyToken);
-    const verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000); // Exactly 5 minutes
+    const verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000);
     const _id = new mongoose.Types.ObjectId();
     const userId = _id.toString();
     const now = new Date();
@@ -373,18 +532,9 @@ app.post("/api/auth/signup", async (req, res) => {
       updatedAt: now
     });
 
-    // Save to existing MongoDB database
     await newUser.save();
 
-    // Verify that the MongoDB insert operation actually succeeds
-    const verifiedUser = await User.findById(newUser._id);
-    if (!verifiedUser) {
-      console.error("MongoDB insert verification failed for userId:", userId);
-      return res.status(500).json({ success: false, message: "Failed to save user into MongoDB database. Insert verification failed." });
-    }
-
-    // Automatically record user signup activity
-    await logUserActivity(newUser._id, "user signup", `User registered with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "email" });
+    await logUserActivity(newUser.userId, "signup", `User registered with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "email" });
 
     const host = req.get("host") || "localhost:5000";
     const protocol = req.protocol || "http";
@@ -440,7 +590,7 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
-// Email Verification Endpoint (Supports both POST & GET)
+// Email Verification Endpoint
 const verifyEmailHandler = async (req, res) => {
   try {
     const email = req.body?.email || req.query?.email || req.body?.verifyEmail || req.query?.verifyEmail;
@@ -453,7 +603,6 @@ const verifyEmailHandler = async (req, res) => {
     const hashedIncomingToken = hashToken(token);
     const normalizedEmail = email ? email.toLowerCase().trim() : null;
 
-    // Search user by hashed token OR by raw token (for backward compatibility) OR by email
     let user = await User.findOne({
       $or: [
         { verifyToken: hashedIncomingToken },
@@ -468,38 +617,33 @@ const verifyEmailHandler = async (req, res) => {
 
     const userIdStr = user.userId || user._id.toString();
 
-    // Check if already verified
     if (user.verified || user.emailVerified) {
-      if (!user.verifyToken || (user.verifyToken !== hashedIncomingToken && user.verifyToken !== token)) {
-        const jwtToken = generateToken(user._id);
-        return res.json({
-          success: true,
-          verified: true,
-          message: "Email verified successfully! Your account is now verified. You can log in.",
-          token: jwtToken,
-          user: {
-            _id: user._id,
-            id: user._id,
-            userId: userIdStr,
-            name: user.name,
-            email: user.email,
-            emailVerified: true,
-            provider: user.provider,
-            photo: user.photo,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt
-          }
-        });
-      }
+      const jwtToken = generateToken(user._id);
+      return res.json({
+        success: true,
+        verified: true,
+        message: "Email verified successfully! Your account is now verified. You can log in.",
+        token: jwtToken,
+        user: {
+          _id: user._id,
+          id: user._id,
+          userId: userIdStr,
+          name: user.name,
+          email: user.email,
+          emailVerified: true,
+          provider: user.provider,
+          photo: user.photo,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        }
+      });
     }
 
-    // Check token match
     const tokenMatches = user.verifyToken && (user.verifyToken === hashedIncomingToken || user.verifyToken === token);
     if (!tokenMatches) {
       return res.status(400).json({ success: false, message: "Verification link is invalid or has already been used." });
     }
 
-    // Check expiration (exactly 5 minutes limit)
     if (!user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
       return res.status(400).json({
         success: false,
@@ -508,7 +652,6 @@ const verifyEmailHandler = async (req, res) => {
       });
     }
 
-    // Mark user as verified and invalidate token (single-use)
     const now = new Date();
     user.emailVerified = true;
     user.verified = true;
@@ -517,18 +660,7 @@ const verifyEmailHandler = async (req, res) => {
     user.updatedAt = now;
     await user.save();
 
-    // Verify database update persistence in MongoDB
-    const verifiedCheck = await User.findById(user._id);
-    if (!verifiedCheck || (!verifiedCheck.verified && !verifiedCheck.emailVerified)) {
-      console.warn("Retrying database update for user verification...");
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { verified: true, emailVerified: true, verifyToken: null, verifyTokenExpires: null, updatedAt: now } }
-      );
-    }
-
-    // Log activities
-    await logUserActivity(user._id, "email verification", `User verified email address: ${user.email}`, { email: user.email });
+    await logUserActivity(userIdStr, "email verification", `User verified email address: ${user.email}`, { email: user.email });
 
     const jwtToken = generateToken(user._id);
 
@@ -579,7 +711,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     const rawVerifyToken = generateVerifyToken();
     const hashedVerifyToken = hashToken(rawVerifyToken);
     user.verifyToken = hashedVerifyToken;
-    user.verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000); // Fresh 5 minutes
+    user.verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000);
     await user.save();
 
     const host = req.get("host") || "localhost:5000";
@@ -622,7 +754,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
   }
 });
 
-// Request Password Reset Link (Forgot Password)
+// Request Password Reset Link
 app.post("/api/auth/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -633,7 +765,6 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
 
-    // For security reasons, send generic confirmation message even if user not found
     if (!user || user.provider !== "email") {
       return res.json({
         success: true,
@@ -641,18 +772,18 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       });
     }
 
-    const rawResetToken = generateVerifyToken(); // 32-byte random hex string
+    const rawResetToken = generateVerifyToken();
     const hashedResetToken = hashToken(rawResetToken);
-    const resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // Valid for 15 minutes
+    const resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
 
     user.resetToken = hashedResetToken;
     user.resetTokenExpires = resetTokenExpires;
     user.updatedAt = new Date();
     await user.save();
 
-    // Log Activity in Database
+    const userIdStr = user.userId || user._id.toString();
     await logUserActivity(
-      user._id,
+      userIdStr,
       "password reset request",
       `Password reset link requested for email: ${user.email}`,
       { email: user.email },
@@ -700,15 +831,17 @@ app.post("/api/auth/forgot-password", async (req, res) => {
   }
 });
 
-// Perform Password Reset (Submit new password with token)
+// Submit New Password via Token
 app.post("/api/auth/reset-password", async (req, res) => {
   try {
-    const { email, token, password } = req.body;
-    if (!email || !token || !password) {
+    const { email, token, password, newPassword } = req.body;
+    const finalPassword = password || newPassword;
+
+    if (!email || !token || !finalPassword) {
       return res.status(400).json({ success: false, message: "Email, reset token, and new password are required." });
     }
 
-    if (typeof password !== "string" || password.length < 6) {
+    if (typeof finalPassword !== "string" || finalPassword.length < 6) {
       return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
     }
 
@@ -727,7 +860,6 @@ app.post("/api/auth/reset-password", async (req, res) => {
       return res.status(400).json({ success: false, message: "Password reset link is invalid or has already been used." });
     }
 
-    // Check expiration (15 minutes)
     if (!user.resetTokenExpires || user.resetTokenExpires < new Date()) {
       return res.status(400).json({
         success: false,
@@ -736,9 +868,8 @@ app.post("/api/auth/reset-password", async (req, res) => {
       });
     }
 
-    // Hash new password using bcrypt
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(finalPassword, salt);
     const now = new Date();
 
     user.password = hashedPassword;
@@ -748,20 +879,10 @@ app.post("/api/auth/reset-password", async (req, res) => {
     user.updatedAt = now;
     await user.save();
 
-    // Verify DB save
-    const verifiedUser = await User.findById(user._id);
-    if (!verifiedUser) {
-      console.warn("Retrying database update for password reset...");
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { password: hashedPassword, passwordHash: hashedPassword, resetToken: null, resetTokenExpires: null, updatedAt: now } }
-      );
-    }
-
-    // Log Activity in Database
+    const userIdStr = user.userId || user._id.toString();
     await logUserActivity(
-      user._id,
-      "password reset success",
+      userIdStr,
+      "password change",
       `Password reset successfully completed for email: ${user.email}`,
       { email: user.email },
       user.email
@@ -789,7 +910,6 @@ app.post("/api/auth/login", async (req, res) => {
 
     const normalizedIdentifier = identifier.toLowerCase();
 
-    // Find user using email or userId
     const user = await User.findOne({
       $or: [
         { email: normalizedIdentifier },
@@ -807,7 +927,6 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
-    // Check verification status
     if (!user.verified && !user.emailVerified) {
       return res.status(401).json({
         success: false,
@@ -818,41 +937,32 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const now = new Date();
-
     user.updatedAt = now;
     if (!user.userId) user.userId = user._id.toString();
     if (!user.passwordHash && user.password) user.passwordHash = user.password;
 
     await user.save();
+    const userIdStr = user.userId || user._id.toString();
 
-    const updatedUser = await User.findById(user._id);
-    if (!updatedUser) {
-      console.error("MongoDB user lookup verification failed for userId:", user._id.toString());
-      return res.status(500).json({ success: false, message: "Database user verification failed during login." });
-    }
+    await logUserActivity(userIdStr, "login", `User logged in with email: ${user.email}`, { email: user.email, provider: user.provider });
 
-    const userIdStr = updatedUser.userId || updatedUser._id.toString();
-
-    // Record login activity
-    await logUserActivity(updatedUser._id, "login", `User logged in with email: ${updatedUser.email}`, { email: updatedUser.email, provider: updatedUser.provider });
-
-    const token = generateToken(updatedUser._id);
+    const token = generateToken(user._id);
 
     return res.json({
       success: true,
       message: "Login successful.",
       token,
       user: {
-        _id: updatedUser._id,
-        id: updatedUser._id,
+        _id: user._id,
+        id: user._id,
         userId: userIdStr,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        emailVerified: updatedUser.emailVerified || updatedUser.verified,
-        provider: updatedUser.provider,
-        photo: updatedUser.photo,
-        createdAt: updatedUser.createdAt,
-        updatedAt: updatedUser.updatedAt
+        name: user.name,
+        email: user.email,
+        emailVerified: user.emailVerified || user.verified,
+        provider: user.provider,
+        photo: user.photo,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       }
     });
   } catch (err) {
@@ -861,152 +971,11 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Forgot Password Endpoint
-app.post("/api/auth/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email address is required." });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
-
-    // For security, do not disclose if email exists or provider type to unauthenticated clients
-    if (!user || user.provider !== "email") {
-      return res.json({
-        success: true,
-        message: `If an account exists for ${normalizedEmail}, a password reset link has been sent to that inbox (or spam folder).`
-      });
-    }
-
-    // Generate single-use reset token valid for 15 minutes
-    const resetToken = generateVerifyToken();
-    user.resetToken = resetToken;
-    user.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
-    await user.save();
-
-    const host = req.get("host") || "localhost:5000";
-    const protocol = req.protocol || "http";
-    const appUrl = (process.env.APP_URL || process.env.BASE_URL || `${protocol}://${host}`).replace(/\/+$/, "");
-    const resetLink = `${appUrl}/?resetEmail=${encodeURIComponent(user.email)}&resetToken=${resetToken}`;
-
-    const textMessage =
-      `Hi ${user.name || "there"},\n\n` +
-      `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
-      `${resetLink}\n\n` +
-      `⏰ IMPORTANT: This password reset link is valid for 15 minutes. Please check your Inbox or Spam/Junk folder.\n\n` +
-      `If you didn't request a password reset, you can safely ignore this email.`;
-
-    const htmlMessage =
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
-      `<h2 style="color: #4f46e5; text-align: center;">Reset Your Password</h2>` +
-      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
-      `<p>We received a request to reset your password for AI Resume Analyzer. Click the button below to choose a new password:</p>` +
-      `<div style="text-align: center; margin: 30px 0;">` +
-      `<a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>` +
-      `</div>` +
-      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${resetLink}">${resetLink}</a></p>` +
-      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This password reset link is valid for 15 minutes. Please check your Inbox or Spam/Junk folder.</p>` +
-      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
-      `<p style="font-size: 12px; color: #888;">If you didn't request a password reset, please ignore this email.</p>` +
-      `</div>`;
-
-    // Send email directly to THAT USER's registered email address
-    await sendEmailToUser(user.email, "Reset your password — AI Resume Analyzer", textMessage, htmlMessage);
-
-    return res.json({
-      success: true,
-      resetToken,
-      message: `Password reset link sent to ${user.email}! Please check your Inbox or Spam/Junk folder (valid for 15 minutes).`,
-      email: user.email
-    });
-  } catch (err) {
-    console.error("Forgot password error:", err);
-    return res.status(500).json({ success: false, message: "Server error processing password reset." });
-  }
-});
-
-// Reset Password Endpoint
-app.post("/api/auth/reset-password", async (req, res) => {
-  try {
-    const { email, token, newPassword } = req.body;
-
-    if (!email || !token || !newPassword) {
-      return res.status(400).json({ success: false, message: "Email, reset token, and new password are required." });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, message: "Password must be at least 6 characters long." });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
-
-    if (!user || user.provider !== "email") {
-      return res.status(404).json({ success: false, message: "Account not found." });
-    }
-
-    if (!user.resetToken || user.resetToken !== token || !user.resetTokenExpires || user.resetTokenExpires < new Date()) {
-      return res.status(400).json({ success: false, message: "Password reset link is invalid or has expired. Please request a new one." });
-    }
-
-    // Hash new password using bcrypt - NEVER store plain text
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-    user.password = hashedPassword;
-    user.passwordHash = hashedPassword;
-    user.updatedAt = new Date();
-    user.resetToken = null;
-    user.resetTokenExpires = null;
-    await user.save();
-
-    const userIdStr = user.userId || user._id.toString();
-    await logUserActivity(userIdStr, "password reset", `User reset password for email: ${user.email}`, { email: user.email });
-
-    return res.json({
-      success: true,
-      message: "Password reset successfully! Please log in with your new password."
-    });
-  } catch (err) {
-    console.error("Reset password error:", err);
-    return res.status(500).json({ success: false, message: "Server error resetting password." });
-  }
-});
-
-// Support Ticket & Notification Endpoint
-app.post("/api/support", async (req, res) => {
-  try {
-    const { ticketId, name, email, message } = req.body;
-    if (!email || !message) {
-      return res.status(400).json({ success: false, message: "Email address and message are required." });
-    }
-
-    const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || "support@ai-resume-analyzer.com";
-    const subject = `Support Session ${ticketId || ""} — ${name || email}`;
-    const textContent =
-      `New support request from ${name || "User"} (${email}):\n\n` +
-      `Ticket ID: ${ticketId || "N/A"}\n` +
-      `User Email: ${email}\n\n` +
-      `Message:\n${message}`;
-
-    sendEmailToUser(adminEmail, subject, textContent).catch(() => {});
-
-    return res.json({
-      success: true,
-      message: `Support ticket ${ticketId || ""} created successfully.`
-    });
-  } catch (err) {
-    console.error("Support API error:", err);
-    return res.status(500).json({ success: false, message: "Failed to process support message." });
-  }
-});
-
-// Google Auth Sync & Server-side Token Verification Fallback
+// Google Auth Sync & Server-side Verification
 app.post("/api/auth/google", async (req, res) => {
   try {
     let { name, email, access_token, id_token } = req.body;
 
-    // Server-side Token Verification for Firebase / Google tokens
     if (id_token || access_token) {
       try {
         const tokenInfoUrl = id_token 
@@ -1060,15 +1029,8 @@ app.post("/api/auth/google", async (req, res) => {
       });
       await user.save();
 
-      // Verify Google user insert
-      const verifiedGoogleUser = await User.findById(user._id);
-      if (!verifiedGoogleUser) {
-        return res.status(500).json({ success: false, message: "Failed to insert Google user into MongoDB." });
-      }
-
-      // Record user signup activity for new Google user
-      await logUserActivity(user._id, "user signup", `User registered via Google with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
-      await logUserActivity(user._id, "login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
+      await logUserActivity(user.userId, "signup", `User registered via Google with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
+      await logUserActivity(user.userId, "Google login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
     } else {
       if (user.provider !== "google") {
         user.provider = "google";
@@ -1079,7 +1041,7 @@ app.post("/api/auth/google", async (req, res) => {
       if (!user.userId) user.userId = user._id.toString();
       await user.save();
 
-      await logUserActivity(user._id, "login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
+      await logUserActivity(user.userId, "Google login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
     }
 
     const token = generateToken(user._id);
@@ -1110,7 +1072,8 @@ app.post("/api/auth/google", async (req, res) => {
 // Log Out Endpoint
 app.post("/api/auth/logout", authenticateToken, async (req, res) => {
   try {
-    await logUserActivity(req.user._id, "logout", `User logged out: ${req.user.email}`, { email: req.user.email });
+    const userIdStr = req.user.userId || req.user._id.toString();
+    await logUserActivity(userIdStr, "logout", `User logged out: ${req.user.email}`, { email: req.user.email });
     return res.json({ success: true, message: "Logout activity recorded successfully." });
   } catch (err) {
     console.error("Logout error:", err);
@@ -1118,33 +1081,30 @@ app.post("/api/auth/logout", authenticateToken, async (req, res) => {
   }
 });
 
-// Log Resume Upload Activity Endpoint
-app.post("/api/activity/upload", authenticateToken, async (req, res) => {
+// Support Ticket Endpoint
+app.post("/api/support", async (req, res) => {
   try {
-    const { filename, filePath } = req.body;
-    const fname = filename || "resume.pdf";
-    const logged = await logUserActivity(req.user._id, "resume upload", `User uploaded resume file: ${fname}`, { filename: fname, filePath: filePath || "" });
-    if (!logged) {
-      return res.status(500).json({ success: false, message: "Failed to record upload activity in MongoDB." });
+    const { ticketId, name, email, message } = req.body;
+    if (!email || !message) {
+      return res.status(400).json({ success: false, message: "Email address and message are required." });
     }
-    return res.json({ success: true, message: "Resume upload activity recorded.", activity: logged });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Failed to record upload activity." });
-  }
-});
 
-// Log Resume Download Activity Endpoint
-app.post("/api/activity/download", authenticateToken, async (req, res) => {
-  try {
-    const { filename, format } = req.body;
-    const fname = filename || "resume_report.pdf";
-    const logged = await logUserActivity(req.user._id, "resume download", `User downloaded resume report for: ${fname}`, { filename: fname, downloadFormat: format || "pdf" });
-    if (!logged) {
-      return res.status(500).json({ success: false, message: "Failed to record download activity in MongoDB." });
-    }
-    return res.json({ success: true, message: "Resume download activity recorded.", activity: logged });
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || "support@ai-resume-analyzer.com";
+    const subject = `Support Session ${ticketId || ""} — ${name || email}`;
+    const textContent =
+      `New support request from ${name || "User"} (${email}):\n\n` +
+      `Ticket ID: ${ticketId || "N/A"}\n` +
+      `User Email: ${email}\n\n` +
+      `Message:\n${message}`;
+
+    sendEmailToUser(adminEmail, subject, textContent).catch(() => {});
+
+    return res.json({
+      success: true,
+      message: `Support ticket ${ticketId || ""} created successfully.`
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "Failed to record download activity." });
+    return res.status(500).json({ success: false, message: "Failed to process support message." });
   }
 });
 
@@ -1181,7 +1141,6 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
     if (name) updateData.name = name.trim();
     if (photo !== undefined) updateData.photo = photo;
 
-    // Permanently save updates in MongoDB users collection using authenticated user's MongoDB _id
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       { $set: updateData },
@@ -1189,11 +1148,19 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
     ).select("-password");
 
     if (!updatedUser) {
-      console.error("MongoDB profile update failed for userId:", req.user._id);
       return res.status(500).json({ success: false, message: "Database profile update failed." });
     }
 
-    await logUserActivity(updatedUser._id, "profile update", `User updated profile (Name: ${updatedUser.name})`, { name: updatedUser.name, photoUpdated: photo !== undefined });
+    const userIdStr = updatedUser.userId || updatedUser._id.toString();
+
+    // Sync name across collections where required
+    if (name) {
+      await UserActivity.updateOne({ userId: userIdStr }, { $set: { name: updatedUser.name } });
+      await ResumeHistory.updateOne({ userId: userIdStr }, { $set: { name: updatedUser.name } });
+      await ResumeAnalysis.updateMany({ userId: userIdStr }, { $set: { name: updatedUser.name } });
+    }
+
+    await logUserActivity(userIdStr, "profile update", `User updated profile (Name: ${updatedUser.name})`, { name: updatedUser.name, photoUpdated: photo !== undefined });
 
     return res.json({
       success: true,
@@ -1201,7 +1168,7 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
       user: {
         _id: updatedUser._id,
         id: updatedUser._id,
-        userId: updatedUser.userId || updatedUser._id.toString(),
+        userId: userIdStr,
         name: updatedUser.name,
         email: updatedUser.email,
         emailVerified: updatedUser.emailVerified || updatedUser.verified,
@@ -1212,16 +1179,87 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("Profile update error:", err);
     return res.status(500).json({ success: false, message: "Error updating profile in MongoDB: " + err.message });
+  }
+});
+
+// ==================== USER ACTIVITY ROUTES ====================
+
+// Get User's Activity Log (Returns user_activity document for authenticated user)
+app.get(["/api/activity", "/api/user/activity"], authenticateToken, async (req, res) => {
+  try {
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const userActDoc = await UserActivity.findOne({ userId: userIdStr });
+    const rawList = userActDoc && Array.isArray(userActDoc.activities) ? userActDoc.activities : [];
+
+    const activities = [...rawList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100);
+
+    return res.json({
+      success: true,
+      userId: userIdStr,
+      name: req.user.name,
+      email: req.user.email,
+      activities: activities.map((act, index) => ({
+        id: act._id ? act._id.toString() : `act_${index}`,
+        userId: userIdStr,
+        action: act.activityType,
+        activityType: act.activityType,
+        description: act.description,
+        timestamp: act.timestamp
+      }))
+    });
+  } catch (err) {
+    console.error("Get activity error:", err);
+    return res.status(500).json({ success: false, message: "Failed to retrieve activity log from MongoDB." });
+  }
+});
+
+// Log Custom Activity
+app.post(["/api/activity", "/api/user/activity"], authenticateToken, async (req, res) => {
+  try {
+    const { action, activityType, description, activityDescription, filename, filePath } = req.body;
+    const actName = activityType || action || "custom action";
+    const descText = description || activityDescription || `User performed ${actName}`;
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const logged = await logUserActivity(userIdStr, actName, descText, { filename, filePath });
+    return res.json({ success: true, message: "Activity logged successfully.", activity: logged });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to record activity." });
+  }
+});
+
+app.post("/api/activity/upload", authenticateToken, async (req, res) => {
+  try {
+    const { filename, filePath } = req.body;
+    const fname = filename || "resume.pdf";
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const logged = await logUserActivity(userIdStr, "resume upload", `User uploaded resume file: ${fname}`, { filename: fname, filePath: filePath || "" });
+    return res.json({ success: true, message: "Resume upload activity recorded.", activity: logged });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to record upload activity." });
+  }
+});
+
+app.post("/api/activity/download", authenticateToken, async (req, res) => {
+  try {
+    const { filename, format } = req.body;
+    const fname = filename || "resume_report.pdf";
+    const userIdStr = req.user.userId || req.user._id.toString();
+
+    const logged = await logUserActivity(userIdStr, "resume download", `User downloaded resume report for: ${fname}`, { filename: fname, downloadFormat: format || "pdf" });
+    return res.json({ success: true, message: "Resume download activity recorded.", activity: logged });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to record download activity." });
   }
 });
 
 // ==================== RESUME ANALYSIS & HISTORY ROUTES ====================
 
-// Save Resume Analysis Entry into "User Resume Analysis" collection
-// Save Resume Analysis Entry into "resume_history" collection
-app.post("/api/history", authenticateToken, async (req, res) => {
+// Save & Process Resume Analysis
+const handleResumeAnalyze = async (req, res) => {
   try {
     const {
       fileName,
@@ -1240,20 +1278,20 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       resumeText,
       detectedSkills,
       missingKeywords,
-      suggestions
+      suggestions,
+      extractedData
     } = req.body;
 
     const finalName = fileName || filename || "resume.pdf";
     const finalScore = Number(atsScore !== undefined ? atsScore : (score !== undefined ? score : 0));
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const userName = req.user.name || "";
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
     if (!finalName) {
       return res.status(400).json({ success: false, message: "fileName/filename is required." });
     }
 
-    // STRICT IDENTITY: Always save using the authenticated user's MongoDB _id!
-    const authUserId = req.user._id ? req.user._id.toString() : (req.user.userId || req.user.id);
-
-    // File reference storage: if base64 fileData provided, write to uploads/
     let savedFilePath = incomingFilePath || incomingFileUrl || "";
     if (fileData) {
       const stored = saveUploadedFile(fileData, finalName);
@@ -1263,9 +1301,7 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       savedFilePath = `/uploads/${finalName.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
     }
 
-    const ext = finalName.split(".").pop().toLowerCase();
-    const computedFileType = fileType || (["pdf", "docx", "txt"].includes(ext) ? ext : "pdf");
-    const computedAnalysisType = analysisType || (mode === "ats" ? "ATS Check" : "Full Breakdown");
+    const computedAnalysisType = analysisType || (mode === "ats" ? "ATS" : "normal");
     const computedAnalysisResult = analysisResult || analysisResults || {
       verdict: verdict || "Analyzed",
       atsScore: finalScore,
@@ -1275,242 +1311,217 @@ app.post("/api/history", authenticateToken, async (req, res) => {
       suggestions: Array.isArray(suggestions) ? suggestions : []
     };
 
-    const analysisId = new mongoose.Types.ObjectId().toString();
+    const computedExtractedData = extractedData || {
+      name: userName,
+      email: userEmail,
+      phone: "",
+      skills: Array.isArray(detectedSkills) ? detectedSkills : [],
+      education: [],
+      experience: []
+    };
+
+    // Calculate SHA-256 Content Hash for Duplicate Prevention
+    const contentToHash = (resumeText && resumeText.trim().length > 10) ? resumeText.trim() : (finalName + "_" + finalScore);
+    const resumeHash = crypto.createHash("sha256").update(contentToHash).digest("hex");
     const now = new Date();
+    const newResumeId = new mongoose.Types.ObjectId().toString();
 
-    const newHistory = new ResumeHistory({
-      analysisId,
-      userId: authUserId,
-      fileName: finalName,
-      fileType: computedFileType,
-      filePath: savedFilePath,
-      fileUrl: savedFilePath,
-      analysisType: computedAnalysisType,
-      atsScore: finalScore,
-      verdict: verdict || "Analyzed",
-      analysisResult: computedAnalysisResult,
-      detectedSkills: Array.isArray(detectedSkills) ? detectedSkills : [],
-      missingKeywords: Array.isArray(missingKeywords) ? missingKeywords : [],
-      suggestions: Array.isArray(suggestions) ? suggestions : [],
-      resumeText: resumeText || "",
-      uploadDate: now,
-      analysisDate: now,
-      userEmail: req.user.email ? req.user.email.toLowerCase().trim() : ""
-    });
-    await newHistory.save();
+    // 1. Atomic UPSERT in resume_analysis collection (Prevent Duplicates on userId + resumeHash + analysisType)
+    const analysisDoc = await ResumeAnalysis.findOneAndUpdate(
+      { userId: userIdStr, resumeHash: resumeHash, analysisType: computedAnalysisType },
+      {
+        $setOnInsert: {
+          userId: userIdStr,
+          resumeId: newResumeId,
+          resumeHash: resumeHash,
+          analysisType: computedAnalysisType,
+          firstUploadedAt: now
+        },
+        $set: {
+          name: userName,
+          email: userEmail,
+          fileName: finalName,
+          atsScore: finalScore,
+          extractedData: computedExtractedData,
+          analysisResult: computedAnalysisResult,
+          lastUpdatedAt: now
+        }
+      },
+      { upsert: true, returnDocument: "after" }
+    );
 
-    // Verify MongoDB insert operation actually succeeded in resume_history
-    const verifiedHistory = await ResumeHistory.findById(newHistory._id);
-    if (!verifiedHistory) {
-      console.error("MongoDB history insert verification failed for analysisId:", analysisId);
-      return res.status(500).json({ success: false, message: "Failed to save analysis in MongoDB resume_history." });
-    }
+    const activeResumeId = analysisDoc.resumeId || newResumeId;
 
-    // Automatically record activity
-    if (mode === "ats" || computedAnalysisType === "ATS Check") {
-      await logUserActivity(req.user._id, "ATS score check", `User ran ATS score check for: ${finalName} (ATS Score: ${finalScore})`, { filename: finalName, score: finalScore, filePath: savedFilePath });
+    // 2. Atomic Update in resume_history collection (1 document per user)
+    const userHistoryDoc = await ResumeHistory.findOne({ userId: userIdStr });
+    const existingHistoryItem = userHistoryDoc && Array.isArray(userHistoryDoc.history) 
+      ? userHistoryDoc.history.find(item => item.resumeId === activeResumeId || item.fileName === finalName)
+      : null;
+
+    if (existingHistoryItem) {
+      // Update existing item in history array
+      await ResumeHistory.updateOne(
+        { userId: userIdStr, "history.resumeId": existingHistoryItem.resumeId },
+        {
+          $set: {
+            name: userName,
+            email: userEmail,
+            "history.$.fileName": finalName,
+            "history.$.uploadedAt": now,
+            "history.$.atsScore": finalScore,
+            "history.$.analysisType": computedAnalysisType,
+            "history.$.status": "analyzed",
+            updatedAt: now
+          }
+        }
+      );
     } else {
-      await logUserActivity(req.user._id, "resume analysis", `User completed resume analysis for: ${finalName} (Score: ${finalScore})`, { filename: finalName, score: finalScore, verdict: verdict || "Analyzed", filePath: savedFilePath });
+      // Push new item into history array
+      await ResumeHistory.findOneAndUpdate(
+        { userId: userIdStr },
+        {
+          $setOnInsert: { userId: userIdStr },
+          $set: { name: userName, email: userEmail, updatedAt: now },
+          $push: {
+            history: {
+              resumeId: activeResumeId,
+              fileName: finalName,
+              uploadedAt: now,
+              analysisType: computedAnalysisType,
+              atsScore: finalScore,
+              status: "analyzed"
+            }
+          }
+        },
+        { upsert: true, returnDocument: "after" }
+      );
     }
+
+    // 3. Log Activity
+    const actDesc = computedAnalysisType === "ATS"
+      ? `ATS score check for: ${finalName} (ATS Score: ${finalScore})`
+      : `User completed resume analysis for: ${finalName} (Score: ${finalScore})`;
+    await logUserActivity(userIdStr, "resume_analysis", actDesc, { filename: finalName, score: finalScore, resumeId: activeResumeId });
 
     return res.status(201).json({
       success: true,
-      message: "Resume analysis record saved in MongoDB resume_history.",
+      message: "Resume analysis record saved cleanly in MongoDB.",
+      analysis: analysisDoc,
       entry: {
-        id: verifiedHistory.analysisId || verifiedHistory._id.toString(),
-        _id: verifiedHistory._id.toString(),
-        analysisId: verifiedHistory.analysisId,
-        userId: verifiedHistory.userId,
-        fileName: verifiedHistory.fileName,
-        fileType: verifiedHistory.fileType,
-        filePath: verifiedHistory.filePath,
-        fileUrl: verifiedHistory.fileUrl,
-        analysisType: verifiedHistory.analysisType,
-        atsScore: verifiedHistory.atsScore,
-        score: verifiedHistory.atsScore,
-        verdict: verifiedHistory.verdict,
-        analysisResult: verifiedHistory.analysisResult,
-        date: verifiedHistory.analysisDate
+        id: activeResumeId,
+        _id: analysisDoc._id.toString(),
+        resumeId: activeResumeId,
+        userId: userIdStr,
+        fileName: finalName,
+        filePath: savedFilePath,
+        fileUrl: savedFilePath,
+        analysisType: computedAnalysisType,
+        atsScore: finalScore,
+        score: finalScore,
+        verdict: verdict || "Analyzed",
+        analysisResult: computedAnalysisResult,
+        date: analysisDoc.lastUpdatedAt || now
       }
     });
   } catch (err) {
-    console.error("Save history error:", err);
-    return res.status(500).json({ success: false, message: "Failed to save analysis in MongoDB resume_history." });
+    console.error("Save analysis error:", err);
+    return res.status(500).json({ success: false, message: "Failed to save analysis in MongoDB." });
   }
-});
+};
 
-// Get User's Resume History
-app.get("/api/history", authenticateToken, async (req, res) => {
+app.post("/api/history", authenticateToken, handleResumeAnalyze);
+app.post("/api/resume/analyze", authenticateToken, handleResumeAnalyze);
+app.post("/api/resume/upload", authenticateToken, handleResumeAnalyze);
+
+// Get User's Resume History (Returns history array from resume_history collection)
+app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (req, res) => {
   try {
-    // 1. Get logged-in user's ID & email from verified JWT token
-    const mongoUserId = req.user._id ? req.user._id.toString() : "";
-    const customUserId = req.user.userId ? req.user.userId.toString() : "";
-    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    const userIdStr = req.user.userId || req.user._id.toString();
 
-    // 2. Query resume_history collection strictly for matching user IDs (String & ObjectId) or user email
-    const orConditions = [];
-    if (mongoUserId) {
-      orConditions.push({ userId: mongoUserId });
-      if (mongoose.Types.ObjectId.isValid(mongoUserId)) {
-        orConditions.push({ userId: new mongoose.Types.ObjectId(mongoUserId) });
-      }
-    }
-    if (customUserId && customUserId !== mongoUserId) {
-      orConditions.push({ userId: customUserId });
-      if (mongoose.Types.ObjectId.isValid(customUserId)) {
-        orConditions.push({ userId: new mongoose.Types.ObjectId(customUserId) });
-      }
-    }
-    if (userEmailNorm) {
-      orConditions.push({ userEmail: userEmailNorm });
-      orConditions.push({ email: userEmailNorm });
-    }
+    const historyDoc = await ResumeHistory.findOne({ userId: userIdStr });
+    const rawList = historyDoc && Array.isArray(historyDoc.history) ? historyDoc.history : [];
 
-    const queryFilter = orConditions.length > 0 ? { $or: orConditions } : { userId: mongoUserId };
+    const historyList = [...rawList].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
 
-    // 3. Fetch matching records from resume_history collection sorted by newest analysis date first
-    const historyList = await ResumeHistory.find(queryFilter)
-      .sort({ analysisDate: -1, uploadDate: -1, createdAt: -1 })
-      .limit(100);
-
-    // 4. Return formatted records for current user only
-    const formattedList = historyList.map(entry => ({
-      id: entry.analysisId || (entry._id ? entry._id.toString() : entry.analysisId),
-      _id: entry._id ? entry._id.toString() : entry.analysisId,
-      analysisId: entry.analysisId,
-      userId: entry.userId ? entry.userId.toString() : "",
-      fileName: entry.fileName || entry.resumeFilename || entry.filename || "resume.pdf",
-      filename: entry.fileName || entry.resumeFilename || entry.filename || "resume.pdf",
-      fileType: entry.fileType || "pdf",
-      filePath: entry.filePath || entry.fileUrl || "",
-      fileUrl: entry.fileUrl || entry.filePath || "",
-      analysisType: entry.analysisType || "Resume Analysis",
-      atsScore: entry.atsScore !== undefined ? entry.atsScore : (entry.score !== undefined ? entry.score : 0),
-      score: entry.atsScore !== undefined ? entry.atsScore : (entry.score !== undefined ? entry.score : 0),
-      verdict: entry.verdict || "Analyzed",
-      status: entry.verdict || "Analyzed",
-      analysisResult: entry.analysisResult || {},
-      detectedSkills: entry.detectedSkills || [],
-      missingKeywords: entry.missingKeywords || [],
-      suggestions: entry.suggestions || [],
-      uploadDate: entry.uploadDate || entry.createdAt || entry.analysisDate || new Date(),
-      analysisDate: entry.analysisDate || entry.createdAt || entry.uploadDate || new Date(),
-      date: entry.analysisDate || entry.uploadDate || new Date()
+    const formattedList = historyList.map(item => ({
+      id: item.resumeId,
+      _id: item.resumeId,
+      resumeId: item.resumeId,
+      userId: userIdStr,
+      fileName: item.fileName,
+      filename: item.fileName,
+      fileType: item.fileName.split(".").pop() || "pdf",
+      analysisType: item.analysisType || "normal",
+      atsScore: item.atsScore || 0,
+      score: item.atsScore || 0,
+      status: item.status || "analyzed",
+      verdict: "Analyzed",
+      uploadedAt: item.uploadedAt,
+      date: item.uploadedAt
     }));
 
     return res.json({
       success: true,
+      userId: userIdStr,
+      name: req.user.name,
+      email: req.user.email,
       count: formattedList.length,
       history: formattedList
     });
   } catch (err) {
     console.error("Get history error:", err);
-    return res.status(500).json({ success: false, message: "Failed to retrieve history from MongoDB resume_history." });
+    return res.status(500).json({ success: false, message: "Failed to retrieve history from MongoDB." });
   }
 });
 
-// Get User's Activity Log
-app.get("/api/activity", authenticateToken, async (req, res) => {
+// Get Unique Resume Analysis Records for User
+app.get("/api/user/resume-analysis", authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
-    const mongoIdStr = req.user._id.toString();
-    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
-
-    const activities = await UserActivity.find({
-      $or: [
-        { userId: userIdStr },
-        { userId: mongoIdStr },
-        { userEmail: userEmailNorm },
-        { email: userEmailNorm }
-      ]
-    })
-      .sort({ timestamp: -1 })
-      .limit(50);
+    const records = await ResumeAnalysis.find({ userId: userIdStr }).sort({ lastUpdatedAt: -1 });
 
     return res.json({
       success: true,
-      activities: activities.map(act => ({
-        id: act._id.toString(),
-        userId: act.userId,
-        action: act.action || act.activityType,
-        activityType: act.activityType || act.action,
-        description: act.description || act.activityDescription,
-        activityDescription: act.activityDescription || act.description,
-        timestamp: act.timestamp,
-        metadata: act.metadata || {}
-      }))
+      userId: userIdStr,
+      count: records.length,
+      analyses: records
     });
   } catch (err) {
-    console.error("Get activity error:", err);
-    return res.status(500).json({ success: false, message: "Failed to retrieve activity log from MongoDB." });
+    return res.status(500).json({ success: false, message: "Failed to retrieve resume analyses." });
   }
 });
 
-// Log Custom Activity Endpoint
-app.post("/api/activity", authenticateToken, async (req, res) => {
+// Delete Item from User's Resume History
+app.delete(["/api/history/:id", "/api/user/resume-history/:id"], authenticateToken, async (req, res) => {
   try {
-    const { action, activityType, description, activityDescription, metadata } = req.body;
-    const actName = action || activityType || "custom action";
-    const descText = description || activityDescription || `User performed ${actName}`;
+    const targetId = req.params.id;
+    const userIdStr = req.user.userId || req.user._id.toString();
 
-    // SECURITY: Always use req.user._id from verified JWT token - NEVER trust untrusted userId from body!
-    const logged = await logUserActivity(req.user._id, actName, descText, metadata || {});
-    return res.json({ success: true, message: "Activity logged successfully.", activity: logged });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Failed to record activity." });
-  }
-});
-
-// Delete Resume History Entry
-app.delete("/api/history/:id", authenticateToken, async (req, res) => {
-  try {
-    const historyId = req.params.id;
-    const mongoUserId = req.user._id ? req.user._id.toString() : "";
-    const customUserId = req.user.userId ? req.user.userId.toString() : "";
-    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
-
-    const userConditions = [];
-    if (mongoUserId) {
-      userConditions.push({ userId: mongoUserId });
-      if (mongoose.Types.ObjectId.isValid(mongoUserId)) {
-        userConditions.push({ userId: new mongoose.Types.ObjectId(mongoUserId) });
-      }
-    }
-    if (customUserId && customUserId !== mongoUserId) {
-      userConditions.push({ userId: customUserId });
-      if (mongoose.Types.ObjectId.isValid(customUserId)) {
-        userConditions.push({ userId: new mongoose.Types.ObjectId(customUserId) });
-      }
-    }
-    if (userEmailNorm) {
-      userConditions.push({ userEmail: userEmailNorm });
-      userConditions.push({ email: userEmailNorm });
-    }
-
-    const deleteFilter = {
-      $and: [
-        {
-          $or: [
-            { analysisId: historyId },
-            { _id: mongoose.Types.ObjectId.isValid(historyId) ? historyId : null }
-          ]
+    const updatedDoc = await ResumeHistory.findOneAndUpdate(
+      { userId: userIdStr },
+      {
+        $pull: {
+          history: {
+            $or: [
+              { resumeId: targetId },
+              { fileName: targetId }
+            ]
+          }
         },
-        { $or: userConditions }
-      ]
-    };
+        $set: { updatedAt: new Date() }
+      },
+      { returnDocument: "after" }
+    );
 
-    const deletedHistory = await ResumeHistory.findOneAndDelete(deleteFilter);
-
-    if (!deletedHistory) {
-      return res.status(404).json({ success: false, message: "History entry not found or unauthorized." });
+    if (!updatedDoc) {
+      return res.status(404).json({ success: false, message: "History record not found." });
     }
 
-    const delFilename = deletedHistory.fileName || deletedHistory.filename || historyId;
-    await logUserActivity(req.user._id, "resume deletion", `User deleted resume history entry for: ${delFilename}`, { historyId, filename: delFilename });
+    await logUserActivity(userIdStr, "resume deletion", `User deleted resume entry ${targetId}`, { resumeId: targetId });
 
     return res.json({
       success: true,
-      message: "History entry deleted from MongoDB resume_history."
+      message: "History entry deleted successfully."
     });
   } catch (err) {
     console.error("Delete history error:", err);
@@ -1518,45 +1529,28 @@ app.delete("/api/history/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// Get Consolidated User Dashboard Data
+// Dashboard Consolidated Endpoint
 app.get("/api/user/dashboard", authenticateToken, async (req, res) => {
   try {
-    const authUserId = req.user._id.toString();
-    const userEmailNorm = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    const userIdStr = req.user.userId || req.user._id.toString();
 
-    // 1. Fetch user's analyzed resumes strictly matching authUserId or email
-    const analyses = await ResumeHistory.find({
-      $or: [
-        { userId: authUserId },
-        { userId: req.user.userId },
-        { userEmail: userEmailNorm }
-      ]
-    }).sort({ analysisDate: -1, date: -1, uploadDate: -1 });
+    const historyDoc = await ResumeHistory.findOne({ userId: userIdStr });
+    const historyItems = historyDoc && Array.isArray(historyDoc.history) ? historyDoc.history : [];
 
-    // 2. Fetch user's activity log strictly matching authUserId or email
-    const activities = await UserActivity.find({
-      $or: [
-        { userId: authUserId },
-        { userId: req.user.userId },
-        { userEmail: userEmailNorm }
-      ]
-    }).sort({ timestamp: -1 }).limit(30);
+    const activityDoc = await UserActivity.findOne({ userId: userIdStr });
+    const activityItems = activityDoc && Array.isArray(activityDoc.activities) ? activityDoc.activities : [];
 
-    // Compute stats
-    const totalResumes = analyses.length;
-    const scores = analyses
-      .map(a => Number(a.atsScore !== undefined ? a.atsScore : a.score))
-      .filter(s => !isNaN(s));
-    
+    const analyses = await ResumeAnalysis.find({ userId: userIdStr }).sort({ lastUpdatedAt: -1 });
+
+    const totalResumes = historyItems.length;
+    const scores = historyItems.map(h => Number(h.atsScore || 0)).filter(s => !isNaN(s));
     const latestScore = scores.length ? scores[0] : null;
     const highestScore = scores.length ? Math.max(...scores) : null;
     const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
-    const latestUpload = analyses.length ? {
-      fileName: analyses[0].fileName || analyses[0].resumeFilename || analyses[0].filename,
-      fileType: analyses[0].fileType || "pdf",
-      filePath: analyses[0].filePath || analyses[0].fileUrl || "",
-      uploadDate: analyses[0].uploadDate || analyses[0].analysisDate || analyses[0].date
+    const latestUpload = historyItems.length ? {
+      fileName: historyItems[0].fileName,
+      uploadedAt: historyItems[0].uploadedAt
     } : null;
 
     return res.json({
@@ -1564,7 +1558,7 @@ app.get("/api/user/dashboard", authenticateToken, async (req, res) => {
       user: {
         _id: req.user._id,
         id: req.user._id,
-        userId: req.user.userId || req.user._id.toString(),
+        userId: userIdStr,
         name: req.user.name,
         email: req.user.email,
         emailVerified: req.user.emailVerified || req.user.verified,
@@ -1580,37 +1574,9 @@ app.get("/api/user/dashboard", authenticateToken, async (req, res) => {
         avgScore,
         latestUpload
       },
-      recentAnalyses: analyses.slice(0, 10).map(entry => ({
-        id: entry.analysisId || entry._id.toString(),
-        userId: entry.userId,
-        fileName: entry.fileName || entry.resumeFilename || entry.filename,
-        fileType: entry.fileType || "pdf",
-        filePath: entry.filePath || entry.fileUrl || "",
-        analysisType: entry.analysisType || "Resume Analysis",
-        atsScore: entry.atsScore !== undefined ? entry.atsScore : entry.score,
-        verdict: entry.verdict || "Analyzed",
-        date: entry.analysisDate || entry.date || entry.uploadDate,
-        analysisResult: entry.analysisResult || entry.analysisResults || {}
-      })),
-      recentActivities: activities.map(act => ({
-        id: act._id.toString(),
-        userId: act.userId,
-        action: act.action || act.activityType,
-        description: act.description || act.activityDescription,
-        timestamp: act.timestamp,
-        metadata: act.metadata || {}
-      })),
-      history: analyses.map(entry => ({
-        id: entry.analysisId || entry._id.toString(),
-        userId: entry.userId,
-        fileName: entry.fileName || entry.resumeFilename || entry.filename,
-        fileType: entry.fileType || "pdf",
-        filePath: entry.filePath || entry.fileUrl || "",
-        analysisType: entry.analysisType || "Resume Analysis",
-        atsScore: entry.atsScore !== undefined ? entry.atsScore : entry.score,
-        verdict: entry.verdict || "Analyzed",
-        date: entry.analysisDate || entry.date || entry.uploadDate
-      }))
+      recentAnalyses: analyses.slice(0, 10),
+      recentActivities: [...activityItems].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20),
+      history: historyItems
     });
   } catch (err) {
     console.error("Dashboard error:", err);

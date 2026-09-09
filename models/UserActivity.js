@@ -1,12 +1,6 @@
 const mongoose = require("mongoose");
 
-const userActivitySchema = new mongoose.Schema({
-  userId: {
-    type: String,
-    required: true,
-    index: true,
-    ref: "User"
-  },
+const singleActivitySchema = new mongoose.Schema({
   activityType: {
     type: String,
     required: true
@@ -18,30 +12,37 @@ const userActivitySchema = new mongoose.Schema({
   timestamp: {
     type: Date,
     default: Date.now
-  },
-  metadata: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  action: {
-    type: String
-  },
-  activityDescription: {
-    type: String
-  },
-  userEmail: {
+  }
+}, { _id: false });
+
+const userActivitySchema = new mongoose.Schema({
+  userId: {
     type: String,
-    lowercase: true,
-    trim: true
+    required: true,
+    unique: true,
+    index: true
+  },
+  name: {
+    type: String,
+    default: ""
   },
   email: {
     type: String,
     lowercase: true,
-    trim: true
+    trim: true,
+    default: ""
+  },
+  activities: {
+    type: [singleActivitySchema],
+    default: []
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 }, {
   collection: "user_activity",
-  timestamps: true
+  timestamps: { createdAt: false, updatedAt: "updatedAt" }
 });
 
 module.exports = mongoose.model("UserActivity", userActivitySchema, "user_activity");

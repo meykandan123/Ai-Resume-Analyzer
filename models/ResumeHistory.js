@@ -1,82 +1,60 @@
 const mongoose = require("mongoose");
 
-const resumeHistorySchema = new mongoose.Schema({
-  analysisId: {
+const historyItemSchema = new mongoose.Schema({
+  resumeId: {
     type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-  userId: {
-    type: mongoose.Schema.Types.Mixed,
-    required: true,
-    index: true,
-    ref: "User"
+    required: true
   },
   fileName: {
     type: String,
     required: true
   },
-  fileType: {
-    type: String,
-    default: "pdf"
-  },
-  filePath: {
-    type: String,
-    default: ""
-  },
-  fileUrl: {
-    type: String,
-    default: ""
+  uploadedAt: {
+    type: Date,
+    default: Date.now
   },
   analysisType: {
     type: String,
-    default: "Resume Analysis"
+    default: "normal"
   },
   atsScore: {
     type: Number,
-    required: true
+    default: 0
   },
-  verdict: {
+  status: {
     type: String,
-    default: "Analyzed"
+    default: "analyzed"
+  }
+}, { _id: false });
+
+const resumeHistorySchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
   },
-  analysisResult: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  detectedSkills: {
-    type: [String],
-    default: []
-  },
-  missingKeywords: {
-    type: [String],
-    default: []
-  },
-  suggestions: {
-    type: [String],
-    default: []
-  },
-  resumeText: {
+  name: {
     type: String,
     default: ""
   },
-  uploadDate: {
-    type: Date,
-    default: Date.now
-  },
-  analysisDate: {
-    type: Date,
-    default: Date.now
-  },
-  userEmail: {
+  email: {
     type: String,
     lowercase: true,
-    trim: true
+    trim: true,
+    default: ""
+  },
+  history: {
+    type: [historyItemSchema],
+    default: []
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 }, {
   collection: "resume_history",
-  timestamps: true
+  timestamps: { createdAt: false, updatedAt: "updatedAt" }
 });
 
 module.exports = mongoose.model("ResumeHistory", resumeHistorySchema, "resume_history");

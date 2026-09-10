@@ -14,6 +14,7 @@
     --gradient-end: #81001a;
     --glow-color: rgba(213, 79, 96, 0.25);
     --hero-bg: linear-gradient(135deg, rgba(243, 231, 214, 0.92) 0%, rgba(255, 249, 242, 0.98) 50%, rgba(243, 231, 214, 0.75) 100%);
+    --navbar-bg: linear-gradient(135deg, #81001a 0%, #5c0012 100%);
     --line: #e8d8c5;
     --shadow: 0 4px 20px rgba(129, 0, 26, 0.07), 0 12px 32px rgba(129, 0, 26, 0.05);
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -224,27 +225,26 @@
     padding: 0 0 80px;
   }
 
-  /* Full Page Continuous Navigation Bar matching Hero Section */
+  /* Unique Navigation Bar in Deep Burgundy from Swatch Palette */
   .navbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: transparent;
-    border: none;
+    background: var(--navbar-bg);
+    border-bottom: 1px solid rgba(243, 231, 214, 0.22);
     border-radius: 0;
-    padding: 0 28px;
+    padding: 0 32px;
     height: 72px;
-    max-width: 1240px;
+    max-width: 100%;
     width: 100%;
-    margin: 0 auto;
-    box-shadow: none;
+    margin: 0;
+    box-shadow: 0 4px 22px rgba(129, 0, 26, 0.25);
     position: relative;
     z-index: 1000;
   }
 
   .navbar:hover {
-    box-shadow: none;
-    border-color: transparent;
+    box-shadow: 0 6px 26px rgba(129, 0, 26, 0.32);
   }
 
   .nav-container {
@@ -297,7 +297,7 @@
     display: inline-block;
     font-weight: 800;
     font-size: 21px;
-    color: #0f172a;
+    color: #fff9f2;
     letter-spacing: -0.4px;
   }
 
@@ -306,14 +306,15 @@
     align-items: center;
     padding: 3px 8px;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.5px;
     border-radius: 999px;
-    background: linear-gradient(135deg, #f3e7d6 0%, #faefe2 100%);
+    background: #f3e7d6;
     color: #81001a;
     margin-left: 2px;
     text-transform: uppercase;
-    border: 1px solid rgba(213, 79, 96, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   }
 
   .nav-right {
@@ -328,9 +329,9 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: #f8fafc;
-    color: #334155;
-    border: 1px solid #e2e8f0;
+    background: rgba(255, 249, 242, 0.12);
+    color: #fff9f2;
+    border: 1px solid rgba(243, 231, 214, 0.28);
     border-radius: 10px;
     padding: 9px 18px;
     font-size: 13.5px;
@@ -340,67 +341,68 @@
   }
 
   .nav-home-btn:hover {
-    background: #f1f5f9;
-    color: #0f172a;
-    border-color: #cbd5e1;
+    background: #f3e7d6;
+    color: #81001a;
+    border-color: #f3e7d6;
     transform: translateY(-1.5px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   }
 
   .nav-home-btn:active {
     transform: translateY(0) scale(0.98);
   }
 
-  /* Primary Accent Action Button (Upload Resume) */
+  /* Primary Accent Action Button (Upload Resume) in Vibrant Coral Rose */
   .nav-btn-dark {
-    background: linear-gradient(135deg, #81001a 0%, #520011 100%);
+    background: linear-gradient(135deg, #d54f60 0%, #bf3f50 100%);
     color: #ffffff;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 10px;
     padding: 10px 22px;
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 12px rgba(129, 0, 26, 0.25);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(213, 79, 96, 0.4);
   }
 
   .nav-btn-dark:hover {
-    background: linear-gradient(135deg, #990020 0%, #680015 100%);
+    background: linear-gradient(135deg, #e27d8b 0%, #d54f60 100%);
     transform: translateY(-1.5px);
-    box-shadow: 0 6px 18px rgba(129, 0, 26, 0.35);
+    box-shadow: 0 6px 18px rgba(213, 79, 96, 0.6);
   }
 
   .nav-btn-dark:active {
     transform: translateY(0) scale(0.98);
   }
 
-  /* Secondary Clean Pill Button (Sign In & Login) */
+  /* Secondary Clean Pill Button (Sign In & Login) in Warm Sand */
   .nav-btn-light {
-    background: rgba(255, 255, 255, 0.9);
-    color: #334155;
-    border: 1px solid #cbd5e1;
+    background: #f3e7d6;
+    color: #81001a;
+    border: 1px solid rgba(243, 231, 214, 0.5);
     border-radius: 10px;
     padding: 9px 18px;
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   .nav-btn-light:hover {
-    background: #ffffff;
-    color: #0f172a;
-    border-color: #94a3b8;
+    background: #fff9f2;
+    color: #520011;
+    border-color: #ffffff;
     transform: translateY(-1.5px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
   }
 
   .nav-btn-light:active {
@@ -481,13 +483,13 @@
   @media (max-width: 768px) {
     .navbar {
       width: 100%;
-      margin: 0 auto;
+      margin: 0;
       padding: 0 16px;
       height: 62px;
       border-radius: 0;
-      border: none;
-      box-shadow: none;
-      background: transparent;
+      background: var(--navbar-bg);
+      border-bottom: 1px solid rgba(243, 231, 214, 0.2);
+      box-shadow: 0 4px 16px rgba(129, 0, 26, 0.25);
     }
     .nav-brand-text {
       font-size: 17px;
@@ -504,13 +506,13 @@
   @media (max-width: 480px) {
     .navbar {
       width: 100%;
-      margin: 0 auto;
+      margin: 0;
       padding: 0 12px;
       height: 58px;
       border-radius: 0;
-      border: none;
-      box-shadow: none;
-      background: transparent;
+      background: var(--navbar-bg);
+      border-bottom: 1px solid rgba(243, 231, 214, 0.2);
+      box-shadow: 0 4px 16px rgba(129, 0, 26, 0.25);
     }
     .nav-brand-badge {
       display: none;
@@ -600,28 +602,27 @@
   .profile-wrap.active { display: inline-flex; }
 
   .profile-btn {
-    background: rgba(255, 255, 255, 0.88);
-    color: var(--ink);
-    border: 1px solid var(--line);
+    background: #f3e7d6;
+    color: #81001a;
+    border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 999px;
     padding: 5px 14px 5px 6px;
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    backdrop-filter: blur(12px);
-    box-shadow: 0 2px 8px rgba(213, 79, 96, 0.12);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
   .profile-btn:hover {
-    background: #ffffff;
-    color: var(--accent-dark);
-    border-color: var(--accent);
+    background: #fff9f2;
+    color: #520011;
+    border-color: #ffffff;
     transform: translateY(-1.5px);
-    box-shadow: 0 4px 14px rgba(213, 79, 96, 0.22);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   }
   .profile-btn:active { transform: scale(0.98); }
 
@@ -1132,7 +1133,7 @@
   /* Hero band — soft gradient backdrop behind the headline + upload zone */
   .hero-band{
     background: var(--hero-bg, var(--paper));
-    padding: 0 0 40px;
+    padding: 36px 0 40px;
     margin-bottom: 36px;
     border-bottom: 1px solid var(--line);
   }
@@ -1144,7 +1145,7 @@
     align-items:center;
     text-align:center;
     border-bottom:none;
-    padding-top:20px;
+    padding-top:6px;
     padding-bottom:14px;
     margin-bottom:36px;
   }

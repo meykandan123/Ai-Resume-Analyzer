@@ -221,31 +221,27 @@
     padding: 0 0 80px;
   }
 
-  /* Modern Minimalist Floating Card Navbar */
+  /* Full Page Continuous Navigation Bar matching Hero Section */
   .navbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(235, 244, 255, 0.88);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid var(--line);
-    border-radius: 18px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
     padding: 0 28px;
     height: 72px;
     max-width: 1240px;
-    width: calc(100% - 48px);
-    margin: 18px auto 28px auto;
-    box-shadow: 0 10px 30px -5px rgba(0, 43, 102, 0.06), 0 4px 12px -2px rgba(0, 43, 102, 0.04);
-    position: sticky;
-    top: 16px;
+    width: 100%;
+    margin: 0 auto;
+    box-shadow: none;
+    position: relative;
     z-index: 1000;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .navbar:hover {
-    box-shadow: 0 16px 40px -8px rgba(0, 136, 255, 0.16), 0 6px 16px -2px rgba(15, 23, 42, 0.06);
-    border-color: rgba(0, 136, 255, 0.45);
+    box-shadow: none;
+    border-color: transparent;
   }
 
   .nav-container {
@@ -481,11 +477,14 @@
 
   @media (max-width: 768px) {
     .navbar {
-      width: calc(100% - 24px);
-      margin: 12px auto 20px auto;
+      width: 100%;
+      margin: 0 auto;
       padding: 0 16px;
       height: 62px;
-      border-radius: 12px;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+      background: transparent;
     }
     .nav-brand-text {
       font-size: 17px;
@@ -501,10 +500,14 @@
 
   @media (max-width: 480px) {
     .navbar {
-      width: calc(100% - 16px);
-      margin: 8px auto 16px auto;
+      width: 100%;
+      margin: 0 auto;
       padding: 0 12px;
       height: 58px;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+      background: transparent;
     }
     .nav-brand-badge {
       display: none;
@@ -586,36 +589,7 @@
     margin: 4px 6px;
   }
 
-  @media (max-width: 768px) {
-    .navbar {
-      padding: 0 20px;
-      height: 68px;
-    }
-    .nav-brand-text {
-      font-size: 18px;
-    }
-    .nav-btn-dark, .nav-btn-light {
-      padding: 8px 16px;
-      font-size: 13px;
-    }
-    .nav-right {
-      gap: 8px;
-    }
-  }
 
-  @media (max-width: 480px) {
-    .navbar {
-      padding: 0 14px;
-      height: 62px;
-    }
-    .nav-brand-badge {
-      display: none;
-    }
-    .nav-btn-dark, .nav-btn-light {
-      padding: 7px 12px;
-      font-size: 12px;
-    }
-  }
 
   /* Logged-in profile pill button + dropdown, shown in navbar after login/signup */
   .profile-wrap {
@@ -1157,7 +1131,7 @@
   /* Hero band — soft gradient backdrop behind the headline + upload zone */
   .hero-band{
     background: var(--hero-bg, var(--paper));
-    padding: 44px 0 40px;
+    padding: 0 0 40px;
     margin-bottom: 36px;
     border-bottom: 1px solid var(--line);
   }
@@ -1169,6 +1143,7 @@
     align-items:center;
     text-align:center;
     border-bottom:none;
+    padding-top:20px;
     padding-bottom:14px;
     margin-bottom:36px;
   }

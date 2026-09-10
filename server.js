@@ -371,15 +371,22 @@ async function logUserActivity(userOrId, activityType, description, metadata = {
     const now = new Date();
 
     const result = await UserActivity.findOneAndUpdate(
-      { userId: targetUserId },
       {
-        $setOnInsert: { userId: targetUserId },
-        $set: { name: nameToSave, email: emailToSave, updatedAt: now },
+        $or: [
+          { userId: targetUserId },
+          ...(emailToSave ? [{ email: emailToSave }] : [])
+        ]
+      },
+      {
+        $set: { userId: targetUserId, name: nameToSave, email: emailToSave, updatedAt: now },
         $push: {
           activities: {
-            activityType: actType,
-            description: descText,
-            timestamp: now
+            $each: [{
+              activityType: actType,
+              description: descText,
+              timestamp: now
+            }],
+            $slice: -200
           }
         }
       },
@@ -795,8 +802,8 @@ const verifyEmailHandler = async (req, res) => {
   }
 };
 
-app.post("/api/auth/verify", verifyEmailHandler);
-app.get("/api/auth/verify", verifyEmailHandler);
+app.post(["/api/auth/verify", "/api/auth/verify-email"], verifyEmailHandler);
+app.get(["/api/auth/verify", "/api/auth/verify-email"], verifyEmailHandler);
 
 // Resend Verification Email Token
 app.post("/api/auth/resend-verification", async (req, res) => {
@@ -1051,7 +1058,7 @@ app.post("/api/auth/login", async (req, res) => {
     await user.save();
     const userIdStr = user.userId || user._id.toString();
 
-    await logUserActivity(userIdStr, "login", `User logged in with email: ${user.email}`, { email: user.email, provider: user.provider });
+    await logUserActivity(userIdStr, "login", `User logged in with email: ${user.email}`, { email: user.email, provider: user.provider }, user.email);
 
     const token = generateToken(user._id);
 
@@ -1245,7 +1252,7 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
   try {
     const { name, photo } = req.body;
     const updateData = { updatedAt: new Date() };
-    if (name) updateData.name = name.trim();
+    if (name && typeof name === "string" && name.trim()) updateData.name = name.trim();
     if (photo !== undefined) updateData.photo = photo;
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -1259,15 +1266,28 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
     }
 
     const userIdStr = updatedUser.userId || updatedUser._id.toString();
+    const userEmail = updatedUser.email ? updatedUser.email.toLowerCase().trim() : "";
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
 
     // Sync name across collections where required
-    if (name) {
-      await UserActivity.updateOne({ userId: userIdStr }, { $set: { name: updatedUser.name } });
-      await ResumeHistory.updateOne({ userId: userIdStr }, { $set: { name: updatedUser.name } });
-      await ResumeAnalysis.updateMany({ userId: userIdStr }, { $set: { name: updatedUser.name } });
+    if (name && typeof name === "string" && name.trim()) {
+      await UserActivity.updateOne(userQuery, { $set: { name: updatedUser.name } });
+      await ResumeHistory.updateOne(userQuery, { $set: { name: updatedUser.name } });
+      await ResumeAnalysis.updateMany(userQuery, { $set: { name: updatedUser.name } });
     }
 
-    await logUserActivity(userIdStr, "profile update", `User updated profile (Name: ${updatedUser.name})`, { name: updatedUser.name, photoUpdated: photo !== undefined });
+    await logUserActivity(
+      userIdStr,
+      "profile update",
+      `User updated profile (Name: ${updatedUser.name})`,
+      { name: updatedUser.name, photoUpdated: photo !== undefined },
+      userEmail
+    );
 
     return res.json({
       success: true,
@@ -1296,8 +1316,14 @@ app.put("/api/user/profile", authenticateToken, async (req, res) => {
 app.get(["/api/activity", "/api/user/activity"], authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
-    const userActDoc = await UserActivity.findOne({ userId: userIdStr });
+    const userActDoc = await UserActivity.findOne({
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    });
     const rawList = userActDoc && Array.isArray(userActDoc.activities) ? userActDoc.activities : [];
 
     const activities = [...rawList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 100);
@@ -1460,7 +1486,14 @@ const handleResumeAnalyze = async (req, res) => {
     const activeResumeId = analysisDoc.resumeId || newResumeId;
 
     // 2. Atomic Update in resume_history collection (1 document per user)
-    const userHistoryDoc = await ResumeHistory.findOne({ userId: userIdStr });
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
+
+    const userHistoryDoc = await ResumeHistory.findOne(userQuery);
     const existingHistoryItem = userHistoryDoc && Array.isArray(userHistoryDoc.history) 
       ? userHistoryDoc.history.find(item => item.resumeId === activeResumeId || item.fileName === finalName)
       : null;
@@ -1468,9 +1501,10 @@ const handleResumeAnalyze = async (req, res) => {
     if (existingHistoryItem) {
       // Update existing item in history array
       await ResumeHistory.updateOne(
-        { userId: userIdStr, "history.resumeId": existingHistoryItem.resumeId },
+        { _id: userHistoryDoc._id, "history.resumeId": existingHistoryItem.resumeId },
         {
           $set: {
+            userId: userIdStr,
             name: userName,
             email: userEmail,
             "history.$.fileName": finalName,
@@ -1485,10 +1519,9 @@ const handleResumeAnalyze = async (req, res) => {
     } else {
       // Push new item into history array
       await ResumeHistory.findOneAndUpdate(
-        { userId: userIdStr },
+        userQuery,
         {
-          $setOnInsert: { userId: userIdStr },
-          $set: { name: userName, email: userEmail, updatedAt: now },
+          $set: { userId: userIdStr, name: userName, email: userEmail, updatedAt: now },
           $push: {
             history: {
               resumeId: activeResumeId,
@@ -1508,7 +1541,7 @@ const handleResumeAnalyze = async (req, res) => {
     const actDesc = computedAnalysisType === "ATS"
       ? `ATS score check for: ${finalName} (ATS Score: ${finalScore})`
       : `User completed resume analysis for: ${finalName} (Score: ${finalScore})`;
-    await logUserActivity(userIdStr, "resume_analysis", actDesc, { filename: finalName, score: finalScore, resumeId: activeResumeId });
+    await logUserActivity(userIdStr, "resume_analysis", actDesc, { filename: finalName, score: finalScore, resumeId: activeResumeId }, userEmail);
 
     return res.status(201).json({
       success: true,
@@ -1544,9 +1577,41 @@ app.post("/api/resume/upload", authenticateToken, handleResumeAnalyze);
 app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
 
-    const historyDoc = await ResumeHistory.findOne({ userId: userIdStr });
-    const rawList = historyDoc && Array.isArray(historyDoc.history) ? historyDoc.history : [];
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
+
+    let historyDoc = await ResumeHistory.findOne(userQuery);
+    let rawList = historyDoc && Array.isArray(historyDoc.history) ? historyDoc.history : [];
+
+    // Fallback: If resume_history is empty, check resume_analysis and backfill
+    if (rawList.length === 0) {
+      const analyses = await ResumeAnalysis.find(userQuery).sort({ lastUpdatedAt: -1 });
+
+      if (analyses.length > 0) {
+        rawList = analyses.map(a => ({
+          resumeId: a.resumeId || a._id.toString(),
+          fileName: a.fileName || "resume.pdf",
+          uploadedAt: a.lastUpdatedAt || a.firstUploadedAt || new Date(),
+          analysisType: a.analysisType || "normal",
+          atsScore: a.atsScore || 0,
+          status: "analyzed"
+        }));
+
+        await ResumeHistory.findOneAndUpdate(
+          userQuery,
+          {
+            $set: { userId: userIdStr, name: req.user.name, email: userEmail, history: rawList, updatedAt: new Date() }
+          },
+          { upsert: true }
+        );
+      }
+    }
 
     const historyList = [...rawList].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
 
@@ -1557,7 +1622,7 @@ app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (
       userId: userIdStr,
       fileName: item.fileName,
       filename: item.fileName,
-      fileType: item.fileName.split(".").pop() || "pdf",
+      fileType: (item.fileName || "").split(".").pop() || "pdf",
       analysisType: item.analysisType || "normal",
       atsScore: item.atsScore || 0,
       score: item.atsScore || 0,
@@ -1585,7 +1650,15 @@ app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (
 app.get("/api/user/resume-analysis", authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
-    const records = await ResumeAnalysis.find({ userId: userIdStr }).sort({ lastUpdatedAt: -1 });
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
+
+    const records = await ResumeAnalysis.find(userQuery).sort({ lastUpdatedAt: -1 });
 
     return res.json({
       success: true,
@@ -1603,9 +1676,17 @@ app.delete(["/api/history/:id", "/api/user/resume-history/:id"], authenticateTok
   try {
     const targetId = req.params.id;
     const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
+
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
 
     const updatedDoc = await ResumeHistory.findOneAndUpdate(
-      { userId: userIdStr },
+      userQuery,
       {
         $pull: {
           history: {
@@ -1620,15 +1701,45 @@ app.delete(["/api/history/:id", "/api/user/resume-history/:id"], authenticateTok
       { returnDocument: "after" }
     );
 
-    if (!updatedDoc) {
-      return res.status(404).json({ success: false, message: "History record not found." });
-    }
+    // Also delete any matching analysis in ResumeAnalysis
+    await ResumeAnalysis.deleteMany({
+      $and: [
+        userQuery,
+        {
+          $or: [
+            { resumeId: targetId },
+            { fileName: targetId },
+            ...(mongoose.Types.ObjectId.isValid(targetId) ? [{ _id: targetId }] : [])
+          ]
+        }
+      ]
+    });
 
-    await logUserActivity(userIdStr, "resume deletion", `User deleted resume entry ${targetId}`, { resumeId: targetId });
+    const remainingRaw = updatedDoc && Array.isArray(updatedDoc.history) ? updatedDoc.history : [];
+    const remainingList = [...remainingRaw].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)).map(item => ({
+      id: item.resumeId,
+      _id: item.resumeId,
+      resumeId: item.resumeId,
+      userId: userIdStr,
+      fileName: item.fileName,
+      filename: item.fileName,
+      fileType: (item.fileName || "").split(".").pop() || "pdf",
+      analysisType: item.analysisType || "normal",
+      atsScore: item.atsScore || 0,
+      score: item.atsScore || 0,
+      status: item.status || "analyzed",
+      verdict: "Analyzed",
+      uploadedAt: item.uploadedAt,
+      date: item.uploadedAt
+    }));
+
+    await logUserActivity(userIdStr, "resume deletion", `User deleted resume entry ${targetId}`, { resumeId: targetId }, userEmail);
 
     return res.json({
       success: true,
-      message: "History entry deleted successfully."
+      message: "History entry deleted successfully.",
+      count: remainingList.length,
+      history: remainingList
     });
   } catch (err) {
     console.error("Delete history error:", err);

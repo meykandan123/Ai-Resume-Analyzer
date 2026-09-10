@@ -2029,7 +2029,7 @@
     const navHomeBtn = document.getElementById("navHomeBtn");
     if (navHomeBtn) navHomeBtn.style.display = "inline-flex";
     document.querySelectorAll(".logged-in-only").forEach(el => {
-      if (el.classList.contains("nav-home-btn")) {
+      if (el.classList.contains("nav-home-btn") || el.tagName === "BUTTON") {
         el.style.display = "inline-flex";
       } else if (el.classList.contains("profile-wrap")) {
         el.style.display = "inline-flex";
@@ -2271,11 +2271,48 @@
   document.getElementById("userProfileBtn").addEventListener("click", openProfilePage);
   document.getElementById("profilePageBackBtn").addEventListener("click", closeProfilePage);
 
+  let pendingProfileAvatarDataUrl = null;
+
+  function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.85) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressedDataUrl);
+        };
+        img.onerror = () => reject(new Error("Failed to process image"));
+        img.src = readerEvent.target.result;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
   document.getElementById("profilePageAvatarEditBtn").addEventListener("click", () => {
     document.getElementById("profilePagePhotoInput").click();
   });
 
-  document.getElementById("profilePagePhotoInput").addEventListener("change", (e) => {
+  document.getElementById("profilePagePhotoInput").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file || !currentUser) return;
     if (!file.type.startsWith("image/")){
@@ -2283,53 +2320,51 @@
       profilePageToast.textContent = "Please choose an image file.";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result;
+    try {
+      profilePageToast.style.color = "var(--muted)";
+      profilePageToast.textContent = "Processing photo...";
+
+      const compressedDataUrl = await compressImage(file, 400, 400, 0.85);
+      pendingProfileAvatarDataUrl = compressedDataUrl;
+
+      // Update avatar preview immediately across UI
+      renderAvatarEverywhere({ ...currentUser, photo: compressedDataUrl });
 
       const token = getAuthToken();
-      if (!token) {
-        profilePageToast.style.color = "#b3261e";
-        profilePageToast.textContent = "Authentication token missing. Please log in again.";
-        return;
-      }
-
-      try {
+      if (token) {
         const res = await safeFetchJson("/api/user/profile", {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + token
           },
-          body: JSON.stringify({ photo: dataUrl })
+          body: JSON.stringify({ photo: compressedDataUrl })
         });
-        if (!res || !res.success || !res.user) {
-          profilePageToast.style.color = "#b3261e";
-          profilePageToast.textContent = (res && res.message) ? res.message : "Failed to update profile photo in MongoDB.";
+        if (res && res.success && res.user) {
+          setLoggedInUser({
+            ...currentUser,
+            _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+            id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+            userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
+            name: res.user.name,
+            email: res.user.email,
+            provider: res.user.provider || currentUser.provider,
+            photo: res.user.photo,
+            token: token
+          });
+          renderAvatarEverywhere(res.user);
+          profilePageToast.style.color = "#2e7d32";
+          profilePageToast.textContent = "Profile photo updated successfully.";
           return;
         }
-
-        setLoggedInUser({
-          ...currentUser,
-          _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-          id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-          userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
-          name: res.user.name,
-          email: res.user.email,
-          provider: res.user.provider || currentUser.provider,
-          photo: res.user.photo,
-          token: token
-        });
-
-        profilePageToast.style.color = "#2e7d32";
-        profilePageToast.textContent = "Profile photo updated successfully.";
-      } catch(err) {
-        console.error("Profile photo database update failed:", err);
-        profilePageToast.style.color = "#b3261e";
-        profilePageToast.textContent = "Database error: " + err.message;
       }
-    };
-    reader.readAsDataURL(file);
+      profilePageToast.style.color = "#2e7d32";
+      profilePageToast.textContent = "Photo chosen. Click Save to confirm.";
+    } catch(err) {
+      console.error("Profile photo processing failed:", err);
+      profilePageToast.style.color = "#b3261e";
+      profilePageToast.textContent = "Error processing photo: " + err.message;
+    }
   });
 
   document.getElementById("profilePageSaveBtn").addEventListener("click", async () => {
@@ -2348,14 +2383,24 @@
       return;
     }
 
+    const updatePayload = { name: newName };
+    if (pendingProfileAvatarDataUrl !== null) {
+      updatePayload.photo = pendingProfileAvatarDataUrl;
+    } else if (currentUser.photo) {
+      updatePayload.photo = currentUser.photo;
+    }
+
     try {
+      profilePageToast.style.color = "var(--muted)";
+      profilePageToast.textContent = "Saving profile to MongoDB...";
+
       const res = await safeFetchJson("/api/user/profile", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer " + token
         },
-        body: JSON.stringify({ name: newName })
+        body: JSON.stringify(updatePayload)
       });
       if (!res || !res.success || !res.user) {
         profilePageToast.style.color = "#b3261e";
@@ -2375,8 +2420,18 @@
         token: token
       });
 
+      renderAvatarEverywhere(res.user);
+      const nameEl = document.getElementById("userChipName");
+      const dropdownNameEl = document.getElementById("profileDropdownName");
+      if (nameEl) nameEl.textContent = res.user.name;
+      if (dropdownNameEl) dropdownNameEl.textContent = res.user.name;
+
+      pendingProfileAvatarDataUrl = null;
       profilePageToast.style.color = "#2e7d32";
       profilePageToast.textContent = "Profile saved successfully.";
+      setTimeout(() => {
+        if (profilePageToast) profilePageToast.textContent = "";
+      }, 3000);
     } catch(err){
       console.error("MongoDB profile save error:", err);
       profilePageToast.style.color = "#b3261e";
@@ -3542,17 +3597,23 @@
   async function deleteHistoryEntry(email, id){
     if (!id) return;
     // Optimistic delete locally
-    userHistoryList = userHistoryList.filter(e => (e.id !== id && e._id !== id && e.analysisId !== id));
+    userHistoryList = userHistoryList.filter(e => (e.id !== id && e._id !== id && e.analysisId !== id && e.resumeId !== id));
     renderHistory();
 
     const token = getAuthToken();
     if (token){
       try {
-        await safeFetchJson("/api/history/" + id, {
+        const res = await safeFetchJson("/api/history/" + encodeURIComponent(id), {
           method: "DELETE",
           headers: { "Authorization": "Bearer " + token }
         });
-        await fetchHistoryFromBackend();
+        if (res && res.success && Array.isArray(res.history)) {
+          userHistoryList = res.history;
+          renderHistory();
+        } else {
+          await fetchHistoryFromBackend();
+        }
+        showToast("Resume removed from history", "success");
       } catch(err){
         console.warn("Could not delete history from MongoDB backend:", err);
       }
@@ -3633,6 +3694,15 @@
   const historyBtn = document.getElementById("historyBtn");
   if (historyBtn) {
     historyBtn.addEventListener("click", () => {
+      const pdd = document.getElementById("profileDropdown");
+      if (pdd) pdd.classList.remove("open");
+      openHistory();
+    });
+  }
+
+  const navHistoryBtn = document.getElementById("navHistoryBtn");
+  if (navHistoryBtn) {
+    navHistoryBtn.addEventListener("click", () => {
       const pdd = document.getElementById("profileDropdown");
       if (pdd) pdd.classList.remove("open");
       openHistory();

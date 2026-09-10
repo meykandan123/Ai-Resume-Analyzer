@@ -1545,6 +1545,9 @@
     }
     if (mode === "ats") runATSAnalysis(); else runNormalAnalysis();
     setStatus("Analysis complete ✓");
+    if (typeof logUserAction === "function") {
+      logUserAction("mode selection", mode === "ats" ? "User selected ATS Score Check mode" : "User selected Full Breakdown mode", { mode });
+    }
   }
 
   // Both modes share the same underlying extraction/analysis engine —
@@ -2115,14 +2118,33 @@
     : "";
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
-  async function safeFetchJson(url, options, retries = 1) {
+  async function safeFetchJson(url, options = {}, retries = 1) {
     const fullUrl = (url.startsWith("/api/") && API_BASE)
       ? (API_BASE + url)
       : url;
 
+    options = options || {};
+    options.headers = options.headers || {};
+
+    const token = getAuthToken();
+    if (token && !options.headers["Authorization"] && !options.headers["authorization"]) {
+      options.headers["Authorization"] = "Bearer " + token;
+    }
+    if (currentUser && currentUser.email && !options.headers["x-user-email"]) {
+      options.headers["x-user-email"] = currentUser.email;
+    }
+
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(fullUrl, options);
+
+        // Auto re-hydrate token if renewed by backend
+        const renewedToken = res.headers && res.headers.get("x-auth-token");
+        if (renewedToken) {
+          setAuthToken(renewedToken);
+          if (currentUser) currentUser.token = renewedToken;
+        }
+
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
           return {
@@ -2137,7 +2159,12 @@
         if (!text || !text.trim()) {
           return { success: false, isEmpty: true, status: res.status, message: `Empty response (${res.status})` };
         }
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.token && typeof setAuthToken === "function") {
+          setAuthToken(parsed.token);
+          if (currentUser) currentUser.token = parsed.token;
+        }
+        return parsed;
       } catch (err) {
         if (attempt === retries) {
           return {
@@ -2151,6 +2178,24 @@
         await new Promise(r => setTimeout(r, 800));
       }
     }
+  }
+
+  // Centralized User Activity Logger to ensure everything the user does is logged in MongoDB
+  async function logUserAction(action, description, metadata = {}) {
+    try {
+      const email = (currentUser && currentUser.email) ? currentUser.email : "";
+      await safeFetchJson("/api/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          activityType: action,
+          description: description || `User performed ${action}`,
+          email,
+          ...metadata
+        })
+      });
+    } catch (e) {}
   }
 
   let sessionRestorePromise = null;
@@ -2271,7 +2316,48 @@
   document.getElementById("userProfileBtn").addEventListener("click", openProfilePage);
   document.getElementById("profilePageBackBtn").addEventListener("click", closeProfilePage);
 
+  const profileNameInputEl = document.getElementById("profilePageNameInput");
+  if (profileNameInputEl) {
+    profileNameInputEl.addEventListener("input", () => {
+      if (profilePageToast) profilePageToast.textContent = "";
+    });
+  }
+
   let pendingProfileAvatarDataUrl = null;
+
+  async function ensureAuthToken() {
+    let token = getAuthToken();
+    if (token) return token;
+    if (currentUser && currentUser.token) {
+      setAuthToken(currentUser.token);
+      return currentUser.token;
+    }
+    try {
+      const sess = localStorage.getItem("ara_session_v1");
+      if (sess) {
+        const parsed = JSON.parse(sess);
+        if (parsed && parsed.token) {
+          setAuthToken(parsed.token);
+          return parsed.token;
+        }
+      }
+    } catch (e) {}
+    if (currentUser && currentUser.email) {
+      try {
+        const res = await safeFetchJson("/api/auth/session-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: currentUser.email })
+        });
+        if (res && res.success && res.token) {
+          setAuthToken(res.token);
+          currentUser.token = res.token;
+          return res.token;
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
 
   function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.85) {
     return new Promise((resolve, reject) => {
@@ -2330,36 +2416,42 @@
       // Update avatar preview immediately across UI
       renderAvatarEverywhere({ ...currentUser, photo: compressedDataUrl });
 
-      const token = getAuthToken();
-      if (token) {
-        const res = await safeFetchJson("/api/user/profile", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify({ photo: compressedDataUrl })
+      const token = await ensureAuthToken();
+      const headers = {
+        "Content-Type": "application/json",
+        "x-user-email": currentUser.email
+      };
+      if (token) headers["Authorization"] = "Bearer " + token;
+
+      const res = await safeFetchJson("/api/user/profile", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ photo: compressedDataUrl, email: currentUser.email })
+      });
+      if (res && res.success && res.user) {
+        const activeToken = res.token || token || (currentUser && currentUser.token) || "";
+        if (activeToken) setAuthToken(activeToken);
+
+        setLoggedInUser({
+          ...currentUser,
+          _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+          id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+          userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
+          name: res.user.name,
+          email: res.user.email,
+          provider: res.user.provider || currentUser.provider,
+          photo: res.user.photo,
+          token: activeToken
         });
-        if (res && res.success && res.user) {
-          setLoggedInUser({
-            ...currentUser,
-            _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-            id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-            userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
-            name: res.user.name,
-            email: res.user.email,
-            provider: res.user.provider || currentUser.provider,
-            photo: res.user.photo,
-            token: token
-          });
-          renderAvatarEverywhere(res.user);
-          profilePageToast.style.color = "#2e7d32";
-          profilePageToast.textContent = "Profile photo updated successfully.";
-          return;
-        }
+        renderAvatarEverywhere(res.user);
+        profilePageToast.style.color = "#2e7d32";
+        profilePageToast.textContent = "Profile photo updated successfully.";
+
+        logUserAction("profile photo update", "User updated profile photo");
+        return;
       }
       profilePageToast.style.color = "#2e7d32";
-      profilePageToast.textContent = "Photo chosen. Click Save to confirm.";
+      profilePageToast.textContent = "Photo chosen. Click Save Changes to confirm.";
     } catch(err) {
       console.error("Profile photo processing failed:", err);
       profilePageToast.style.color = "#b3261e";
@@ -2376,14 +2468,14 @@
       return;
     }
 
-    const token = getAuthToken();
-    if (!token) {
-      profilePageToast.style.color = "#b3261e";
-      profilePageToast.textContent = "Authentication token missing. Please log in again.";
-      return;
-    }
+    profilePageToast.style.color = "var(--muted)";
+    profilePageToast.textContent = "Saving profile to MongoDB...";
 
-    const updatePayload = { name: newName };
+    const token = await ensureAuthToken();
+    const updatePayload = {
+      name: newName,
+      email: currentUser.email
+    };
     if (pendingProfileAvatarDataUrl !== null) {
       updatePayload.photo = pendingProfileAvatarDataUrl;
     } else if (currentUser.photo) {
@@ -2391,15 +2483,15 @@
     }
 
     try {
-      profilePageToast.style.color = "var(--muted)";
-      profilePageToast.textContent = "Saving profile to MongoDB...";
+      const headers = {
+        "Content-Type": "application/json",
+        "x-user-email": currentUser.email
+      };
+      if (token) headers["Authorization"] = "Bearer " + token;
 
       const res = await safeFetchJson("/api/user/profile", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + token
-        },
+        headers,
         body: JSON.stringify(updatePayload)
       });
       if (!res || !res.success || !res.user) {
@@ -2407,6 +2499,9 @@
         profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
         return;
       }
+
+      const activeToken = res.token || token || (currentUser && currentUser.token) || "";
+      if (activeToken) setAuthToken(activeToken);
 
       setLoggedInUser({
         ...currentUser,
@@ -2417,7 +2512,7 @@
         email: res.user.email,
         provider: res.user.provider || currentUser.provider,
         photo: res.user.photo,
-        token: token
+        token: activeToken
       });
 
       renderAvatarEverywhere(res.user);
@@ -2432,6 +2527,8 @@
       setTimeout(() => {
         if (profilePageToast) profilePageToast.textContent = "";
       }, 3000);
+
+      logUserAction("profile update", `User updated profile (Name: ${res.user.name})`, { name: res.user.name });
     } catch(err){
       console.error("MongoDB profile save error:", err);
       profilePageToast.style.color = "#b3261e";
@@ -3688,6 +3785,9 @@
       try { await sessionRestorePromise; } catch(e){}
     }
     await fetchHistoryFromBackend();
+    if (typeof logUserAction === "function") {
+      logUserAction("view history", "User opened resume history");
+    }
   }
   function closeHistory(){ if (historyModal) historyModal.classList.remove("active"); }
 

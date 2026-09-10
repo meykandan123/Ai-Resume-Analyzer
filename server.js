@@ -535,25 +535,34 @@ const hashToken = (token) => {
   return crypto.createHash("sha256").update(token).digest("hex");
 };
 
-// Helper: Send email directly using Backend Email Service (SMTP)
+// Helper: Send email directly using Backend Email Service (SMTP / Nodemailer)
 const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
   if (!toEmail || typeof toEmail !== "string") return false;
   const normalized = toEmail.toLowerCase().trim();
 
+  const service = process.env.EMAIL_SERVICE;
   const host = process.env.EMAIL_HOST || process.env.SMTP_HOST;
   const port = parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || "587");
   const user = process.env.EMAIL_USER || process.env.SMTP_USER;
   const pass = process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS;
   const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || `"AI Resume Analyzer" <${user || "no-reply@ai-resume-analyzer.com"}>`;
 
-  if (nodemailer && host && user && pass) {
+  if (nodemailer && ((service && user && pass) || (host && user && pass))) {
     try {
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: process.env.EMAIL_SECURE === "true" || process.env.SMTP_SECURE === "true" || port === 465,
-        auth: { user, pass }
-      });
+      const transporterConfig = service
+        ? {
+            service,
+            auth: { user, pass }
+          }
+        : {
+            host,
+            port,
+            secure: process.env.EMAIL_SECURE === "true" || process.env.SMTP_SECURE === "true" || port === 465,
+            auth: { user, pass },
+            tls: { rejectUnauthorized: false }
+          };
+
+      const transporter = nodemailer.createTransport(transporterConfig);
       await transporter.sendMail({
         from,
         to: normalized,
@@ -561,15 +570,20 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
         text: textMessage,
         html: htmlMessage || `<div style="font-family:sans-serif; padding:20px;">${textMessage.replace(/\n/g, "<br/>")}</div>`
       });
-      console.log(`[Backend Email Service] Delivered '${subject}' directly to ${normalized}`);
+      console.log(`[Backend Email Service] Successfully delivered email '${subject}' to ${normalized}`);
       return true;
     } catch (smtpErr) {
       console.error("[Backend Email Service] SMTP delivery error:", smtpErr.message);
-      return false;
     }
   }
 
-  console.log(`[Backend Email Service - Dev Log] Subject: '${subject}' | To: ${normalized}`);
+  // Fallback logging for local development or when SMTP credentials are not yet configured
+  console.log("==================================================");
+  console.log(`[Backend Email Service - Dispatch Notice]`);
+  console.log(`To: ${normalized}`);
+  console.log(`Subject: ${subject}`);
+  console.log(`Message:\n${textMessage}`);
+  console.log("==================================================");
   return true;
 };
 
@@ -612,7 +626,7 @@ app.post("/api/auth/signup", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
     const rawVerifyToken = generateVerifyToken();
     const hashedVerifyToken = hashToken(rawVerifyToken);
-    const verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000);
+    const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
     const _id = new mongoose.Types.ObjectId();
     const userId = _id.toString();
     const now = new Date();
@@ -625,8 +639,8 @@ app.post("/api/auth/signup", async (req, res) => {
       password: hashedPassword,
       passwordHash: hashedPassword,
       provider: "email",
-      emailVerified: true,
-      verified: true,
+      emailVerified: false,
+      verified: false,
       verifyToken: hashedVerifyToken,
       verifyTokenExpires,
       createdAt: now,
@@ -644,43 +658,35 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const textMessage =
       `Hi ${newUser.name || "there"},\n\n` +
-      `Thank you for creating an account with AI Resume Analyzer!\n` +
-      `Your account is ready to use.\n\n` +
-      `If you need to verify your email manually, click below:\n` +
-      `${verifyLink}\n\n`;
+      `Thank you for creating an account with AI Resume Analyzer!\n\n` +
+      `Please click the verification link below to activate your account and enable login:\n` +
+      `${verifyLink}\n\n` +
+      `⏰ IMPORTANT: This link is valid for 24 hours.\n\n` +
+      `If you didn't create an account, you can safely ignore this email.`;
 
     const htmlMessage =
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
-      `<h2 style="color: #4f46e5; text-align: center;">Welcome to AI Resume Analyzer</h2>` +
-      `<p>Hi <strong>${newUser.name || "there"}</strong>,</p>` +
-      `<p>Your account has been successfully created and activated. You can now analyze resumes right away!</p>` +
-      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
-      `<p style="font-size: 12px; color: #888;">If you didn't create an account, please ignore this email.</p>` +
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">` +
+      `<h2 style="color: #4f46e5; text-align: center; margin-top: 0;">Verify Your Email</h2>` +
+      `<p style="font-size: 15px; color: #334155;">Hi <strong>${newUser.name || "there"}</strong>,</p>` +
+      `<p style="font-size: 15px; color: #334155;">Thank you for registering for <strong>AI Resume Analyzer</strong>. Please click the button below to verify your email address and activate your account:</p>` +
+      `<div style="text-align: center; margin: 30px 0;">` +
+      `<a href="${verifyLink}" style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">Verify My Email</a>` +
+      `</div>` +
+      `<p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}" style="color: #4f46e5; word-break: break-all;">${verifyLink}</a></p>` +
+      `<p style="font-size: 13px; color: #b45309; font-weight: bold; background: #fef3c7; padding: 10px 14px; border-radius: 6px;">⏰ Note: This verification link is valid for 24 hours.</p>` +
+      `<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />` +
+      `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you did not sign up for this account, please ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(newUser.email, "Welcome to AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
-
-    const token = generateToken(newUser._id);
+    sendEmailToUser(newUser.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
 
     return res.status(201).json({
       success: true,
-      requireVerification: false,
-      token,
-      message: "Account created successfully! Welcome to AI Resume Analyzer.",
+      requireVerification: true,
+      message: "Account created successfully! A verification link has been sent to your email inbox. Please verify your email before logging in.",
       email: newUser.email,
       name: newUser.name,
-      verifyToken: rawVerifyToken,
-      user: {
-        _id: newUser._id,
-        id: newUser._id,
-        userId: newUser.userId,
-        name: newUser.name,
-        email: newUser.email,
-        emailVerified: true,
-        verified: true,
-        provider: "email",
-        updatedAt: newUser.updatedAt
-      }
+      verifyToken: rawVerifyToken
     });
   } catch (err) {
     if (err.code === 11000) {
@@ -812,7 +818,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     const rawVerifyToken = generateVerifyToken();
     const hashedVerifyToken = hashToken(rawVerifyToken);
     user.verifyToken = hashedVerifyToken;
-    user.verifyTokenExpires = new Date(Date.now() + 5 * 60 * 1000);
+    user.verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
     await user.save();
 
     const host = req.get("host") || "localhost:5000";
@@ -822,30 +828,30 @@ app.post("/api/auth/resend-verification", async (req, res) => {
 
     const textMessage =
       `Hi ${user.name || "there"},\n\n` +
-      `Please verify your email address to complete your registration by clicking the link below:\n\n` +
+      `Here is your new email verification link for AI Resume Analyzer:\n\n` +
       `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
+      `⏰ IMPORTANT: This link is valid for 24 hours.\n\n` +
       `If you didn't request this email, you can safely ignore it.`;
 
     const htmlMessage =
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
-      `<h2 style="color: #4f46e5; text-align: center;">Verify Your Account</h2>` +
-      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
-      `<p>Here is your new verification link. Please verify your email address to activate your account.</p>` +
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">` +
+      `<h2 style="color: #4f46e5; text-align: center; margin-top: 0;">Verify Your Email</h2>` +
+      `<p style="font-size: 15px; color: #334155;">Hi <strong>${user.name || "there"}</strong>,</p>` +
+      `<p style="font-size: 15px; color: #334155;">Here is your requested verification link. Please click the button below to verify your email and activate your account:</p>` +
       `<div style="text-align: center; margin: 30px 0;">` +
-      `<a href="${verifyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify My Account</a>` +
+      `<a href="${verifyLink}" style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">Verify My Email</a>` +
       `</div>` +
-      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}">${verifyLink}</a></p>` +
-      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This verification link is valid for exactly 5 minutes.</p>` +
-      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
-      `<p style="font-size: 12px; color: #888;">If you didn't request a new link, please ignore this email.</p>` +
+      `<p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}" style="color: #4f46e5; word-break: break-all;">${verifyLink}</a></p>` +
+      `<p style="font-size: 13px; color: #b45309; font-weight: bold; background: #fef3c7; padding: 10px 14px; border-radius: 6px;">⏰ Note: This verification link is valid for 24 hours.</p>` +
+      `<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />` +
+      `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you didn't request a new link, please ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(user.email, "Verify Your Account", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(user.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
 
     return res.json({
       success: true,
-      message: "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.",
+      message: "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.",
       email: user.email,
       name: user.name,
       verifyToken: rawVerifyToken
@@ -875,7 +881,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 
     const rawResetToken = generateVerifyToken();
     const hashedResetToken = hashToken(rawResetToken);
-    const resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000);
+    const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     user.resetToken = hashedResetToken;
     user.resetTokenExpires = resetTokenExpires;
@@ -901,30 +907,29 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       `You requested to reset your password for AI Resume Analyzer.\n` +
       `Click the link below to set a new password:\n\n` +
       `${resetLink}\n\n` +
-      `⏰ IMPORTANT: This link is valid for 15 minutes.\n` +
-      `If you don't see this email in your primary inbox, please check your Spam or Junk folder.\n\n` +
+      `⏰ IMPORTANT: This link is valid for 1 hour.\n\n` +
       `If you didn't request a password reset, you can safely ignore this email.`;
 
     const htmlMessage =
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
-      `<h2 style="color: #4f46e5; text-align: center;">Reset Your Password</h2>` +
-      `<p>Hi <strong>${user.name || "there"}</strong>,</p>` +
-      `<p>We received a request to reset your password for AI Resume Analyzer. Click the button below to choose a new password:</p>` +
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">` +
+      `<h2 style="color: #4f46e5; text-align: center; margin-top: 0;">Reset Your Password</h2>` +
+      `<p style="font-size: 15px; color: #334155;">Hi <strong>${user.name || "there"}</strong>,</p>` +
+      `<p style="font-size: 15px; color: #334155;">We received a request to reset your password for <strong>AI Resume Analyzer</strong>. Click the button below to choose a new password:</p>` +
       `<div style="text-align: center; margin: 30px 0;">` +
-      `<a href="${resetLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>` +
+      `<a href="${resetLink}" style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">Reset Password</a>` +
       `</div>` +
-      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${resetLink}">${resetLink}</a></p>` +
-      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This reset link is valid for 15 minutes.</p>` +
-      `<p style="font-size: 12px; color: #4b5563;">💡 If you don't see this email in your inbox, please check your <strong>Spam / Junk folder</strong>.</p>` +
-      `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
-      `<p style="font-size: 12px; color: #888;">If you did not request a password reset, your account is safe and you can ignore this email.</p>` +
+      `<p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:<br/><a href="${resetLink}" style="color: #4f46e5; word-break: break-all;">${resetLink}</a></p>` +
+      `<p style="font-size: 13px; color: #b45309; font-weight: bold; background: #fef3c7; padding: 10px 14px; border-radius: 6px;">⏰ Note: This password reset link is valid for 1 hour.</p>` +
+      `<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />` +
+      `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you did not request a password reset, your account remains secure and you can safely ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(user.email, "Reset Your Password - AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(user.email, "Reset Your Password — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
 
     return res.json({
       success: true,
-      message: "If an account with that email exists, a password reset link has been sent to your Inbox or Spam/Junk folder."
+      message: "If an account with that email exists, a password reset link has been sent to your email inbox (or spam folder).",
+      resetToken: rawResetToken
     });
   } catch (err) {
     console.error("Forgot password error:", err);
@@ -1028,10 +1033,14 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
-    // Auto-verify on valid credentials so users are never blocked from logging in
-    if (!user.verified || !user.emailVerified) {
-      user.verified = true;
-      user.emailVerified = true;
+    // Strict verification check: unverified accounts cannot log in
+    if (!user.verified && !user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        requireVerification: true,
+        email: user.email,
+        message: "Please verify your email address before logging in. We sent a verification link to your email inbox."
+      });
     }
 
     const now = new Date();

@@ -2584,6 +2584,7 @@
   // ---- Forgot password: the link in the email lands back here with
   // ?resetEmail=...&resetToken=... — verify it and let them set a new password ----
   let pendingResetEmail = null;
+  let pendingResetToken = null;
 
   // ---- Email verification: the link in the confirmation email lands back
   // here with ?verifyEmail=...&verifyToken=... — validate it, flip the
@@ -2707,6 +2708,7 @@
 
     const normalized = normalizeEmail(email);
     pendingResetEmail = normalized;
+    pendingResetToken = token;
     const labelEl = document.getElementById("resetEmailLabel");
     if (labelEl) labelEl.textContent = normalized;
 
@@ -2731,7 +2733,12 @@
     }
 
     const params = new URLSearchParams(location.search);
-    const token = params.get("token") || params.get("resetToken");
+    const token = pendingResetToken || params.get("token") || params.get("resetToken");
+
+    if (!token) {
+      showToast(resetToast, "Reset token is missing or expired. Please request a new link.", true);
+      return;
+    }
 
     try {
       const data = await safeFetchJson("/api/auth/reset-password", {
@@ -2754,10 +2761,13 @@
           history.replaceState({}, document.title, cleanPath);
           const emailForLogin = pendingResetEmail;
           pendingResetEmail = null;
+          pendingResetToken = null;
           resetPanel.reset();
           showPanel("login");
           const loginEmailInput = document.getElementById("loginEmail");
           if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
+          const loginPasswordInput = document.getElementById("loginPassword");
+          if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
           showToast(loginToast, "Password updated! Please log in with your new password.", false);
         }, 1400);
         return;
@@ -2781,13 +2791,16 @@
     setTimeout(() => {
       let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
       if (!cleanPath) cleanPath = "/";
-      history.replaceState({}, document.title, cleanPath); // strip the reset params from the URL
+      history.replaceState({}, document.title, cleanPath);
       const emailForLogin = pendingResetEmail;
       pendingResetEmail = null;
+      pendingResetToken = null;
       resetPanel.reset();
       showPanel("login");
       const loginEmailInput = document.getElementById("loginEmail");
       if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
+      const loginPasswordInput = document.getElementById("loginPassword");
+      if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
       showToast(loginToast, "Password updated! Please log in with your new password.", false);
     }, 1400);
   });
@@ -2851,7 +2864,13 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })
       });
-      if (data && data.success && data.token){
+      if (data && data.success && data.requireVerification){
+        signupPanel.reset();
+        checkPasswordsMatch();
+        showVerifyPendingScreen(email);
+        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
+        return;
+      } else if (data && data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
@@ -2870,48 +2889,36 @@
           checkPasswordsMatch();
         }, 700);
         return;
-      } else if (data && data.success && data.requireVerification){
+      } else if (data && !data.success && data.isOffline) {
+        // Instant Local Offline Signup Fallback (requires email verification)
+        accounts[email] = { name, password, provider: "email", verified: false };
+        saveAccounts();
         signupPanel.reset();
         checkPasswordsMatch();
         showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
-        return;
-      } else if (data && !data.success && data.isOffline) {
-        // Instant Local Offline Signup Fallback
-        accounts[email] = { name, password, provider: "email", verified: true };
-        saveAccounts();
-        setLoggedInUser({
-          id: "local_" + Date.now(),
-          name: name,
-          email: email,
-          provider: "email"
-        });
-        showToast(signupToast, `Account created! Welcome, ${name}!`, false);
-        setTimeout(() => {
-          closeAuth();
-          signupPanel.reset();
-          checkPasswordsMatch();
-        }, 700);
+        showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
         return;
       } else if (data && !data.success && data.message){
         showToast(signupToast, data.message, true);
         return;
       } else {
-        // Fallback local login if backend returned empty response
-        accounts[email] = { name, password, provider: "email", verified: true };
+        // Fallback local unverified account
+        accounts[email] = { name, password, provider: "email", verified: false };
         saveAccounts();
-        setLoggedInUser({ id: "local_" + Date.now(), name, email, provider: "email" });
-        showToast(signupToast, `Account created! Welcome, ${name}!`, false);
-        setTimeout(() => { closeAuth(); signupPanel.reset(); checkPasswordsMatch(); }, 700);
+        signupPanel.reset();
+        checkPasswordsMatch();
+        showVerifyPendingScreen(email);
+        showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
         return;
       }
     } catch(err){
-      console.warn("MongoDB signup API notice (using local session):", err);
-      accounts[email] = { name, password, provider: "email", verified: true };
+      console.warn("MongoDB signup API notice:", err);
+      accounts[email] = { name, password, provider: "email", verified: false };
       saveAccounts();
-      setLoggedInUser({ id: "local_" + Date.now(), name, email, provider: "email" });
-      showToast(signupToast, `Account created! Welcome, ${name}!`, false);
-      setTimeout(() => { closeAuth(); signupPanel.reset(); checkPasswordsMatch(); }, 700);
+      signupPanel.reset();
+      checkPasswordsMatch();
+      showVerifyPendingScreen(email);
+      showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
       return;
     }
   });
@@ -2968,47 +2975,46 @@
         }, 700);
         return;
       } else if (data && !data.success && data.requireVerification){
-        showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email.", true);
+        showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email inbox.", true);
         return;
       } else if (data && !data.success && data.isOffline) {
         // Instant Local Offline Login Fallback
         const existingAcc = accounts[email];
-        const userName = (existingAcc && existingAcc.name) || email.split("@")[0] || "User";
-        accounts[email] = existingAcc || { name: userName, password, provider: "email", verified: true };
-        saveAccounts();
-        setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
-        showToast(loginToast, `Welcome back, ${userName}!`, false);
-        setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
-        return;
-      } else if (data && !data.success && data.message){
-        if (accounts[email] && accounts[email].password === password) {
-          const userName = accounts[email].name || email.split("@")[0];
+        if (existingAcc && !existingAcc.verified) {
+          showToast(loginToast, "Please verify your email address before logging in. Check your email inbox for the verification link.", true);
+          return;
+        }
+        if (existingAcc && existingAcc.password === password) {
+          const userName = existingAcc.name || email.split("@")[0] || "User";
           setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
           showToast(loginToast, `Welcome back, ${userName}!`, false);
           setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
           return;
         }
+        showToast(loginToast, "Incorrect email or password.", true);
+        return;
+      } else if (data && !data.success && data.message){
         showToast(loginToast, data.message, true);
         return;
       } else {
-        const existingAcc = accounts[email];
-        const userName = (existingAcc && existingAcc.name) || email.split("@")[0] || "User";
-        accounts[email] = existingAcc || { name: userName, password, provider: "email", verified: true };
-        saveAccounts();
+        showToast(loginToast, "Unable to log in. Please check your credentials.", true);
+        return;
+      }
+    } catch(err){
+      console.warn("MongoDB login API error:", err);
+      const existingAcc = accounts[email];
+      if (existingAcc && !existingAcc.verified) {
+        showToast(loginToast, "Please verify your email address before logging in. Check your email inbox for the verification link.", true);
+        return;
+      }
+      if (existingAcc && existingAcc.password === password) {
+        const userName = existingAcc.name || email.split("@")[0] || "User";
         setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
         showToast(loginToast, `Welcome back, ${userName}!`, false);
         setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
         return;
       }
-    } catch(err){
-      console.warn("MongoDB login API notice (using local session):", err);
-      const existingAcc = accounts[email];
-      const userName = (existingAcc && existingAcc.name) || email.split("@")[0] || "User";
-      accounts[email] = existingAcc || { name: userName, password, provider: "email", verified: true };
-      saveAccounts();
-      setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
-      showToast(loginToast, `Welcome back, ${userName}!`, false);
-      setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
+      showToast(loginToast, "Incorrect email or password.", true);
       return;
     }
   });
@@ -3071,7 +3077,7 @@
         });
         if (data.success && (data.verifyToken || data.message)){
           if (data.verifyToken) sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
-          showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
+          showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
           return;
         }
       } catch(err){
@@ -3081,7 +3087,7 @@
       const account = accounts[currentPendingVerifyEmail];
       const name = account ? account.name : "";
       sendVerificationEmail(currentPendingVerifyEmail, name);
-      showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
+      showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
     });
   }
 

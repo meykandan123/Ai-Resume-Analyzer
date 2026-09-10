@@ -3995,6 +3995,29 @@
     try { localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(tickets)); } catch (e){}
   }
 
+  async function deleteSupportTicket(ticketId){
+    if (!ticketId) return;
+    const currentTickets = loadSupportTickets();
+    const updatedTickets = currentTickets.filter(t => (t.id || t.ticketId) !== ticketId);
+    saveSupportTickets(updatedTickets);
+    renderSupportTickets();
+
+    // Call backend API to delete from database and log activity
+    try {
+      const userEmail = currentUser ? currentUser.email : (currentTickets.find(t => (t.id || t.ticketId) === ticketId)?.email || "");
+      await safeFetchJson(`/api/support/${encodeURIComponent(ticketId)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-email": userEmail
+        },
+        body: JSON.stringify({ ticketId: ticketId, email: userEmail })
+      });
+    } catch (err) {
+      console.warn("Support ticket backend deletion notice:", err);
+    }
+  }
+
   function renderSupportTickets(){
     const tickets = loadSupportTickets();
     const wrap = document.getElementById("supportTicketsWrap");
@@ -4014,23 +4037,35 @@
 
     if (!tickets.length){
       wrap.style.display = "none";
+      listEl.innerHTML = "";
       return;
     }
 
     wrap.style.display = "block";
     listEl.innerHTML = "";
 
-    tickets.slice(0, 10).forEach(t => {
+    tickets.slice(0, 15).forEach(t => {
       const item = document.createElement("div");
       item.className = "support-ticket-item";
-      const dateStr = new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const ticketId = t.id || t.ticketId || "";
+      const dateStr = new Date(t.date || t.createdAt || Date.now()).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
       item.innerHTML = `
         <div class="support-ticket-head">
-          <span class="support-ticket-id">${t.id}</span>
-          <span class="support-ticket-status" style="color:var(--accent-2); font-weight:700;">${t.status}</span>
+          <span class="support-ticket-id">${escapeHtml(ticketId)}</span>
+          <div class="support-ticket-head-right">
+            <span class="support-ticket-status">${escapeHtml(t.status || "Active & Sent to Support")}</span>
+            <button class="support-delete-btn" data-id="${escapeHtml(ticketId)}" type="button" aria-label="Delete support request" title="Delete this support request">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+          </div>
         </div>
-        <div class="support-ticket-msg">${t.message}</div>
-        <div class="support-ticket-time">${dateStr} &bull; ${t.email}</div>
+        <div class="support-ticket-msg">${escapeHtml(t.message || "")}</div>
+        <div class="support-ticket-time">${escapeHtml(dateStr)} &bull; ${escapeHtml(t.email || "")}</div>
       `;
       listEl.appendChild(item);
     });
@@ -4042,12 +4077,34 @@
   const supportForm = document.getElementById("supportForm");
   const supportToast = document.getElementById("supportToast");
 
+  async function syncSupportTicketsFromBackend(){
+    if (!currentUser || !currentUser.email) return;
+    try {
+      const res = await safeFetchJson(`/api/support?email=${encodeURIComponent(currentUser.email)}`);
+      if (res && res.success && Array.isArray(res.tickets) && res.tickets.length > 0){
+        const local = loadSupportTickets();
+        const map = new Map();
+        res.tickets.forEach(t => map.set(t.id || t.ticketId, t));
+        local.forEach(t => {
+          const tid = t.id || t.ticketId;
+          if (tid && !map.has(tid)) map.set(tid, t);
+        });
+        const merged = Array.from(map.values()).sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+        saveSupportTickets(merged);
+        renderSupportTickets();
+      }
+    } catch (e){
+      console.warn("Support tickets sync notice:", e);
+    }
+  }
+
   function openSupport(){
     if (currentUser){
       const nameInput = document.getElementById("supportName");
       const emailInput = document.getElementById("supportEmail");
       if (nameInput) nameInput.value = currentUser.name || "";
       if (emailInput) emailInput.value = currentUser.email || "";
+      syncSupportTicketsFromBackend();
     }
     renderSupportTickets();
     supportModal.classList.add("active");
@@ -4057,6 +4114,18 @@
   if (supportFabBtn) supportFabBtn.addEventListener("click", openSupport);
   if (supportCloseBtn) supportCloseBtn.addEventListener("click", closeSupport);
   if (supportModal) supportModal.addEventListener("click", (e) => { if (e.target === supportModal) closeSupport(); });
+
+  const supportTicketsListEl = document.getElementById("supportTicketsList");
+  if (supportTicketsListEl) {
+    supportTicketsListEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".support-delete-btn");
+      if (btn) {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        deleteSupportTicket(id);
+      }
+    });
+  }
 
   if (supportForm){
     supportForm.addEventListener("submit", (e) => {
@@ -4087,7 +4156,7 @@
       saveSupportTickets(tickets);
       renderSupportTickets();
 
-      fetch("/api/support", {
+      safeFetchJson("/api/support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4097,11 +4166,10 @@
           message: message
         })
       })
-      .then(res => res.json())
       .then(data => {
-        if (data.success) {
+        if (data && data.success) {
           console.log("Support message sent via backend API");
-        } else {
+        } else if (data) {
           console.warn("Support message backend notice:", data.message);
         }
       })

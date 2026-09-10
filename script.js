@@ -3170,6 +3170,9 @@
           } else if (fbErr.code === "auth/operation-not-allowed") {
             showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please enable Google provider under Authentication -> Sign-in method.", true);
             return;
+          } else if (fbErr.code === "auth/network-request-failed") {
+            showToast(toastEl, "Network error: Please check your internet connection and try again.", true);
+            return;
           } else {
             // Display the specific Firebase error message and return so GIS fallback isn't falsely triggered
             showToast(toastEl, fbErr.message || "Google Sign-In failed. Please try again.", true);

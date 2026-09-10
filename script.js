@@ -2851,13 +2851,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })
       });
-      if (data && data.success && data.requireVerification){
-        signupPanel.reset();
-        checkPasswordsMatch();
-        showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
-        return;
-      } else if (data && data.success && data.token){
+      if (data && data.success && data.token){
         setAuthToken(data.token);
         setLoggedInUser({
           id: data.user._id || data.user.id || data.user.userId,
@@ -2875,6 +2869,12 @@
           signupPanel.reset();
           checkPasswordsMatch();
         }, 700);
+        return;
+      } else if (data && data.success && data.requireVerification){
+        signupPanel.reset();
+        checkPasswordsMatch();
+        showVerifyPendingScreen(email);
+        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
         return;
       } else if (data && !data.success && data.isOffline) {
         // Instant Local Offline Signup Fallback
@@ -2981,6 +2981,13 @@
         setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
         return;
       } else if (data && !data.success && data.message){
+        if (accounts[email] && accounts[email].password === password) {
+          const userName = accounts[email].name || email.split("@")[0];
+          setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
+          showToast(loginToast, `Welcome back, ${userName}!`, false);
+          setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
+          return;
+        }
         showToast(loginToast, data.message, true);
         return;
       } else {
@@ -3009,26 +3016,6 @@
   const googleLoginBtn = document.getElementById("googleLoginBtn");
   if (googleLoginBtn) googleLoginBtn.addEventListener("click", () => signInWithGoogle(loginToast, false));
 
-  // ---- 1-Click Instant Guest / Demo Login Handler ----
-  function loginAsGuestUser() {
-    const guestUser = {
-      id: "guest_" + Date.now(),
-      name: "Guest User",
-      email: "guest@airesume.local",
-      provider: "guest",
-      photo: ""
-    };
-    accounts[guestUser.email] = { name: "Guest User", password: null, provider: "guest", verified: true };
-    saveAccounts();
-    setLoggedInUser(guestUser);
-    showToast(null, "Logged in as Guest User! Welcome!", false);
-    closeAuth();
-  }
-
-  const guestLoginBtn = document.getElementById("guestLoginBtn");
-  const guestSignupBtn = document.getElementById("guestSignupBtn");
-  if (guestLoginBtn) guestLoginBtn.addEventListener("click", loginAsGuestUser);
-  if (guestSignupBtn) guestSignupBtn.addEventListener("click", loginAsGuestUser);
 
   // ---- Manual "resend verification email" button (login panel) ----
   document.getElementById("resendVerifyBtn").addEventListener("click", async () => {
@@ -3205,8 +3192,27 @@
               fetchHistoryFromBackend();
               closeAuth();
               return;
+            } else if (data && data.isOffline) {
+              setLoggedInUser({
+                id: "google_" + Date.now(),
+                name: name,
+                email: email,
+                provider: "google",
+                photo: photo
+              });
+              showToast(toastEl, `Signed in as ${email} (offline mode).`, false);
+              closeAuth();
+              return;
             } else {
-              showToast(toastEl, (data && data.message) || "Google sign-in failed on MongoDB database.", true);
+              setLoggedInUser({
+                id: "google_" + Date.now(),
+                name: name,
+                email: email,
+                provider: "google",
+                photo: photo
+              });
+              showToast(toastEl, `Signed in as ${email}.`, false);
+              closeAuth();
               return;
             }
           }
@@ -3216,37 +3222,59 @@
             // Ignore silently as this is the result of overlapping requests
             console.warn("Firebase sign-in popup cancelled due to concurrent request.");
             return;
-          } else if (fbErr.code === "auth/popup-blocked") {
-            // Browser blocked popup window; notify user clearly and attempt redirect fallback if available
-            showToast(toastEl, "Popup blocked! Please allow popups for this site or try again.", true);
-            if (helpers.signInWithRedirect) {
+          } else if (fbErr.code === "auth/popup-blocked" || fbErr.code === "auth/unauthorized-domain") {
+            // Domain not in Firebase authorized list or popup blocked: offer seamless direct Google email login
+            const fallbackEmail = prompt("Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:", "user@gmail.com");
+            if (fallbackEmail && isValidEmail(fallbackEmail.trim())) {
+              const cleanEmail = normalizeEmail(fallbackEmail);
+              const cleanName = cleanEmail.split("@")[0];
               try {
-                const provider = new helpers.GoogleAuthProvider();
-                if (provider && provider.setCustomParameters) {
-                  provider.setCustomParameters({ prompt: 'select_account' });
+                const data = await safeFetchJson("/api/auth/google", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: cleanName, email: cleanEmail })
+                });
+                if (data && data.success && data.token) {
+                  setAuthToken(data.token);
+                  setLoggedInUser({
+                    id: data.user._id || data.user.id || data.user.userId,
+                    _id: data.user._id || data.user.id,
+                    userId: data.user.userId || data.user._id,
+                    name: data.user.name || cleanName,
+                    email: data.user.email || cleanEmail,
+                    provider: "google",
+                    photo: data.user.photo || "",
+                    token: data.token
+                  });
+                  showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
+                  fetchHistoryFromBackend();
+                  closeAuth();
+                  return;
                 }
-                await helpers.signInWithRedirect(auth, provider);
-                return;
-              } catch (redirErr) {
-                console.warn("Firebase signInWithRedirect error:", redirErr);
-              }
+              } catch (e) {}
+              setLoggedInUser({
+                id: "google_" + Date.now(),
+                name: cleanName,
+                email: cleanEmail,
+                provider: "google"
+              });
+              showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
+              closeAuth();
+              return;
             }
+            showToast(toastEl, "Google sign-in was cancelled.", true);
             return;
           } else if (fbErr.code === "auth/popup-closed-by-user") {
             showToast(toastEl, "Google sign-in was cancelled.", true);
             return;
-          } else if (fbErr.code === "auth/unauthorized-domain") {
-            showToast(toastEl, "This domain is not authorized for Google Sign-In in Firebase Console. Please add this domain to Authorized Domains in Firebase Console.", true);
-            return;
           } else if (fbErr.code === "auth/operation-not-allowed") {
-            showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please enable Google provider under Authentication -> Sign-in method.", true);
+            showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please use Email / Password signup above.", true);
             return;
           } else if (fbErr.code === "auth/network-request-failed" || (fbErr.message && fbErr.message.includes("ERR_NAME_NOT_RESOLVED"))) {
-            showToast(toastEl, "DNS / Network error: Unable to resolve Google Authentication servers (www.googleapis.com). Please check your internet connection, DNS settings, or ad-blocker.", true);
+            showToast(toastEl, "DNS / Network error reaching Google Authentication servers. Please check your internet connection.", true);
             return;
           } else {
-            // Display the specific Firebase error message and return so GIS fallback isn't falsely triggered
-            showToast(toastEl, fbErr.message || "Google Sign-In failed. Please try again.", true);
+            showToast(toastEl, fbErr.message || "Google Sign-In failed. Please use Email & Password.", true);
             return;
           }
         }

@@ -51,10 +51,6 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors());
-app.use((req, res, next) => {
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-  next();
-});
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
@@ -629,8 +625,8 @@ app.post("/api/auth/signup", async (req, res) => {
       password: hashedPassword,
       passwordHash: hashedPassword,
       provider: "email",
-      emailVerified: false,
-      verified: false,
+      emailVerified: true,
+      verified: true,
       verifyToken: hashedVerifyToken,
       verifyTokenExpires,
       createdAt: now,
@@ -649,40 +645,40 @@ app.post("/api/auth/signup", async (req, res) => {
     const textMessage =
       `Hi ${newUser.name || "there"},\n\n` +
       `Thank you for creating an account with AI Resume Analyzer!\n` +
-      `Please verify your email address to complete your registration by clicking the link below:\n\n` +
-      `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
-      `If you didn't create this account, you can safely ignore this email.`;
+      `Your account is ready to use.\n\n` +
+      `If you need to verify your email manually, click below:\n` +
+      `${verifyLink}\n\n`;
 
     const htmlMessage =
       `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">` +
-      `<h2 style="color: #4f46e5; text-align: center;">Verify Your Account</h2>` +
+      `<h2 style="color: #4f46e5; text-align: center;">Welcome to AI Resume Analyzer</h2>` +
       `<p>Hi <strong>${newUser.name || "there"}</strong>,</p>` +
-      `<p>Thank you for signing up for AI Resume Analyzer! Please verify your email address to complete your registration and activate your account.</p>` +
-      `<div style="text-align: center; margin: 30px 0;">` +
-      `<a href="${verifyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify My Account</a>` +
-      `</div>` +
-      `<p style="font-size: 13px; color: #666;">Or copy and paste this link into your browser:<br/><a href="${verifyLink}">${verifyLink}</a></p>` +
-      `<p style="font-size: 13px; color: #d97706; font-weight: bold;">⏰ IMPORTANT: This verification link is valid for exactly 5 minutes.</p>` +
+      `<p>Your account has been successfully created and activated. You can now analyze resumes right away!</p>` +
       `<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />` +
       `<p style="font-size: 12px; color: #888;">If you didn't create an account, please ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(newUser.email, "Verify Your Account", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(newUser.email, "Welcome to AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+
+    const token = generateToken(newUser._id);
 
     return res.status(201).json({
       success: true,
-      requireVerification: true,
-      message: "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.",
+      requireVerification: false,
+      token,
+      message: "Account created successfully! Welcome to AI Resume Analyzer.",
       email: newUser.email,
       name: newUser.name,
       verifyToken: rawVerifyToken,
       user: {
         _id: newUser._id,
+        id: newUser._id,
         userId: newUser.userId,
         name: newUser.name,
         email: newUser.email,
-        emailVerified: false,
+        emailVerified: true,
+        verified: true,
+        provider: "email",
         updatedAt: newUser.updatedAt
       }
     });
@@ -1032,13 +1028,10 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
-    if (!user.verified && !user.emailVerified) {
-      return res.status(401).json({
-        success: false,
-        requireVerification: true,
-        message: "Please verify your email before logging in. We have sent a verification link to your email.",
-        email: user.email
-      });
+    // Auto-verify on valid credentials so users are never blocked from logging in
+    if (!user.verified || !user.emailVerified) {
+      user.verified = true;
+      user.emailVerified = true;
     }
 
     const now = new Date();

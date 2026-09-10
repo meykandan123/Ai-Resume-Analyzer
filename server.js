@@ -8,6 +8,28 @@ const crypto = require("crypto");
 const path = require("path");
 const dns = require("dns");
 try { dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]); } catch(e){}
+
+// Fallback DNS lookup to handle Windows OS getaddrinfo EAI_AGAIN lookup errors
+const originalDnsLookup = dns.lookup;
+dns.lookup = function(hostname, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = {};
+  }
+  originalDnsLookup(hostname, options, (err, address, family) => {
+    if (err && (err.code === "EAI_AGAIN" || err.code === "ENOTFOUND")) {
+      dns.resolve4(hostname, (rErr, addresses) => {
+        if (!rErr && addresses && addresses.length > 0) {
+          return callback(null, addresses[0], 4);
+        }
+        return callback(err, address, family);
+      });
+    } else {
+      return callback(err, address, family);
+    }
+  });
+};
+
 require("dotenv").config();
 
 const User = require("./models/User");
@@ -268,39 +290,46 @@ async function migrateDatabaseSchema() {
   }
 }
 
-// Connect to MongoDB
-async function connectDB() {
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      dbName: "Ai-Resume-Analyzer",
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000
-    });
-    console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
-
-    // Ensure collections exist and sync unique indexes
+// Connect to MongoDB with automatic retry logic
+async function connectDB(retries = 10, delayMs = 3000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      await User.createCollection();
-      await UserActivity.createCollection();
-      await ResumeHistory.createCollection();
-      await ResumeAnalysis.createCollection();
+      await mongoose.connect(MONGODB_URI, {
+        dbName: "Ai-Resume-Analyzer",
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000
+      });
+      console.log("Connected to MongoDB database (Ai-Resume-Analyzer) successfully:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
 
-      // Run automatic legacy data migration
-      await migrateDatabaseSchema();
+      // Ensure collections exist and sync unique indexes
+      try {
+        await User.createCollection();
+        await UserActivity.createCollection();
+        await ResumeHistory.createCollection();
+        await ResumeAnalysis.createCollection();
 
-      // Build & Sync indexes for all 4 collections
-      await User.syncIndexes();
-      await UserActivity.syncIndexes();
-      await ResumeHistory.syncIndexes();
-      await ResumeAnalysis.syncIndexes();
+        // Run automatic legacy data migration
+        await migrateDatabaseSchema();
 
-      console.log("Verified 4 MongoDB collections & unique indexes: users, user_activity, resume_history, resume_analysis");
-    } catch (collErr) {
-      console.log("Collection initialization notice:", collErr.message);
+        // Build & Sync indexes for all 4 collections
+        await User.syncIndexes();
+        await UserActivity.syncIndexes();
+        await ResumeHistory.syncIndexes();
+        await ResumeAnalysis.syncIndexes();
+
+        console.log("Verified 4 MongoDB collections & unique indexes: users, user_activity, resume_history, resume_analysis");
+      } catch (collErr) {
+        console.log("Collection initialization notice:", collErr.message);
+      }
+      return;
+    } catch (err) {
+      console.error(`MongoDB Connection Attempt ${attempt}/${retries} Failed! MONGODB_URI:`, MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
+      console.error("Error details:", err.message);
+      if (attempt < retries) {
+        console.log(`Retrying MongoDB connection in ${delayMs / 1000}s...`);
+        await new Promise(res => setTimeout(res, delayMs));
+      }
     }
-  } catch (err) {
-    console.error("MongoDB Connection Failed! MONGODB_URI:", MONGODB_URI.replace(/:([^@]+)@/, ":*****@"));
-    console.error("Error details:", err.message);
   }
 }
 connectDB();

@@ -13,7 +13,7 @@
     --gradient-start: #d54f60;
     --gradient-end: #81001a;
     --glow-color: rgba(213, 79, 96, 0.25);
-    --hero-bg: linear-gradient(135deg, rgba(243, 231, 214, 0.92) 0%, rgba(255, 249, 242, 0.98) 50%, rgba(243, 231, 214, 0.75) 100%);
+    --hero-bg: linear-gradient(180deg, rgba(243, 231, 214, 0.72) 0%, rgba(255, 249, 242, 0.95) 75%, var(--paper) 100%);
     --navbar-bg: linear-gradient(135deg, #81001a 0%, #5c0012 100%);
     --line: #e8d8c5;
     --shadow: 0 4px 20px rgba(129, 0, 26, 0.07), 0 12px 32px rgba(129, 0, 26, 0.05);
@@ -1129,9 +1129,9 @@
   /* Hero band — soft gradient backdrop behind the headline + upload zone */
   .hero-band{
     background: var(--hero-bg, var(--paper));
-    padding: 24px 0 40px;
-    margin-bottom: 36px;
-    border-bottom: 1px solid var(--line);
+    padding: 24px 0 36px;
+    margin-bottom: 24px;
+    border-bottom: none;
   }
 
 
@@ -1155,20 +1155,22 @@
   }
 
   h1{
-    font-size:34px;
+    font-size:38px;
     margin:4px 0 0;
-    font-weight:700;
-    letter-spacing:-0.5px;
+    font-weight:800;
+    letter-spacing:-0.8px;
+    color:var(--ink);
   }
 
   .tagline{
-    font-family:var(--mono);
-    font-size:13px;
-    color:#666;
-    max-width:420px;
+    font-family:var(--font-sans);
+    font-size:15px;
+    font-weight:500;
+    color:rgba(129, 0, 26, 0.74);
+    max-width:520px;
     text-align:center;
-    line-height:1.5;
-    margin-top:8px;
+    line-height:1.6;
+    margin-top:10px;
   }
 
   /* Upload zone */
@@ -1195,14 +1197,16 @@
   }
 
   .dz-title{
-    font-size:19px;
-    font-weight:700;
+    font-size:20px;
+    font-weight:800;
+    color:var(--ink);
     margin-bottom:6px;
   }
   .dz-sub{
-    font-family:var(--mono);
-    font-size:12px;
-    color:#777;
+    font-family:var(--font-sans);
+    font-size:13px;
+    font-weight:500;
+    color:rgba(129, 0, 26, 0.65);
     margin-bottom:26px;
   }
 
@@ -1253,13 +1257,14 @@
   .chosen-name{
     font-family:var(--mono);
     font-size:13px;
-    color:#555;
+    font-weight:600;
+    color:rgba(129, 0, 26, 0.78);
   }
 
   .upload-btn {
-    background: linear-gradient(135deg, var(--accent-dark) 0%, var(--accent) 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
     color: #fff;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     font-family: var(--font-sans);
     font-size: 13px;
     font-weight: 700;
@@ -1268,23 +1273,24 @@
     padding: 12px 28px;
     border-radius: 999px;
     cursor: pointer;
-    box-shadow: 0 6px 18px rgba(213, 79, 96, 0.28);
+    box-shadow: 0 6px 18px rgba(213, 79, 96, 0.35);
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .upload-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #990020 0%, #bf3f50 100%);
+    background: linear-gradient(135deg, #e27d8b 0%, #d54f60 100%);
     transform: translateY(-1.5px);
-    box-shadow: 0 8px 24px rgba(213, 79, 96, 0.4);
+    box-shadow: 0 8px 24px rgba(213, 79, 96, 0.5);
   }
   .upload-btn:active:not(:disabled) {
     transform: translateY(0) scale(0.98);
   }
   .upload-btn:disabled {
-    background: var(--line);
-    color: #999;
+    background: #ebdccb;
+    color: rgba(129, 0, 26, 0.38);
     box-shadow: none;
     cursor: not-allowed;
     transform: none;
+    border-color: transparent;
   }
 
   #status{
@@ -1325,34 +1331,35 @@
 
   .sample-col h2{ margin-bottom:12px; }
   .sample-resume{
-    background:var(--paper);
+    background:var(--card-tint);
     border:1px solid var(--line);
     border-radius:var(--radius-sm);
     padding:18px 20px;
   }
-  .sr-name{ font-size:18px; font-weight:700; }
-  .sr-contact{ font-size:11.5px; color:#777; margin-top:2px; margin-bottom:14px; }
+  .sr-name{ font-size:18px; font-weight:800; color:var(--ink); }
+  .sr-contact{ font-size:12px; color:rgba(129, 0, 26, 0.65); margin-top:2px; margin-bottom:14px; }
   .sr-heading{
     font-size:10.5px;
     letter-spacing:1.2px;
     text-transform:uppercase;
-    color:var(--accent-2);
-    font-weight:700;
+    color:var(--accent);
+    font-weight:800;
     margin-top:14px;
     margin-bottom:6px;
     border-bottom:1px solid var(--line);
     padding-bottom:3px;
   }
-  .sr-role{ font-size:13.5px; font-weight:600; }
+  .sr-role{ font-size:13.5px; font-weight:600; color:var(--ink); }
   .sr-bullets{ margin:6px 0 0; padding-left:18px; }
-  .sr-bullets li{ font-size:12.5px; line-height:1.5; margin-bottom:4px; color:#333; }
+  .sr-bullets li{ font-size:12.5px; line-height:1.5; margin-bottom:4px; color:var(--ink); }
   .sr-bullets em{ font-style:normal; color:var(--accent); font-weight:600; }
-  .sr-skills{ font-size:12.5px; color:#333; }
+  .sr-skills{ font-size:12.5px; color:var(--ink); }
   .sr-badge{
     margin-top:16px;
     display:inline-block;
-    background:#e9f5ea;
-    color:#2e7d32;
+    background:rgba(243, 231, 214, 0.8);
+    color:var(--ink);
+    border:1px solid rgba(213, 79, 96, 0.25);
     font-size:12px;
     font-weight:700;
     padding:6px 12px;
@@ -1391,7 +1398,7 @@
     display:grid;
     grid-template-columns:1fr 1fr;
     gap:28px;
-    background:linear-gradient(90deg, rgba(224,122,95,0.07), rgba(61,90,128,0.07));
+    background:linear-gradient(90deg, rgba(213, 79, 96, 0.08), rgba(129, 0, 26, 0.05));
   }
   .exec-col-title{
     margin:0 0 12px;
@@ -1918,9 +1925,10 @@
   .jd-wrap{ margin-top:16px; }
   .jd-label{
     display:block;
-    font-family:var(--mono);
-    font-size:12.5px;
-    color:#666;
+    font-family:var(--font-sans);
+    font-size:13px;
+    font-weight:600;
+    color:rgba(129, 0, 26, 0.76);
     margin-bottom:8px;
   }
   .jd-textarea {
@@ -2164,7 +2172,7 @@
     transform: scale(1.1);
   }
   .analysis-option-card h3 { margin: 0 0 10px; font-size: 19px; font-weight: 800; color: var(--ink); }
-  .analysis-option-card p { margin: 0 0 22px; font-size: 13.5px; line-height: 1.55; color: #64748b; flex: 1; }
+  .analysis-option-card p { margin: 0 0 22px; font-size: 13.5px; line-height: 1.55; color: rgba(129, 0, 26, 0.70); flex: 1; }
   .ao-btn {
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
     color: #fff;

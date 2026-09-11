@@ -3753,6 +3753,7 @@
       const typeText = entry.analysisType || "Resume Analysis";
       const idVal = entry.id || entry._id || entry.analysisId;
 
+      row.setAttribute("data-id", idVal || "");
       row.innerHTML = `
         <div class="history-item-score" style="background:${scoreColor(scoreVal || 0)}" title="ATS Score">${scoreDisplay}</div>
         <div class="history-item-info">
@@ -3769,11 +3770,82 @@
     });
   }
 
+  async function loadHistoricalAnalysisView(idVal){
+    if (!idVal) return;
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      showLoading("Loading saved analysis result...");
+      await paintFrame();
+      const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      hideLoading();
+      if (res && res.success && res.analysis) {
+        const item = res.analysis;
+        const resultData = item.analysisResult || {};
+        const extracted = item.extractedData || {};
+        
+        const score = item.atsScore || resultData.atsScore || resultData.score || 0;
+        const verdict = resultData.verdict || "Analyzed";
+        const color = scoreColor(score);
+        
+        renderATSScore(score, color, verdict);
+
+        const skills = extracted.skills || resultData.detectedSkills || [];
+        const missing = resultData.missingKeywords || [];
+        
+        lastAnalysisData = {
+          filename: item.fileName || "resume.pdf",
+          name: extracted.name || item.name || "User",
+          email: extracted.email || item.email || "Not found",
+          phone: extracted.phone || "Not found",
+          skills: skills,
+          missing: missing,
+          score: score,
+          verdict: verdict,
+          experience: extracted.experience ? (Array.isArray(extracted.experience) ? extracted.experience.join("\n") : extracted.experience) : "Loaded from history",
+          education: extracted.education ? (Array.isArray(extracted.education) ? extracted.education.join("\n") : extracted.education) : "Loaded from history"
+        };
+
+        if (typeof closeHistory === "function") closeHistory();
+        const resultsEl = document.getElementById("results");
+        if (resultsEl) {
+          resultsEl.style.display = "block";
+          resultsEl.scrollIntoView({ behavior: "smooth" });
+        }
+        if (typeof showToast === "function") {
+          showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
+        }
+      } else {
+        if (typeof showToast === "function") {
+          showToast("Could not load analysis details", "error");
+        }
+      }
+    } catch(err){
+      hideLoading();
+      console.warn("Failed to load historical analysis:", err);
+      if (typeof showToast === "function") {
+        showToast("Error loading saved analysis", "error");
+      }
+    }
+  }
+
   document.getElementById("historyList").addEventListener("click", (e) => {
-    const btn = e.target.closest(".history-delete-btn");
-    if (btn) {
-      const id = btn.dataset.id;
+    const deleteBtn = e.target.closest(".history-delete-btn");
+    if (deleteBtn) {
+      e.stopPropagation();
+      const id = deleteBtn.dataset.id;
       deleteHistoryEntry(currentUser ? currentUser.email : null, id);
+      return;
+    }
+    const itemRow = e.target.closest(".history-item");
+    if (itemRow) {
+      const delBtn = itemRow.querySelector(".history-delete-btn");
+      const id = itemRow.dataset.id || (delBtn ? delBtn.dataset.id : null);
+      if (id) {
+        loadHistoricalAnalysisView(id);
+      }
     }
   });
 

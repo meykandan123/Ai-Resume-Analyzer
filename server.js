@@ -7,11 +7,11 @@ const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
 const dns = require("dns");
-try { dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]); } catch(e){}
+try { dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]); } catch (e) { }
 
 // Fallback DNS lookup to handle Windows OS getaddrinfo EAI_AGAIN lookup errors
 const originalDnsLookup = dns.lookup;
-dns.lookup = function(hostname, options, callback) {
+dns.lookup = function (hostname, options, callback) {
   if (typeof options === "function") {
     callback = options;
     options = {};
@@ -63,7 +63,7 @@ function devLog(category, data = {}) {
 // Ensure uploads folder exists and serve statically
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
-  try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
+  try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) { }
 }
 
 // Middleware
@@ -102,7 +102,7 @@ function saveUploadedFile(fileData, filename) {
 let MongoMemoryServer;
 try {
   MongoMemoryServer = require("mongodb-memory-server").MongoMemoryServer;
-} catch (e) {}
+} catch (e) { }
 
 // Automated Schema Migration Routine for Legacy Data & Index Compatibility
 async function migrateDatabaseSchema() {
@@ -117,7 +117,7 @@ async function migrateDatabaseSchema() {
         await db.collection("resume_analysis").dropIndex("analysisId_1");
         console.log("Dropped legacy index 'analysisId_1' from resume_analysis.");
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // ── STEP 0b: Migrate legacy `provider` field → `authMethods` array ──────────
     // Users created before this fix have `provider: "email"` or `provider: "google"`
@@ -675,7 +675,7 @@ app.get("/api/health/db", async (req, res) => {
 });
 
 let nodemailer;
-try { nodemailer = require("nodemailer"); } catch(e){}
+try { nodemailer = require("nodemailer"); } catch (e) { }
 
 // Rate Limiter for Auth Routes
 const authRateLimitMap = new Map();
@@ -752,16 +752,16 @@ const sendEmailToUser = async (toEmail, subject, textMessage, htmlMessage) => {
     try {
       const transporterConfig = service
         ? {
-            service,
-            auth: { user, pass }
-          }
+          service,
+          auth: { user, pass }
+        }
         : {
-            host,
-            port,
-            secure: process.env.EMAIL_SECURE === "true" || process.env.SMTP_SECURE === "true" || port === 465,
-            auth: { user, pass },
-            tls: { rejectUnauthorized: false }
-          };
+          host,
+          port,
+          secure: process.env.EMAIL_SECURE === "true" || process.env.SMTP_SECURE === "true" || port === 465,
+          auth: { user, pass },
+          tls: { rejectUnauthorized: false }
+        };
 
       const transporter = nodemailer.createTransport(transporterConfig);
       await transporter.sendMail({
@@ -881,7 +881,7 @@ app.post("/api/auth/signup", async (req, res) => {
       `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you did not sign up for this account, please ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(newUser.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(newUser.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => { });
 
     return res.status(201).json({
       success: true,
@@ -1055,7 +1055,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
       `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you didn't request a new link, please ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(user.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(user.email, "Verify Your Email — AI Resume Analyzer", textMessage, htmlMessage).catch(() => { });
 
     return res.json({
       success: true,
@@ -1137,7 +1137,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       `<p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">If you did not request a password reset, your account remains secure and you can safely ignore this email.</p>` +
       `</div>`;
 
-    sendEmailToUser(user.email, "Reset Your Password — AI Resume Analyzer", textMessage, htmlMessage).catch(() => {});
+    sendEmailToUser(user.email, "Reset Your Password — AI Resume Analyzer", textMessage, htmlMessage).catch(() => { });
 
     return res.json({
       success: true,
@@ -1598,7 +1598,7 @@ app.post("/api/support", async (req, res) => {
       `User Email: ${email}\n\n` +
       `Message:\n${message}`;
 
-    sendEmailToUser(adminEmail, subject, textContent).catch(() => {});
+    sendEmailToUser(adminEmail, subject, textContent).catch(() => { });
 
     await logUserActivity(null, "support ticket", `User submitted support request: ${cleanTicketId}`, { ticketId: cleanTicketId, name, email: cleanEmail }, cleanEmail);
 
@@ -2045,7 +2045,7 @@ const handleResumeAnalyze = async (req, res) => {
     };
 
     const userHistoryDoc = await ResumeHistory.findOne(userQuery);
-    const existingHistoryItem = userHistoryDoc && Array.isArray(userHistoryDoc.history) 
+    const existingHistoryItem = userHistoryDoc && Array.isArray(userHistoryDoc.history)
       ? userHistoryDoc.history.find(item => item.resumeId === activeResumeId || item.fileName === finalName)
       : null;
 
@@ -2219,6 +2219,45 @@ app.get("/api/user/resume-analysis", authenticateToken, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Failed to retrieve resume analyses." });
+  }
+});
+
+// Get Specific Resume Analysis Record for User
+app.get("/api/user/resume-analysis/:id", authenticateToken, async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
+
+    const record = await ResumeAnalysis.findOne({
+      $and: [
+        userQuery,
+        {
+          $or: [
+            { resumeId: targetId },
+            { fileName: targetId },
+            ...(mongoose.Types.ObjectId.isValid(targetId) ? [{ _id: targetId }] : [])
+          ]
+        }
+      ]
+    });
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: "Analysis record not found." });
+    }
+
+    return res.json({
+      success: true,
+      analysis: record
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to retrieve analysis record." });
   }
 });
 

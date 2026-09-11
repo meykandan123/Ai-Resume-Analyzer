@@ -20,6 +20,13 @@ const userSchema = new mongoose.Schema({
     trim: true,
     index: true
   },
+  // authMethods stores which authentication methods are linked to this account.
+  // Possible values: "email", "google"
+  // A user can have both: ["email", "google"]
+  authMethods: {
+    type: [String],
+    default: []
+  },
   password: {
     type: String
   },
@@ -34,10 +41,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  provider: {
+  verifiedAt: {
+    type: Date,
+    default: null
+  },
+  googleId: {
     type: String,
-    enum: ["email", "google"],
-    default: "email"
+    default: null,
+    sparse: true
   },
   verifyToken: {
     type: String,
@@ -72,6 +83,16 @@ const userSchema = new mongoose.Schema({
   timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
+});
+
+// Backward-compat virtual: returns the "primary" auth method for display purposes.
+// A linked account returns "email" because email is always the base identity.
+userSchema.virtual("provider").get(function() {
+  if (this.authMethods && this.authMethods.length > 0) {
+    // Prefer "email" if present, otherwise first method
+    return this.authMethods.includes("email") ? "email" : this.authMethods[0];
+  }
+  return "email";
 });
 
 userSchema.virtual("isVerified").get(function() {

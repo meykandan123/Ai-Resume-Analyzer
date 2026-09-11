@@ -44,6 +44,22 @@ const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://meykandan07_db_user:QRFnlYDYLZlBOpVL@ai-resume-analyzer.v8ua4uo.mongodb.net/Ai-Resume-Analyzer?retryWrites=true&w=majority";
 const JWT_SECRET = process.env.JWT_SECRET || "ai_resume_secret_key_987654321";
 
+// ==================== DEV LOGGING ====================
+// Safe structured logger — NEVER logs passwords, hashes, tokens, or secrets.
+function devLog(category, data = {}) {
+  if (process.env.NODE_ENV === "production") return;
+  const safe = {};
+  const blocked = ["password", "passwordHash", "hash", "token", "secret", "jwt", "resetToken", "verifyToken", "access_token", "id_token"];
+  for (const [k, v] of Object.entries(data)) {
+    if (blocked.some(b => k.toLowerCase().includes(b))) {
+      safe[k] = "[REDACTED]";
+    } else {
+      safe[k] = v;
+    }
+  }
+  console.log(`[AUTH:${category}]`, JSON.stringify(safe));
+}
+
 // Ensure uploads folder exists and serve statically
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -102,6 +118,144 @@ async function migrateDatabaseSchema() {
         console.log("Dropped legacy index 'analysisId_1' from resume_analysis.");
       }
     } catch (e) {}
+
+    // ── STEP 0b: Migrate legacy `provider` field → `authMethods` array ──────────
+    // Users created before this fix have `provider: "email"` or `provider: "google"`
+    // but no `authMethods` array. Convert them in-place.
+    try {
+      const legacyProviderUsers = await db.collection("users").find({
+        $and: [
+          { $or: [{ provider: { $exists: true } }, { authMethods: { $exists: false } }] },
+          { authMethods: { $not: { $type: "array" } } }
+        ]
+      }).toArray();
+
+      if (legacyProviderUsers.length > 0) {
+        console.log(`[Migration] Converting ${legacyProviderUsers.length} legacy user(s) provider field → authMethods array...`);
+        for (const u of legacyProviderUsers) {
+          const methods = [];
+          if (u.provider === "google") methods.push("google");
+          else methods.push("email"); // default
+          await db.collection("users").updateOne(
+            { _id: u._id },
+            {
+              $set: { authMethods: methods },
+              $unset: { provider: "" }
+            }
+          );
+        }
+        console.log("[Migration] provider → authMethods conversion done.");
+      }
+    } catch (provErr) {
+      console.warn("[Migration] provider→authMethods migration notice:", provErr.message);
+    }
+
+    // ── STEP 0c: Detect & merge duplicate email accounts ─────────────────────────
+    // Before enforcing the unique email index, find any existing duplicate emails
+    // and merge them: keep the oldest document, move history/activity to it.
+    try {
+      const dupEmailGroups = await db.collection("users").aggregate([
+        { $group: { _id: { $toLower: "$email" }, docs: { $push: "$$ROOT" }, count: { $sum: 1 } } },
+        { $match: { count: { $gt: 1 }, _id: { $ne: null } } }
+      ]).toArray();
+
+      if (dupEmailGroups.length > 0) {
+        console.log(`[Migration] Found ${dupEmailGroups.length} duplicate email group(s). Merging...`);
+        for (const group of dupEmailGroups) {
+          // Sort ascending by createdAt to keep the oldest account as primary
+          const sorted = group.docs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+          const primary = sorted[0];
+          const duplicates = sorted.slice(1);
+
+          // Merge authMethods from all duplicates into primary
+          const mergedMethods = [...new Set([
+            ...(primary.authMethods || (primary.provider ? [primary.provider] : ["email"])),
+            ...duplicates.flatMap(d => d.authMethods || (d.provider ? [d.provider] : []))
+          ])];
+
+          // Merge password: if primary has no password but a duplicate does, adopt it
+          let mergedPassword = primary.password || primary.passwordHash || null;
+          let mergedGoogleId = primary.googleId || null;
+          for (const dup of duplicates) {
+            if (!mergedPassword && (dup.password || dup.passwordHash)) {
+              mergedPassword = dup.password || dup.passwordHash;
+            }
+            if (!mergedGoogleId && dup.googleId) mergedGoogleId = dup.googleId;
+          }
+
+          const primaryIdStr = primary._id.toString();
+          const primaryUserId = primary.userId || primaryIdStr;
+
+          // Update primary with merged data
+          await db.collection("users").updateOne(
+            { _id: primary._id },
+            {
+              $set: {
+                authMethods: mergedMethods,
+                userId: primaryUserId,
+                emailVerified: primary.emailVerified || duplicates.some(d => d.emailVerified || d.verified) || false,
+                verified: primary.verified || duplicates.some(d => d.verified || d.emailVerified) || false,
+                ...(mergedPassword ? { password: mergedPassword, passwordHash: mergedPassword } : {}),
+                ...(mergedGoogleId ? { googleId: mergedGoogleId } : {}),
+                updatedAt: new Date()
+              },
+              $unset: { provider: "" }
+            }
+          );
+
+          // Re-point resume_history and user_activity records from duplicate IDs → primary
+          for (const dup of duplicates) {
+            const dupIdStr = dup._id.toString();
+            const dupUserId = dup.userId || dupIdStr;
+
+            // Merge history: pull items from dup's history doc into primary's
+            const dupHistDoc = await db.collection("resume_history").findOne({
+              $or: [{ userId: dupUserId }, { userId: dupIdStr }]
+            });
+            if (dupHistDoc && Array.isArray(dupHistDoc.history) && dupHistDoc.history.length > 0) {
+              await db.collection("resume_history").updateOne(
+                { $or: [{ userId: primaryUserId }, { userId: primaryIdStr }] },
+                {
+                  $set: { userId: primaryUserId, updatedAt: new Date() },
+                  $push: { history: { $each: dupHistDoc.history } }
+                },
+                { upsert: true }
+              );
+              await db.collection("resume_history").deleteOne({ _id: dupHistDoc._id });
+            }
+
+            // Merge activities
+            const dupActDoc = await db.collection("user_activity").findOne({
+              $or: [{ userId: dupUserId }, { userId: dupIdStr }]
+            });
+            if (dupActDoc && Array.isArray(dupActDoc.activities) && dupActDoc.activities.length > 0) {
+              await db.collection("user_activity").updateOne(
+                { $or: [{ userId: primaryUserId }, { userId: primaryIdStr }] },
+                {
+                  $set: { userId: primaryUserId, updatedAt: new Date() },
+                  $push: { activities: { $each: dupActDoc.activities } }
+                },
+                { upsert: true }
+              );
+              await db.collection("user_activity").deleteOne({ _id: dupActDoc._id });
+            }
+
+            // Re-key resume_analysis records
+            await db.collection("resume_analysis").updateMany(
+              { $or: [{ userId: dupUserId }, { userId: dupIdStr }] },
+              { $set: { userId: primaryUserId } }
+            );
+
+            // Delete the duplicate user
+            await db.collection("users").deleteOne({ _id: dup._id });
+            console.log(`[Migration] Merged duplicate user ${dup.email} (${dupIdStr}) → primary (${primaryIdStr})`);
+          }
+        }
+        console.log("[Migration] Duplicate email merge complete.");
+      }
+    } catch (dupErr) {
+      console.warn("[Migration] Duplicate email merge notice:", dupErr.message);
+    }
 
     // 1. Migrate user_activity (Consolidate legacy single activity docs into user-wise container)
     const legacyActivities = await db.collection("user_activity").find({
@@ -666,6 +820,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
+      devLog("SIGNUP", { email: normalizedEmail, existingUser: true, blocked: true });
       return res.status(400).json({ success: false, message: "An account with this email already exists." });
     }
 
@@ -685,7 +840,7 @@ app.post("/api/auth/signup", async (req, res) => {
       email: normalizedEmail,
       password: hashedPassword,
       passwordHash: hashedPassword,
-      provider: "email",
+      authMethods: ["email"],
       emailVerified: false,
       verified: false,
       verifyToken: hashedVerifyToken,
@@ -695,8 +850,9 @@ app.post("/api/auth/signup", async (req, res) => {
     });
 
     await newUser.save();
+    devLog("SIGNUP", { email: normalizedEmail, userId: newUser.userId, authMethods: ["email"], newUser: true, accountCreated: true });
 
-    await logUserActivity(newUser.userId, "signup", `User registered with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "email" });
+    await logUserActivity(newUser.userId, "signup", `User registered with email: ${normalizedEmail}`, { email: normalizedEmail, authMethod: "email" });
 
     const host = req.get("host") || "localhost:5000";
     const protocol = req.protocol || "http";
@@ -854,7 +1010,12 @@ app.post("/api/auth/resend-verification", async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user || user.provider !== "email") {
+    // Reject only if user doesn't exist, or is Google-only (no password/email auth method)
+    const hasEmailAuth = user && (
+      (Array.isArray(user.authMethods) && user.authMethods.includes("email")) ||
+      (!Array.isArray(user.authMethods) && (user.passwordHash || user.password))
+    );
+    if (!user || !hasEmailAuth) {
       return res.status(404).json({ success: false, message: "Account not found." });
     }
 
@@ -919,7 +1080,13 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user || user.provider !== "email") {
+    // Only send reset link if user has email/password auth method
+    const hasEmailAuth = user && (
+      (Array.isArray(user.authMethods) && user.authMethods.includes("email")) ||
+      (!Array.isArray(user.authMethods) && (user.passwordHash || user.password))
+    );
+    if (!user || !hasEmailAuth) {
+      // Return same message regardless to prevent user enumeration
       return res.json({
         success: true,
         message: "If an account with that email exists, a password reset link has been sent to your Inbox or Spam/Junk folder."
@@ -1071,17 +1238,32 @@ app.post("/api/auth/login", async (req, res) => {
       ]
     });
 
-    if (!user || user.provider !== "email") {
+    // User must exist and have an email/password auth method linked
+    const hasEmailAuth = user && (
+      (Array.isArray(user.authMethods) && user.authMethods.includes("email")) ||
+      (!Array.isArray(user.authMethods) && user.passwordHash) // legacy fallback
+    );
+
+    if (!user || !hasEmailAuth) {
+      devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_email_auth", userFound: !!user, authMethods: user?.authMethods });
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
-    const isMatch = await bcrypt.compare(password, user.passwordHash || user.password);
+    const storedHash = user.passwordHash || user.password;
+    if (!storedHash) {
+      devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_password_hash" });
+      return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
+    }
+
+    const isMatch = await bcrypt.compare(password, storedHash);
     if (!isMatch) {
+      devLog("LOGIN_FAIL", { email: normalizedIdentifier, userId: user._id.toString(), reason: "wrong_password" });
       return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
     }
 
     // Strict verification check: unverified accounts cannot log in
     if (!user.verified && !user.emailVerified) {
+      devLog("LOGIN_FAIL", { email: normalizedIdentifier, userId: user._id.toString(), reason: "email_not_verified" });
       return res.status(403).json({
         success: false,
         requireVerification: true,
@@ -1094,11 +1276,16 @@ app.post("/api/auth/login", async (req, res) => {
     user.updatedAt = now;
     if (!user.userId) user.userId = user._id.toString();
     if (!user.passwordHash && user.password) user.passwordHash = user.password;
+    // Ensure authMethods is set correctly for legacy records
+    if (!Array.isArray(user.authMethods) || user.authMethods.length === 0) {
+      user.authMethods = ["email"];
+    }
 
     await user.save();
     const userIdStr = user.userId || user._id.toString();
 
-    await logUserActivity(userIdStr, "login", `User logged in with email: ${user.email}`, { email: user.email, provider: user.provider }, user.email);
+    devLog("LOGIN_SUCCESS", { email: user.email, userId: userIdStr, authMethods: user.authMethods, emailVerified: user.emailVerified || user.verified });
+    await logUserActivity(userIdStr, "login", `User logged in with email: ${user.email}`, { email: user.email, authMethod: "email" }, user.email);
 
     const token = generateToken(user._id);
 
@@ -1113,6 +1300,7 @@ app.post("/api/auth/login", async (req, res) => {
         name: user.name,
         email: user.email,
         emailVerified: user.emailVerified || user.verified,
+        authMethods: user.authMethods,
         provider: user.provider,
         photo: user.photo,
         createdAt: user.createdAt,
@@ -1126,13 +1314,15 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // Google Auth Sync & Server-side Verification
+// ONE EMAIL = ONE ACCOUNT: this endpoint always finds or links to the existing user document.
 app.post("/api/auth/google", async (req, res) => {
   try {
-    let { name, email, access_token, id_token } = req.body;
+    let { name, email, photo, access_token, id_token } = req.body;
 
+    // Verify the Google token server-side to get the canonical email
     if (id_token || access_token) {
       try {
-        const tokenInfoUrl = id_token 
+        const tokenInfoUrl = id_token
           ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`
           : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(access_token)}`;
         const gRes = await fetch(tokenInfoUrl);
@@ -1140,22 +1330,12 @@ app.post("/api/auth/google", async (req, res) => {
           const gInfo = await gRes.json();
           if (gInfo.email) {
             email = gInfo.email;
-            name = name || gInfo.name || (email ? email.split("@")[0] : "");
+            name = name || gInfo.name || gInfo.email.split("@")[0];
+            photo = photo || gInfo.picture || "";
           }
         }
       } catch (e) {
         console.warn("Backend Google token verification notice:", e);
-      }
-    } else if (!email && access_token) {
-      try {
-        const googleRes = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${encodeURIComponent(access_token)}`);
-        if (googleRes.ok) {
-          const gProfile = await googleRes.json();
-          email = gProfile.email;
-          name = name || gProfile.name;
-        }
-      } catch (e) {
-        console.warn("Backend Google userinfo fetch error:", e);
       }
     }
 
@@ -1164,54 +1344,103 @@ app.post("/api/auth/google", async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    let user = await User.findOne({ email: normalizedEmail });
     const now = new Date();
 
-    if (!user) {
+    // ── CASE A: Email already exists — link Google to existing account ──────────
+    let user = await User.findOne({ email: normalizedEmail });
+    let isNewUser = false;
+    let googleLinked = false;
+
+    if (user) {
+      // DO NOT create a new document. Link Google to the existing account.
+      const methods = Array.isArray(user.authMethods) ? [...user.authMethods] : [];
+      if (!methods.includes("google")) {
+        methods.push("google");
+        googleLinked = true;
+      }
+
+      user.authMethods = methods;
+      user.emailVerified = true;
+      user.verified = true;
+      if (!user.verifiedAt) user.verifiedAt = now;
+      // Update photo only if not already set and Google provides one
+      if (photo && !user.photo) user.photo = photo;
+      user.updatedAt = now;
+      if (!user.userId) user.userId = user._id.toString();
+      // Do NOT touch passwordHash — preserve existing password auth
+
+      await user.save();
+
+      devLog("GOOGLE_LOGIN", {
+        email: normalizedEmail,
+        userId: user.userId,
+        authMethods: user.authMethods,
+        existingUser: true,
+        googleLinked,
+        emailVerified: true
+      });
+
+      await logUserActivity(user.userId, "Google login",
+        `User logged in via Google: ${normalizedEmail}${googleLinked ? " (Google linked to existing account)" : ""}`,
+        { email: normalizedEmail, authMethod: "google", googleLinked }
+      );
+
+    } else {
+      // ── CASE B: New email — create exactly one account ──────────────────────────
+      isNewUser = true;
+      googleLinked = true;
       const _id = new mongoose.Types.ObjectId();
       const userId = _id.toString();
+
       user = new User({
         _id,
         userId,
         name: name || normalizedEmail.split("@")[0],
         email: normalizedEmail,
-        provider: "google",
+        authMethods: ["google"],
         emailVerified: true,
         verified: true,
+        verifiedAt: now,
+        photo: photo || "",
         createdAt: now,
         updatedAt: now
       });
       await user.save();
 
-      await logUserActivity(user.userId, "signup", `User registered via Google with email: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
-      await logUserActivity(user.userId, "Google login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
-    } else {
-      if (user.provider !== "google") {
-        user.provider = "google";
-      }
-      user.emailVerified = true;
-      user.verified = true;
-      user.updatedAt = now;
-      if (!user.userId) user.userId = user._id.toString();
-      await user.save();
+      devLog("GOOGLE_SIGNUP", {
+        email: normalizedEmail,
+        userId: user.userId,
+        authMethods: ["google"],
+        newUser: true,
+        accountCreated: true
+      });
 
-      await logUserActivity(user.userId, "Google login", `User logged in via Google: ${normalizedEmail}`, { email: normalizedEmail, provider: "google" });
+      await logUserActivity(user.userId, "signup",
+        `User registered via Google: ${normalizedEmail}`,
+        { email: normalizedEmail, authMethod: "google" }
+      );
+      await logUserActivity(user.userId, "Google login",
+        `User logged in via Google: ${normalizedEmail}`,
+        { email: normalizedEmail, authMethod: "google" }
+      );
     }
 
     const token = generateToken(user._id);
+    const userIdStr = user.userId || user._id.toString();
 
     return res.json({
       success: true,
-      message: "Google login successful.",
+      message: isNewUser ? "Google account registered and signed in." : "Google login successful.",
       token,
       user: {
         _id: user._id,
         id: user._id,
-        userId: user.userId,
+        userId: userIdStr,
         name: user.name,
         email: user.email,
         emailVerified: true,
-        provider: user.provider,
+        authMethods: user.authMethods,
+        provider: user.provider, // virtual — backward compat
         photo: user.photo,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
@@ -1227,11 +1456,95 @@ app.post("/api/auth/google", async (req, res) => {
 app.post("/api/auth/logout", authenticateToken, async (req, res) => {
   try {
     const userIdStr = req.user.userId || req.user._id.toString();
+    devLog("LOGOUT", { email: req.user.email, userId: userIdStr });
     await logUserActivity(userIdStr, "logout", `User logged out: ${req.user.email}`, { email: req.user.email });
     return res.json({ success: true, message: "Logout activity recorded successfully." });
   } catch (err) {
     console.error("Logout error:", err);
     return res.status(500).json({ success: false, message: "Server error during logout." });
+  }
+});
+
+// Change Password (authenticated users only)
+// Allows email-authenticated users to update their password.
+// Also allows Google-only users to SET a password for the first time (adds email auth method).
+app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "New password must be at least 6 characters long." });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User account not found." });
+    }
+
+    const hasEmailAuth = Array.isArray(user.authMethods) && user.authMethods.includes("email");
+    const storedHash = user.passwordHash || user.password;
+
+    // If user already has a password, verify currentPassword before allowing change
+    if (hasEmailAuth && storedHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ success: false, message: "Current password is required." });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, storedHash);
+      if (!isMatch) {
+        devLog("PASSWORD_CHANGE_FAIL", { email: user.email, userId: user._id.toString(), reason: "wrong_current_password" });
+        return res.status(400).json({ success: false, message: "Current password is incorrect." });
+      }
+    }
+    // If Google-only (no password yet), allow setting password without currentPassword check
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const now = new Date();
+
+    user.password = hashedPassword;
+    user.passwordHash = hashedPassword;
+    user.updatedAt = now;
+
+    // Add "email" auth method if not already present
+    if (!Array.isArray(user.authMethods)) user.authMethods = [];
+    if (!user.authMethods.includes("email")) {
+      user.authMethods.push("email");
+    }
+
+    await user.save();
+
+    const userIdStr = user.userId || user._id.toString();
+    devLog("PASSWORD_CHANGE_SUCCESS", { email: user.email, userId: userIdStr, authMethods: user.authMethods });
+    await logUserActivity(
+      userIdStr,
+      "password change",
+      `User changed account password for: ${user.email}`,
+      { email: user.email, authMethods: user.authMethods },
+      user.email
+    );
+
+    // Issue a fresh token after password change
+    const token = generateToken(user._id);
+
+    return res.json({
+      success: true,
+      message: "Password updated successfully.",
+      token,
+      user: {
+        _id: user._id,
+        id: user._id,
+        userId: userIdStr,
+        name: user.name,
+        email: user.email,
+        emailVerified: user.emailVerified || user.verified,
+        authMethods: user.authMethods,
+        provider: user.provider,
+        photo: user.photo
+      }
+    });
+  } catch (err) {
+    console.error("Change password error:", err);
+    return res.status(500).json({ success: false, message: "Server error updating password." });
   }
 });
 

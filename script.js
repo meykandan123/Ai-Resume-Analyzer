@@ -3094,9 +3094,35 @@
     const helpers = getFirebaseAuthHelpers();
     if (auth && helpers && helpers.signInWithEmailAndPassword) {
       try {
-        await helpers.signInWithEmailAndPassword(auth, email, password);
+        await helpers.signInWithEmailAndPassword(auth, email, password.trim());
       } catch (fbErr) {
-        console.warn("Firebase Auth signIn notice:", fbErr.message || fbErr);
+        const fbCode = fbErr?.code || "";
+        console.warn("Firebase Auth signIn notice:", fbCode, fbErr.message || fbErr);
+
+        // Map Firebase error codes to user-friendly messages.
+        // auth/invalid-credential is the modern catch-all for wrong email or password.
+        if (
+          fbCode === "auth/invalid-credential" ||
+          fbCode === "auth/wrong-password" ||
+          fbCode === "auth/user-not-found" ||
+          fbCode === "auth/invalid-email"
+        ) {
+          showToast(loginToast, "Incorrect email or password. Please double-check and try again.", true);
+          return;
+        }
+        if (fbCode === "auth/user-disabled") {
+          showToast(loginToast, "This account has been disabled. Please contact support.", true);
+          return;
+        }
+        if (fbCode === "auth/too-many-requests") {
+          showToast(loginToast, "Too many failed login attempts. Please wait a few minutes and try again.", true);
+          return;
+        }
+        if (fbCode === "auth/network-request-failed") {
+          // Network issue — let MongoDB backend try below; don't block here.
+          console.warn("Firebase sign-in skipped due to network error; falling through to backend.");
+        }
+        // For any other Firebase error, fall through to the MongoDB backend path.
       }
     }
 
@@ -3489,20 +3515,38 @@
             if (profile && profile.email) {
               const email = normalizeEmail(profile.email);
               const name = profile.name || email.split("@")[0];
-              const isNewAccount = !accounts[email];
-              if (isNewAccount){
-                accounts[email] = { name, password: null, provider: "google", verified: true, photo: profile.picture || "" };
-              } else {
-                accounts[email].verified = true;
-                accounts[email].provider = "google";
-                if (name) accounts[email].name = name;
-                if (profile.picture) accounts[email].photo = profile.picture;
-              }
-              saveAccounts();
+              const photo = profile.picture || "";
 
-              showToast(toastEl, `Signed in as ${email}.`, false);
-              setLoggedInUser({ name: accounts[email].name, email, provider: "google", photo: accounts[email].photo || "" });
-              closeAuth();
+              // CRITICAL: Always sync with backend to get the real MongoDB _id.
+              // Never set a dummy id — that would orphan the session from resume history.
+              try {
+                const data = await safeFetchJson("/api/auth/google", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name, email, photo })
+                });
+                if (data && data.success && data.token) {
+                  setAuthToken(data.token);
+                  setLoggedInUser({
+                    id: data.user._id || data.user.id || data.user.userId,
+                    _id: data.user._id || data.user.id,
+                    userId: data.user.userId || data.user._id,
+                    name: data.user.name || name,
+                    email: data.user.email || email,
+                    provider: "google",
+                    photo: data.user.photo || photo,
+                    token: data.token
+                  });
+                  showToast(toastEl, `Signed in as ${email}.`, false);
+                  fetchHistoryFromBackend();
+                  closeAuth();
+                } else {
+                  showToast(toastEl, (data && data.message) || "Google sign-in failed. Please try again.", true);
+                }
+              } catch (syncErr) {
+                console.warn("GIS backend sync error:", syncErr);
+                showToast(toastEl, "Could not complete Google sign-in. Please check your connection.", true);
+              }
             } else {
               showToast(toastEl, "Could not retrieve Google profile. Please try again.", true);
             }

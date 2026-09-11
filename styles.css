@@ -209,6 +209,11 @@
     .report-nav-actions { justify-content: center; }
   }
 
+  html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   *, *::before, *::after {
     box-sizing: border-box;
   }
@@ -226,7 +231,7 @@
   }
 
   /* =========================================================================
-     FULL-WIDTH TOP HEADER NAVIGATION BAR
+     FULL-WIDTH TOP HEADER NAVIGATION BAR (EDGE-TO-EDGE CORNERS)
      ========================================================================= */
   .navbar {
     position: sticky;
@@ -239,33 +244,37 @@
     margin: 0;
     padding: 0 32px;
     border-radius: 0;
-    background: linear-gradient(135deg, #81001a 0%, #5c0012 100%);
+    background: linear-gradient(135deg, #81001a 0%, #540011 100%);
     border: none;
     border-bottom: 1px solid rgba(243, 231, 214, 0.22);
-    box-shadow: 0 4px 20px rgba(129, 0, 26, 0.25), 0 1px 4px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 20px rgba(129, 0, 26, 0.28), 0 1px 4px rgba(0, 0, 0, 0.12);
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .navbar:hover {
-    box-shadow: 0 6px 26px rgba(129, 0, 26, 0.35), 0 2px 6px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 6px 26px rgba(129, 0, 26, 0.38), 0 2px 6px rgba(0, 0, 0, 0.16);
   }
 
+  /* Full 100% width container: Brand pinned to far left, buttons pinned to far right */
   .nav-container {
-    max-width: 1240px;
     width: 100%;
-    margin: 0 auto;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
 
+  /* Far Left Corner: Logo & Brand */
   .nav-left {
     display: flex;
     align-items: center;
     gap: 14px;
+    flex-shrink: 0;
   }
 
   .nav-brand {
@@ -329,10 +338,12 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   }
 
+  /* Far Right Corner: Action Buttons */
   .nav-right {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-shrink: 0;
   }
 
   /* Navigation Bar Home Button (Visible when logged in) */
@@ -344,8 +355,8 @@
     background: rgba(255, 249, 242, 0.14);
     color: #fff9f2;
     border: 1px solid rgba(243, 231, 214, 0.30);
-    border-radius: 10px;
-    padding: 9px 18px;
+    border-radius: 999px;
+    padding: 8px 16px;
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
@@ -365,40 +376,75 @@
     transform: translateY(0) scale(0.98);
   }
 
-  /* Primary Accent Action Button (Upload Resume) in Vibrant Coral Rose */
+  /* =========================================================================
+     REDESIGNED "UPLOAD RESUME" BUTTON UI (ELEVATED GLOWING CAPSULE CTA)
+     ========================================================================= */
   .nav-btn-dark {
-    background: linear-gradient(135deg, #d54f60 0%, #bf3f50 100%);
+    background: linear-gradient(135deg, #ff6b7f 0%, #d54f60 52%, #b5293b 100%);
     color: #ffffff;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    border-radius: 10px;
-    padding: 10px 22px;
+    border: 1.5px solid rgba(255, 255, 255, 0.40);
+    border-radius: 999px;
+    padding: 8px 20px 8px 10px;
     font-size: 13.5px;
     font-weight: 700;
+    letter-spacing: -0.2px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(213, 79, 96, 0.4);
+    gap: 0;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 16px rgba(213, 79, 96, 0.42), 0 2px 6px rgba(0, 0, 0, 0.22), inset 0 1px 1.5px rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(80, 0, 16, 0.35);
+  }
+
+  .nav-btn-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    margin-right: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.45);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
+    flex-shrink: 0;
   }
 
   .nav-btn-dark:hover {
-    background: linear-gradient(135deg, #e27d8b 0%, #d54f60 100%);
+    background: linear-gradient(135deg, #ff7e90 0%, #e2586a 52%, #c43244 100%);
+    border-color: rgba(255, 255, 255, 0.65);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(213, 79, 96, 0.62), 0 3px 8px rgba(0, 0, 0, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.7);
+  }
+
+  .nav-btn-dark:hover .nav-btn-icon-wrap {
+    background: rgba(255, 255, 255, 0.34);
     transform: translateY(-1.5px);
-    box-shadow: 0 6px 18px rgba(213, 79, 96, 0.6);
   }
 
   .nav-btn-dark:active {
     transform: translateY(0) scale(0.98);
+    box-shadow: 0 2px 8px rgba(213, 79, 96, 0.4);
   }
 
-  /* Secondary Clean Button (Sign In & Login) in Warm Almond Sand */
+  .nav-btn-label-desktop {
+    display: inline;
+  }
+  .nav-btn-label-mobile {
+    display: none;
+  }
+
+  /* Secondary Clean Buttons (Sign In & Login) in Warm Almond Sand Capsule */
   .nav-btn-light {
     background: #f3e7d6;
     color: #81001a;
-    border: 1px solid rgba(243, 231, 214, 0.5);
-    border-radius: 10px;
-    padding: 9px 18px;
+    border: 1.5px solid rgba(243, 231, 214, 0.65);
+    border-radius: 999px;
+    padding: 8px 18px;
     font-size: 13.5px;
     font-weight: 700;
     cursor: pointer;
@@ -407,7 +453,7 @@
     justify-content: center;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16), inset 0 1px 1px rgba(255, 255, 255, 0.6);
   }
 
   .nav-btn-light:hover {
@@ -415,7 +461,7 @@
     color: #520011;
     border-color: #ffffff;
     transform: translateY(-1.5px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 5px 16px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(243, 231, 214, 0.5);
   }
 
   .nav-btn-light:active {
@@ -493,12 +539,34 @@
     margin: 4px 6px;
   }
 
+  /* =========================================================================
+     COMPREHENSIVE RESPONSIVENESS: LAPTOP, TABLET, MOBILE
+     ========================================================================= */
+
+  /* Tablet Landscape & Laptops (<= 1024px) */
+  @media (max-width: 1024px) {
+    .navbar {
+      height: 66px;
+      padding: 0 24px;
+    }
+    .nav-brand-text {
+      font-size: 19px;
+    }
+    .nav-btn-dark {
+      padding: 8px 16px 8px 9px;
+      font-size: 13px;
+    }
+    .nav-btn-light {
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+  }
+
+  /* Tablets (<= 768px) */
   @media (max-width: 768px) {
     .navbar {
-      width: 100%;
-      height: 60px;
-      padding: 0 16px;
-      border-radius: 0;
+      height: 62px;
+      padding: 0 18px;
     }
     .nav-brand-logo-img {
       height: 26px;
@@ -507,8 +575,17 @@
     .nav-brand-text {
       font-size: 17px;
     }
-    .nav-btn-dark, .nav-btn-light {
-      padding: 8px 14px;
+    .nav-btn-dark {
+      padding: 7px 14px 7px 8px;
+      font-size: 12.5px;
+    }
+    .nav-btn-icon-wrap {
+      width: 24px;
+      height: 24px;
+      margin-right: 6px;
+    }
+    .nav-btn-light {
+      padding: 7px 14px;
       font-size: 12.5px;
     }
     .nav-right {
@@ -516,29 +593,182 @@
     }
   }
 
-  @media (max-width: 480px) {
+  /* Mobile Devices (<= 600px) */
+  @media (max-width: 600px) {
     .navbar {
-      width: 100%;
-      height: 56px;
+      height: 58px;
       padding: 0 12px;
-      border-radius: 0;
+    }
+    .nav-left {
+      gap: 8px;
+    }
+    .nav-brand {
+      gap: 8px;
     }
     .nav-brand-logo-img {
-      height: 22px;
-      max-width: 28px;
+      height: 24px;
+      max-width: 30px;
     }
     .nav-brand-text {
-      font-size: 15px;
+      font-size: 16px;
+    }
+    .nav-brand-badge {
+      padding: 2px 6px;
+      font-size: 9px;
+    }
+    .nav-right {
+      gap: 6px;
+    }
+    /* Switch label to compact "Upload" on mobile */
+    .nav-btn-label-desktop {
+      display: none;
+    }
+    .nav-btn-label-mobile {
+      display: inline;
+    }
+    .nav-btn-dark {
+      padding: 6px 12px 6px 6px;
+      font-size: 12px;
+    }
+    .nav-btn-icon-wrap {
+      width: 22px;
+      height: 22px;
+      margin-right: 5px;
+    }
+    .nav-btn-icon-wrap svg {
+      width: 12px;
+      height: 12px;
+    }
+    .nav-btn-light {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .nav-home-label {
+      display: none;
+    }
+    .nav-home-btn {
+      padding: 6px 10px;
+    }
+    .profile-btn {
+      padding: 4px 10px 4px 4px;
+      font-size: 12px;
+      gap: 6px;
+    }
+    .profile-chip-name {
+      max-width: 70px;
+    }
+
+    /* Page Content on Mobile */
+    .wrap {
+      padding: 0 12px;
+    }
+    .hero-band {
+      padding: 16px 0 24px;
+    }
+    header {
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 26px;
+      letter-spacing: -0.5px;
+    }
+    .tagline {
+      font-size: 13.5px;
+      padding: 0 8px;
+      margin-top: 6px;
+    }
+    .dropzone {
+      padding: 28px 14px;
+    }
+    .dz-title {
+      font-size: 17px;
+    }
+    .dz-sub {
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .dz-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      width: 100%;
+      max-width: 290px;
+      margin: 0 auto 14px;
+    }
+    .choose-btn, .upload-btn {
+      width: 100%;
+      text-align: center;
+      display: block;
+      padding: 12px 18px;
+      font-size: 13px;
+    }
+    .chosen-name {
+      text-align: center;
+      display: block;
+      word-break: break-all;
+    }
+
+    /* Modals & Popups on Mobile */
+    .auth-modal {
+      width: calc(100% - 24px);
+      max-width: 390px;
+      padding: 24px 18px 26px;
+      margin: 12px auto;
+    }
+    .support-modal .auth-modal {
+      width: calc(100% - 24px);
+      padding: 22px 16px;
+    }
+    .support-fab {
+      bottom: 16px;
+      right: 16px;
+      padding: 10px 16px;
+      font-size: 12.5px;
+    }
+    .profile-page-card {
+      padding: 20px 16px;
+      margin: 12px auto;
+    }
+    .report-card-head {
+      padding: 12px 16px;
+    }
+    .report-card-head h2 {
+      font-size: 16px;
+    }
+    .report-card-body {
+      padding: 16px;
+    }
+  }
+
+  /* Extra Small Mobile (<= 400px) */
+  @media (max-width: 400px) {
+    .navbar {
+      height: 54px;
+      padding: 0 8px;
     }
     .nav-brand-badge {
       display: none;
     }
-    .nav-btn-dark, .nav-btn-light {
-      padding: 7px 11px;
-      font-size: 11.5px;
+    .nav-brand-text {
+      font-size: 14.5px;
+    }
+    .nav-brand-logo-img {
+      height: 22px;
+      max-width: 26px;
     }
     .nav-right {
-      gap: 6px;
+      gap: 4px;
+    }
+    .nav-btn-dark {
+      padding: 5px 9px 5px 5px;
+      font-size: 11px;
+    }
+    .nav-btn-light {
+      padding: 5px 9px;
+      font-size: 11px;
+    }
+    .profile-chip-name {
+      display: none;
     }
   }
 

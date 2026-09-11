@@ -3089,42 +3089,9 @@
       return;
     }
 
-    // 1. Firebase Auth Login Session
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.signInWithEmailAndPassword) {
-      try {
-        await helpers.signInWithEmailAndPassword(auth, email, password.trim());
-      } catch (fbErr) {
-        const fbCode = fbErr?.code || "";
-        console.warn("Firebase Auth signIn notice:", fbCode, fbErr.message || fbErr);
-
-        // Map Firebase error codes to user-friendly messages.
-        // auth/invalid-credential is the modern catch-all for wrong email or password.
-        if (
-          fbCode === "auth/invalid-credential" ||
-          fbCode === "auth/wrong-password" ||
-          fbCode === "auth/user-not-found" ||
-          fbCode === "auth/invalid-email"
-        ) {
-          showToast(loginToast, "Incorrect email or password. Please double-check and try again.", true);
-          return;
-        }
-        if (fbCode === "auth/user-disabled") {
-          showToast(loginToast, "This account has been disabled. Please contact support.", true);
-          return;
-        }
-        if (fbCode === "auth/too-many-requests") {
-          showToast(loginToast, "Too many failed login attempts. Please wait a few minutes and try again.", true);
-          return;
-        }
-        if (fbCode === "auth/network-request-failed") {
-          // Network issue — let MongoDB backend try below; don't block here.
-          console.warn("Firebase sign-in skipped due to network error; falling through to backend.");
-        }
-        // For any other Firebase error, fall through to the MongoDB backend path.
-      }
-    }
+    // Authentication is handled entirely by the MongoDB backend below.
+    // Firebase Auth is NOT used for email+password login — users exist in MongoDB only.
+    // Firebase is only used for Google OAuth popups (signInWithPopup).
 
     // 2. MongoDB Backend Sync with Local Fallback
     try {

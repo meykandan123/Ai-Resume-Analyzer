@@ -3147,19 +3147,9 @@
       }
     } catch(err){
       console.warn("MongoDB login API error:", err);
-      const existingAcc = accounts[email];
-      if (existingAcc && !existingAcc.verified) {
-        showToast(loginToast, "Please verify your email address before logging in. Check your email inbox for the verification link.", true);
-        return;
-      }
-      if (existingAcc && existingAcc.password === password) {
-        const userName = existingAcc.name || email.split("@")[0] || "User";
-        setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
-        showToast(loginToast, `Welcome back, ${userName}!`, false);
-        setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
-        return;
-      }
-      showToast(loginToast, "Incorrect email or password.", true);
+      // Do NOT fall back to localStorage accounts on other devices — the local
+      // cache doesn't exist there, so showing "wrong password" is misleading.
+      showToast(loginToast, "Unable to reach the server. Please check your internet connection and try again.", true);
       return;
     }
   });

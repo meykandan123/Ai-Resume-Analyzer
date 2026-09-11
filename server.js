@@ -1080,12 +1080,11 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
 
-    // Only send reset link if user has email/password auth method
-    const hasEmailAuth = user && (
-      (Array.isArray(user.authMethods) && user.authMethods.includes("email")) ||
-      (!Array.isArray(user.authMethods) && (user.passwordHash || user.password))
-    );
-    if (!user || !hasEmailAuth) {
+    // Send reset link if the user exists and has a stored password hash.
+    // We check passwordHash directly (not authMethods) because legacy users may
+    // have authMethods: [] even though they have a valid password in the database.
+    const hasPasswordStored = user && !!(user.passwordHash || user.password);
+    if (!user || !hasPasswordStored) {
       // Return same message regardless to prevent user enumeration
       return res.json({
         success: true,
@@ -1197,6 +1196,19 @@ app.post("/api/auth/reset-password", async (req, res) => {
     user.resetToken = null;
     user.resetTokenExpires = null;
     user.updatedAt = now;
+
+    // Ensure "email" is in authMethods after reset so login check passes
+    if (!Array.isArray(user.authMethods)) user.authMethods = [];
+    if (!user.authMethods.includes("email")) {
+      user.authMethods.push("email");
+    }
+    // Also mark account as verified — a password reset confirms email ownership
+    if (!user.emailVerified) {
+      user.emailVerified = true;
+      user.verified = true;
+      user.verifiedAt = user.verifiedAt || now;
+    }
+
     await user.save();
 
     const userIdStr = user.userId || user._id.toString();
@@ -1238,27 +1250,32 @@ app.post("/api/auth/login", async (req, res) => {
       ]
     });
 
-    // User must exist and have an email/password auth method linked
+    // Determine if the user has email/password authentication.
+    // IMPORTANT: Mongoose always returns authMethods as [] (empty array) for legacy
+    // users whose document was created before the authMethods field was added.
+    // So we CANNOT rely on authMethods alone — we must also check whether a
+    // passwordHash exists in the document (that is the ground truth for email auth).
+    const storedPasswordHash = user && (user.passwordHash || user.password);
     const hasEmailAuth = user && (
-      (Array.isArray(user.authMethods) && user.authMethods.includes("email")) ||
-      (!Array.isArray(user.authMethods) && user.passwordHash) // legacy fallback
+      storedPasswordHash || // Has a password stored → can do email auth
+      (Array.isArray(user.authMethods) && user.authMethods.includes("email"))
     );
 
     if (!user || !hasEmailAuth) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_email_auth", userFound: !!user, authMethods: user?.authMethods });
-      return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
+      return res.status(400).json({ success: false, message: "Incorrect email or password." });
     }
 
-    const storedHash = user.passwordHash || user.password;
+    const storedHash = storedPasswordHash;
     if (!storedHash) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_password_hash" });
-      return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
+      return res.status(400).json({ success: false, message: "Incorrect email or password." });
     }
 
     const isMatch = await bcrypt.compare(password, storedHash);
     if (!isMatch) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, userId: user._id.toString(), reason: "wrong_password" });
-      return res.status(400).json({ success: false, message: "Incorrect email/userId or password." });
+      return res.status(400).json({ success: false, message: "Incorrect email or password." });
     }
 
     // Strict verification check: unverified accounts cannot log in

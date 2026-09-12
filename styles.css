@@ -1308,7 +1308,7 @@
     background: #1e293b;
   }
 
-  .wrap{ max-width:880px; margin:0 auto; padding: 0 16px; }
+  .wrap{ max-width:1180px; margin:0 auto; padding: 0 20px; }
 
   /* Hero band — soft gradient backdrop behind the headline + upload zone */
   .hero-band{
@@ -1958,16 +1958,123 @@
 
   #results {
     display: none;
-    margin-top: 44px;
+    max-width: 1180px;
+    width: 100%;
+    margin: 36px auto 0;
     animation: smoothFadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .file-tag{
-    font-family:var(--mono);
-    font-size:12px;
-    color:#777;
-    margin-bottom:18px;
-    text-align:center;
+  /* Results Header Bar with Mode Switcher Tabs */
+  .results-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .file-tag {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0;
+    text-align: left;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 6px 14px;
+    border-radius: 999px;
+  }
+
+  .report-mode-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--sand);
+    border: 1px solid var(--line);
+    padding: 4px;
+    border-radius: 999px;
+  }
+
+  .report-tab-btn {
+    background: transparent;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(129, 0, 26, 0.7);
+    cursor: pointer;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .report-tab-btn:hover:not(.active) {
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.6);
+  }
+
+  .report-tab-btn.active {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(213, 79, 96, 0.3);
+  }
+
+  /* ATS HERO ROW (ATS Mode): 2 Columns (Gauge Card + Score Breakdown) */
+  .ats-hero-row {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 22px;
+    margin-bottom: 22px;
+    align-items: stretch;
+  }
+
+  .ats-hero-row .ats-score-card {
+    margin-bottom: 0 !important;
+    height: 100%;
+    justify-content: center;
+  }
+
+  .ats-hero-breakdown {
+    margin-bottom: 0 !important;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ats-hero-breakdown .report-card-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 2-Column Grid Rows for shared/mode cards */
+  .results-two-col-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+    margin-bottom: 22px;
+  }
+
+  .results-two-col-grid .report-card {
+    margin-bottom: 0 !important;
+  }
+
+  /* Subtitles inside section card bodies */
+  .sections-sub-title {
+    font-size: 11.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #777;
+    margin-bottom: 8px;
   }
 
   .ats-card{
@@ -2390,8 +2497,17 @@
   }
   .back-to-options-btn:hover{ background:var(--ink); color:#fff; }
 
-  @media (max-width:640px){
-    .analysis-options-grid{ grid-template-columns:1fr; }
+  @media (max-width: 992px) {
+    .ats-hero-row { grid-template-columns: 1fr; }
+    .content-overview-grid { grid-template-columns: repeat(2, 1fr); }
+    .results-two-col-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    .analysis-options-grid { grid-template-columns: 1fr; }
+    .content-overview-grid { grid-template-columns: 1fr; }
+    .results-header-bar { flex-direction: column; align-items: stretch; text-align: center; padding: 14px; }
+    .report-mode-tabs { justify-content: center; }
   }
 
   /* Mode-based visibility inside #results — toggled via data-mode attribute */

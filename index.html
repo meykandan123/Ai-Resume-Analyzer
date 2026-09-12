@@ -204,32 +204,48 @@
   </div>
 
   <div id="results">
-    <div class="file-tag" id="fileTag"></div>
-
-    <div class="ats-score-card ats-only" id="atsCard">
-      <div class="ats-score-card-head">
-        <h2>ATS Compatibility Score</h2>
-      </div>
-      <div class="ats-ring-container">
-        <svg class="ats-gauge-svg" viewBox="0 0 160 160">
-          <circle class="gauge-bg-circle" cx="80" cy="80" r="68"></circle>
-          <circle class="gauge-fill-circle" id="gaugeFillCircle" cx="80" cy="80" r="68" stroke-dasharray="427" stroke-dashoffset="427"></circle>
-        </svg>
-        <div class="ats-score-center">
-          <div class="ats-score-val" id="atsNumber">0</div>
-          <div class="ats-score-max">/ 100</div>
-        </div>
-      </div>
-
-      <div class="ats-verdict-box">
-        <div class="ats-verdict-title" id="atsVerdict">Analyzing…</div>
-        <div class="ats-verdict-sub">Based on section completeness, keyword relevance, formatting, and content quality.</div>
+    <!-- Results Header Bar with Mode Switcher Tabs -->
+    <div class="results-header-bar">
+      <div class="file-tag" id="fileTag"></div>
+      <div class="report-mode-tabs">
+        <button class="report-tab-btn active" id="tabAtsBtn" data-mode="ats" type="button">📊 Check ATS Score</button>
+        <button class="report-tab-btn" id="tabNormalBtn" data-mode="normal" type="button">📋 Resume Analysis</button>
       </div>
     </div>
 
+    <!-- ATS HERO ROW (ATS Mode): 2 Columns (Gauge Card + Score Breakdown) -->
+    <div class="ats-hero-row ats-only">
+      <div class="ats-score-card" id="atsCard">
+        <div class="ats-score-card-head">
+          <h2>ATS Compatibility Score</h2>
+        </div>
+        <div class="ats-ring-container">
+          <svg class="ats-gauge-svg" viewBox="0 0 160 160">
+            <circle class="gauge-bg-circle" cx="80" cy="80" r="68"></circle>
+            <circle class="gauge-fill-circle" id="gaugeFillCircle" cx="80" cy="80" r="68" stroke-dasharray="427" stroke-dashoffset="427"></circle>
+          </svg>
+          <div class="ats-score-center">
+            <div class="ats-score-val" id="atsNumber">0</div>
+            <div class="ats-score-max">/ 100</div>
+          </div>
+        </div>
 
+        <div class="ats-verdict-box">
+          <div class="ats-verdict-title" id="atsVerdict">Analyzing…</div>
+          <div class="ats-verdict-sub">Based on section completeness, keyword relevance, formatting, and content quality.</div>
+        </div>
+      </div>
 
-    <!-- Resume Content Overview -->
+      <!-- Score Breakdown Card -->
+      <div class="report-card ats-hero-breakdown">
+        <div class="report-card-head"><h2>Score Breakdown</h2></div>
+        <div class="report-card-body">
+          <div class="score-breakdown-grid" id="scoreBreakdownGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resume Content Overview (Normal Mode): 3-Column Grid -->
     <div class="report-card normal-only">
       <div class="report-card-head"><h2>📋 What We Found In Your Resume</h2></div>
       <div class="report-card-body">
@@ -262,7 +278,7 @@
       </div>
     </div>
 
-    <!-- Errors & Issues Found -->
+    <!-- Errors & Issues Found (Normal Mode) -->
     <div class="report-card normal-only">
       <div class="report-card-head"><h2>🚩 Errors &amp; Issues Found</h2></div>
       <div class="report-card-body">
@@ -270,7 +286,7 @@
       </div>
     </div>
 
-    <!-- Executive Summary -->
+    <!-- Executive Summary (Shared) -->
     <div class="report-card">
       <div class="report-card-head"><h2 id="execSummaryHeading">Executive Summary</h2></div>
       <div class="exec-summary-body">
@@ -285,28 +301,15 @@
       </div>
     </div>
 
-    <!-- Score Breakdown -->
-    <div class="report-card ats-only">
-      <div class="report-card-head"><h2>Score Breakdown</h2></div>
+    <!-- Readability & Content Quality (Normal Mode) -->
+    <div class="report-card normal-only">
+      <div class="report-card-head"><h2>Readability &amp; Content Quality</h2></div>
       <div class="report-card-body">
-        <div class="score-breakdown-grid" id="scoreBreakdownGrid"></div>
+        <div class="metric-grid" id="readabilityMetricGrid"></div>
       </div>
     </div>
 
-    <!-- Sections Found / Missing -->
-    <div class="sections-grid">
-      <div class="report-card" style="margin-bottom:0;">
-        <div class="report-card-head"><h2>Sections Found</h2></div>
-        <div class="report-card-body"><div class="section-pill-list" id="sectionsFoundList"></div></div>
-      </div>
-      <div class="report-card" style="margin-bottom:0;">
-        <div class="report-card-head"><h2>Missing Sections</h2></div>
-        <div class="report-card-body"><div class="section-pill-list" id="sectionsMissingList"></div></div>
-      </div>
-    </div>
-    <div style="height:22px;"></div>
-
-    <!-- Keywords Analysis -->
+    <!-- Keywords Analysis (ATS Mode) -->
     <div class="report-card ats-only">
       <div class="report-card-head"><h2>Keywords Analysis</h2></div>
       <div class="report-card-body">
@@ -331,81 +334,82 @@
       </div>
     </div>
 
-    <!-- Missing Common Keywords -->
-    <div class="report-card ats-only">
-      <div class="report-card-head"><h2>Missing Common Keywords</h2></div>
-      <div class="report-card-body">
-        <div class="tags" id="missingCommonKeywords"></div>
-      </div>
-    </div>
-
-    <!-- Readability & Content Quality -->
-    <div class="report-card normal-only">
-      <div class="report-card-head"><h2>Readability &amp; Content Quality</h2></div>
-      <div class="report-card-body">
-        <div class="metric-grid" id="readabilityMetricGrid"></div>
-      </div>
-    </div>
-
-    <!-- Overused Buzzwords -->
-    <div class="report-card ats-only">
-      <div class="report-card-head"><h2>Overused Buzzwords</h2></div>
-      <div class="report-card-body">
-        <div class="tags" id="buzzwordTags"></div>
-      </div>
-    </div>
-
-    <!-- Skills Detected -->
-    <div class="report-card">
-      <div class="report-card-head"><h2>Skills Detected</h2></div>
-      <div class="report-card-body">
-        <div class="tags" id="skillTags"></div>
-      </div>
-    </div>
-
-    <!-- Missing Information -->
-    <div class="report-card">
-      <div class="report-card-head"><h2>Missing Information</h2></div>
-      <div class="report-card-body">
-        <div class="tags" id="missingTags"></div>
-      </div>
-    </div>
-
-    <!-- Content Quality -->
-    <div class="report-card">
-      <div class="report-card-head"><h2>Content Quality</h2></div>
-      <div class="report-card-body">
-        <div class="field"><span class="k">Quantified achievements</span><span class="v" id="quantifiedStat">—</span></div>
-        <div class="quality-sub" id="weakVerbWrap" style="display:none;">
-          <div class="quality-sub-label">Weak/passive phrasing found</div>
-          <div class="tags" id="weakVerbTags"></div>
+    <!-- Keywords Polish Row (ATS Mode): 2 Columns -->
+    <div class="results-two-col-grid ats-only">
+      <div class="report-card">
+        <div class="report-card-head"><h2>Missing Common Keywords</h2></div>
+        <div class="report-card-body">
+          <div class="tags" id="missingCommonKeywords"></div>
         </div>
-        <div class="quality-sub" id="duplicateWrap" style="display:none;">
-          <div class="quality-sub-label">Repeated bullet phrasing</div>
-          <div class="tags" id="duplicateTags"></div>
+      </div>
+      <div class="report-card">
+        <div class="report-card-head"><h2>Overused Buzzwords</h2></div>
+        <div class="report-card-body">
+          <div class="tags" id="buzzwordTags"></div>
         </div>
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card full" id="jdCard" style="display:none;">
-        <h2>Job Description Match</h2>
-        <div class="field"><span class="k">Keyword match</span><span class="v" id="jdMatchPct">—</span></div>
-        <div class="quality-sub">
-          <div class="quality-sub-label">Matched keywords</div>
-          <div class="tags" id="jdMatchedTags"></div>
+    <!-- Section Completeness & Skills Checklist (Shared): 2 Columns -->
+    <div class="results-two-col-grid">
+      <div class="report-card">
+        <div class="report-card-head"><h2>Sections Found &amp; Missing</h2></div>
+        <div class="report-card-body">
+          <div class="sections-sub-title">Found Sections:</div>
+          <div class="section-pill-list" id="sectionsFoundList"></div>
+          <div class="sections-sub-title" style="margin-top:16px;">Missing Sections:</div>
+          <div class="section-pill-list" id="sectionsMissingList"></div>
         </div>
-        <div class="quality-sub" id="jdMissingWrap" style="display:none;">
-          <div class="quality-sub-label">In the job description, not found in your resume</div>
-          <div class="tags" id="jdMissingTags"></div>
+      </div>
+
+      <div class="report-card">
+        <div class="report-card-head"><h2>Skills &amp; Information Checklist</h2></div>
+        <div class="report-card-body">
+          <div class="sections-sub-title">Detected Skills:</div>
+          <div class="tags" id="skillTags" style="margin-bottom:16px;"></div>
+          <div class="sections-sub-title">Missing Information:</div>
+          <div class="tags" id="missingTags"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Quality & Job Description Match (Shared): 2 Columns -->
+    <div class="results-two-col-grid">
+      <div class="report-card">
+        <div class="report-card-head"><h2>Content Quality</h2></div>
+        <div class="report-card-body">
+          <div class="field"><span class="k">Quantified achievements</span><span class="v" id="quantifiedStat">—</span></div>
+          <div class="quality-sub" id="weakVerbWrap" style="display:none;">
+            <div class="quality-sub-label">Weak/passive phrasing found</div>
+            <div class="tags" id="weakVerbTags"></div>
+          </div>
+          <div class="quality-sub" id="duplicateWrap" style="display:none;">
+            <div class="quality-sub-label">Repeated bullet phrasing</div>
+            <div class="tags" id="duplicateTags"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-card" id="jdCard" style="display:none;">
+        <div class="report-card-head"><h2>Job Description Match</h2></div>
+        <div class="report-card-body">
+          <div class="field"><span class="k">Keyword match</span><span class="v" id="jdMatchPct">—</span></div>
+          <div class="quality-sub">
+            <div class="quality-sub-label">Matched keywords</div>
+            <div class="tags" id="jdMatchedTags"></div>
+          </div>
+          <div class="quality-sub" id="jdMissingWrap" style="display:none;">
+            <div class="quality-sub-label">In job description, missing in resume</div>
+            <div class="tags" id="jdMissingTags"></div>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="results-actions">
-      <button class="results-action-btn back-to-options-btn" id="backToOptionsBtn" type="button">← Back to Analysis Options</button>
-      <button class="results-action-btn pdf-export-btn" id="pdfExportBtn">Download PDF Report</button>
-      <button class="results-action-btn reset-btn" id="resetBtn">Upload Another Resume</button>
+      <button class="results-action-btn back-to-options-btn" id="backToOptionsBtn" type="button">← Back to Options</button>
+      <button class="results-action-btn pdf-export-btn" id="pdfExportBtn" type="button">Download PDF Report</button>
+      <button class="results-action-btn reset-btn" id="resetBtn" type="button">Upload Another Resume</button>
     </div>
   </div>
 </div>

@@ -1532,18 +1532,28 @@
     analysisOptionsEl.scrollIntoView({ behavior: "smooth" });
   }
 
+  function updateReportTabState(mode){
+    const tabAtsBtn = document.getElementById("tabAtsBtn");
+    const tabNormalBtn = document.getElementById("tabNormalBtn");
+    if (tabAtsBtn) tabAtsBtn.classList.toggle("active", mode === "ats");
+    if (tabNormalBtn) tabNormalBtn.classList.toggle("active", mode === "normal");
+  }
+
   function selectAnalysisMode(mode){
-    if (!pendingResumeText) return;
     analysisMode = mode;
-    analysisOptionsEl.style.display = "none";
-    resultsEl.dataset.mode = mode;
+    if (analysisOptionsEl) analysisOptionsEl.style.display = "none";
+    if (resultsEl) resultsEl.dataset.mode = mode;
+    updateReportTabState(mode);
+
     const execHeading = document.getElementById("execSummaryHeading");
     if (execHeading){
       execHeading.textContent = mode === "ats"
         ? "ATS Improvement Recommendations"
         : "Strengths, Weaknesses & Suggestions";
     }
-    if (mode === "ats") runATSAnalysis(); else runNormalAnalysis();
+    if (pendingResumeText) {
+      if (mode === "ats") runATSAnalysis(); else runNormalAnalysis();
+    }
     setStatus("Analysis complete ✓");
     if (typeof logUserAction === "function") {
       logUserAction("mode selection", mode === "ats" ? "User selected ATS Score Check mode" : "User selected Full Breakdown mode", { mode });
@@ -1585,6 +1595,12 @@
 
   const chooseNormalBtn = document.getElementById("chooseNormalBtn");
   if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => selectAnalysisMode("normal"));
+
+  const tabAtsBtn = document.getElementById("tabAtsBtn");
+  if (tabAtsBtn) tabAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
+
+  const tabNormalBtn = document.getElementById("tabNormalBtn");
+  if (tabNormalBtn) tabNormalBtn.addEventListener("click", () => selectAnalysisMode("normal"));
 
   const backToOptionsBtn = document.getElementById("backToOptionsBtn");
   if (backToOptionsBtn) {
@@ -3808,12 +3824,21 @@
           education: extracted.education ? (Array.isArray(extracted.education) ? extracted.education.join("\n") : extracted.education) : "Loaded from history"
         };
 
+        const modeVal = item.mode || resultData.mode || (item.analysisType && item.analysisType.includes("ATS") ? "ats" : "normal");
+        analysisMode = modeVal;
+        if (item.resumeText) {
+          pendingResumeText = item.resumeText;
+          pendingResumeFilename = item.fileName || item.filename || "resume.pdf";
+        }
+
         if (typeof closeHistory === "function") closeHistory();
         const resultsEl = document.getElementById("results");
         if (resultsEl) {
+          resultsEl.dataset.mode = modeVal;
           resultsEl.style.display = "block";
           resultsEl.scrollIntoView({ behavior: "smooth" });
         }
+        updateReportTabState(modeVal);
         if (typeof showToast === "function") {
           showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
         }

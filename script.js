@@ -1125,8 +1125,12 @@
     // Update target role badge in results header
     const roleBadgeEl = document.getElementById("targetRoleHeaderBadge");
     if (roleBadgeEl) {
-      roleBadgeEl.style.display = "inline-flex";
-      roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(targetRoleTitle)}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+      if (analysisMode === "ats" && !selectedTargetJobRole && !customJobRoleText) {
+        roleBadgeEl.style.display = "none";
+      } else {
+        roleBadgeEl.style.display = "inline-flex";
+        roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(targetRoleTitle)}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+      }
     }
 
     const lines = text.split("\n");
@@ -2096,19 +2100,37 @@
   }
 
   function selectAnalysisMode(mode){
+    if (!pendingResumeText) {
+      setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
+      const dropzone = document.getElementById("dropzone");
+      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
     analysisMode = mode;
     if (analysisOptionsEl) analysisOptionsEl.style.display = "none";
     if (resultsEl) resultsEl.dataset.mode = mode;
     updateReportTabState(mode);
 
     const execHeading = document.getElementById("execSummaryHeading");
+    const execColIssues = document.getElementById("execColTitleIssues");
+    const execColFixes = document.getElementById("execColTitleFixes");
+
     if (execHeading){
       execHeading.textContent = mode === "ats"
         ? "ATS Improvement Recommendations"
         : "Strengths, Weaknesses & Suggestions";
     }
-    if (pendingResumeText) {
-      if (mode === "ats") runATSAnalysis(); else runNormalAnalysis();
+    if (execColIssues) {
+      execColIssues.textContent = mode === "ats" ? "Top Issues to Fix" : "Weaknesses & Role Gaps";
+    }
+    if (execColFixes) {
+      execColFixes.textContent = mode === "ats" ? "Quick Fixes" : "Actionable Suggestions";
+    }
+
+    if (mode === "ats") {
+      runATSAnalysis();
+    } else {
+      runNormalAnalysis();
     }
     setStatus("Analysis complete ✓");
     if (typeof logUserAction === "function") {
@@ -2147,7 +2169,7 @@
   }
 
   const chooseAtsBtn = document.getElementById("chooseAtsBtn");
-  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => openTargetJobModal("ats"));
+  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
 
   const chooseNormalBtn = document.getElementById("chooseNormalBtn");
   if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => openTargetJobModal("normal"));

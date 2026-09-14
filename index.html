@@ -204,9 +204,16 @@
   </div>
 
   <div id="results">
-    <!-- Results Header Bar with Mode Switcher Tabs -->
+    <!-- Results Header Bar with Mode Switcher Tabs & Target Role -->
     <div class="results-header-bar">
-      <div class="file-tag" id="fileTag"></div>
+      <div class="header-left-wrap">
+        <div class="file-tag" id="fileTag"></div>
+        <div class="target-role-chip-bar" id="targetRoleChipBar">
+          <span class="target-role-label">Target Role:</span>
+          <strong id="targetRoleDisplayVal" class="target-role-val">—</strong>
+          <button type="button" class="change-role-btn" id="changeTargetRoleBtn" title="Change Target Role">Change Role</button>
+        </div>
+      </div>
       <div class="report-mode-tabs">
         <button class="report-tab-btn active" id="tabAtsBtn" data-mode="ats" type="button">📊 Check ATS Score</button>
         <button class="report-tab-btn" id="tabNormalBtn" data-mode="normal" type="button">📋 Resume Analysis</button>
@@ -217,7 +224,7 @@
     <div class="ats-hero-row ats-only">
       <div class="ats-score-card" id="atsCard">
         <div class="ats-score-card-head">
-          <h2>ATS Compatibility Score</h2>
+          <h2>Estimated ATS Compatibility</h2>
         </div>
         <div class="ats-ring-container">
           <svg class="ats-gauge-svg" viewBox="0 0 160 160">
@@ -232,7 +239,7 @@
 
         <div class="ats-verdict-box">
           <div class="ats-verdict-title" id="atsVerdict">Analyzing…</div>
-          <div class="ats-verdict-sub">Based on section completeness, keyword relevance, formatting, and content quality.</div>
+          <div class="ats-verdict-sub" id="atsVerdictSub">This score is an AI-based estimate of how well your resume matches the selected role/job description. Actual ATS systems vary.</div>
         </div>
       </div>
 
@@ -337,8 +344,9 @@
     <!-- Keywords Polish Row (ATS Mode): 2 Columns -->
     <div class="results-two-col-grid ats-only">
       <div class="report-card">
-        <div class="report-card-head"><h2>Missing Common Keywords</h2></div>
+        <div class="report-card-head"><h2>Missing or Weak Keywords</h2></div>
         <div class="report-card-body">
+          <p class="kw-disclaimer">Add these only if they genuinely match your skills or experience.</p>
           <div class="tags" id="missingCommonKeywords"></div>
         </div>
       </div>
@@ -671,6 +679,113 @@
         </div>
         <button type="button" class="auth-submit-btn" id="resendPendingVerifyBtn" style="width:100%;">Resend Verification Email</button>
         <button type="button" class="back-link" id="backToLoginFromVerifyBtn" style="margin-top:12px; align-self:center;">&larr; Back to Log In</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TARGET JOB SELECTION MODAL -->
+<div class="modal-overlay target-job-modal-overlay" id="targetJobModal" style="display:none;">
+  <div class="target-job-modal-box">
+    <button class="modal-close" id="targetJobModalCloseBtn" type="button" aria-label="Close modal">&times;</button>
+    
+    <!-- Progress Bar Steps -->
+    <div class="job-modal-steps-bar">
+      <div class="job-modal-step-dot active" id="jobStepDot1"><span>1</span> Role</div>
+      <div class="job-modal-step-line"></div>
+      <div class="job-modal-step-dot" id="jobStepDot2"><span>2</span> Job Description</div>
+      <div class="job-modal-step-line"></div>
+      <div class="job-modal-step-dot" id="jobStepDot3"><span>3</span> Confirm</div>
+    </div>
+
+    <!-- STEP 1: Select Target Job Role -->
+    <div class="job-modal-panel active" id="jobModalStep1">
+      <h2 class="job-modal-title">What job are you preparing for?</h2>
+      <p class="job-modal-subtitle">Select the job role that best matches the position you're applying for.</p>
+      
+      <div class="job-search-box">
+        <span class="job-search-icon">🔍</span>
+        <input type="text" id="jobSearchInput" placeholder="Search for a job role (e.g. Frontend Developer, Data Scientist)..." autocomplete="off" />
+        <button type="button" class="job-search-clear" id="jobSearchClearBtn" style="display:none;">&times;</button>
+      </div>
+
+      <div class="job-select-error" id="jobSelectError" style="display:none;">
+        ⚠️ Please select a target job role before continuing.
+      </div>
+
+      <div class="job-categories-scroll" id="jobCategoriesContainer">
+        <!-- Rendered dynamically by script.js -->
+      </div>
+
+      <div class="custom-role-container">
+        <button type="button" class="custom-role-toggle-btn" id="customRoleToggleBtn">
+          <span class="custom-icon">✏️</span> Other / Custom Job Role
+        </button>
+        <div class="custom-role-input-wrap" id="customRoleInputWrap" style="display:none;">
+          <input type="text" id="customJobInput" placeholder="Enter your custom target job title (e.g., Robotics Engineer)..." />
+        </div>
+      </div>
+
+      <div class="job-modal-actions">
+        <button type="button" class="job-modal-btn secondary" id="jobStep1CancelBtn">Cancel</button>
+        <button type="button" class="job-modal-btn primary" id="jobStep1NextBtn">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Optional Job Description -->
+    <div class="job-modal-panel" id="jobModalStep2" style="display:none;">
+      <h2 class="job-modal-title">Do you have a Job Description?</h2>
+      <p class="job-modal-subtitle">Pasting the target job description allows AI to score your resume against exact position requirements.</p>
+
+      <div class="jd-decision-buttons">
+        <button type="button" class="jd-choice-btn" id="jdChoiceYesBtn">
+          <span class="choice-icon">📋</span>
+          <div class="choice-text">
+            <strong>Yes, I have a Job Description</strong>
+            <span>Match keywords & requirements against full posting</span>
+          </div>
+        </button>
+
+        <button type="button" class="jd-choice-btn secondary" id="jdChoiceNoBtn">
+          <span class="choice-icon">🎯</span>
+          <div class="choice-text">
+            <strong>No, continue with Job Role</strong>
+            <span>Use standard industry skill profile for selected role</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="modal-jd-textarea-wrap" id="modalJdTextareaWrap" style="display:none;">
+        <label for="modalJdInputText" class="modal-jd-label">Paste the Job Description here</label>
+        <textarea id="modalJdInputText" class="modal-jd-textarea" placeholder="Paste the complete job posting here (responsibilities, skills, qualifications)..."></textarea>
+      </div>
+
+      <div class="job-modal-actions">
+        <button type="button" class="job-modal-btn secondary" id="jobStep2BackBtn">&larr; Back</button>
+        <button type="button" class="job-modal-btn primary" id="jobStep2NextBtn">Continue &rarr;</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Confirm -->
+    <div class="job-modal-panel" id="jobModalStep3" style="display:none;">
+      <h2 class="job-modal-title">Confirm Target</h2>
+      <p class="job-modal-subtitle">Review your target role and job description before starting analysis.</p>
+
+      <div class="confirm-summary-card">
+        <div class="confirm-row">
+          <span class="confirm-label">Target Job Role:</span>
+          <span class="confirm-val" id="confirmTargetJobVal">Software Developer</span>
+        </div>
+        <div class="confirm-row">
+          <span class="confirm-label">Job Description:</span>
+          <span class="confirm-val" id="confirmJdStatusVal">Not provided</span>
+        </div>
+      </div>
+
+      <div class="job-modal-actions">
+        <button type="button" class="job-modal-btn secondary" id="jobStep3BackBtn">&larr; Back</button>
+        <button type="button" class="job-modal-btn primary start-analysis-highlight" id="startAnalysisBtn">🚀 Start Analysis</button>
       </div>
     </div>
 

@@ -21,6 +21,18 @@ const historyItemSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  targetJobRole: {
+    type: String,
+    default: ""
+  },
+  customJobRole: {
+    type: String,
+    default: ""
+  },
+  hasJobDescription: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     default: "analyzed"

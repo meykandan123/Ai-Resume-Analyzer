@@ -2975,5 +2975,484 @@
   }
   .toast-action-btn:hover { background: var(--accent-hover); }
 
+/* ============ TARGET JOB SELECTION MODAL ============ */
+.target-job-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(40, 5, 12, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.target-job-modal-box {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(82, 0, 17, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 34px;
+  position: relative;
+  overflow: hidden;
+}
+
+.job-modal-steps-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.job-modal-step-dot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.job-modal-step-dot span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sand);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.job-modal-step-dot.active {
+  color: var(--ink);
+}
+
+.job-modal-step-dot.active span {
+  background: var(--accent-dark);
+  color: #ffffff;
+}
+
+.job-modal-step-dot.completed {
+  color: #2e7d32;
+}
+
+.job-modal-step-dot.completed span {
+  background: #2e7d32;
+  color: #ffffff;
+}
+
+.job-modal-step-line {
+  height: 2px;
+  width: 32px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.job-modal-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+  text-align: center;
+}
+
+.job-modal-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 20px 0;
+  text-align: center;
+  line-height: 1.45;
+}
+
+/* Job Search Input */
+.job-search-box {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.job-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+#jobSearchInput {
+  width: 100%;
+  padding: 12px 38px 12px 40px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-dark);
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+#jobSearchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow-color);
+  background: #ffffff;
+}
+
+.job-search-clear {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.job-select-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  text-align: center;
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* Scrollable Category Container */
+.job-categories-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-bottom: 16px;
+}
+
+.job-category-group {
+  margin-bottom: 18px;
+}
+
+.job-category-title {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent-dark);
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.job-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.job-role-chip {
+  background: var(--card-tint);
+  border: 1px solid var(--line);
+  color: var(--ink-dark);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.job-role-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(129, 0, 26, 0.08);
+}
+
+.job-role-chip.selected {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(129, 0, 26, 0.25);
+}
+
+/* Custom Role Container */
+.custom-role-container {
+  margin-top: 10px;
+  margin-bottom: 18px;
+}
+
+.custom-role-toggle-btn {
+  background: none;
+  border: 1.5px dashed var(--accent);
+  color: var(--accent-dark);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.custom-role-toggle-btn:hover,
+.custom-role-toggle-btn.active {
+  background: var(--card-tint);
+  border-style: solid;
+}
+
+.custom-role-input-wrap {
+  margin-top: 10px;
+}
+
+#customJobInput {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+#customJobInput:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow-color);
+}
+
+/* Step 2: Job Description Decision */
+.jd-decision-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.jd-choice-btn {
+  background: var(--card-tint);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.jd-choice-btn:hover,
+.jd-choice-btn.selected {
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(129, 0, 26, 0.1);
+}
+
+.jd-choice-btn .choice-icon {
+  font-size: 24px;
+}
+
+.jd-choice-btn .choice-text strong {
+  display: block;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.jd-choice-btn .choice-text span {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.modal-jd-textarea-wrap {
+  margin-top: 14px;
+  margin-bottom: 18px;
+}
+
+.modal-jd-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.modal-jd-textarea {
+  width: 100%;
+  height: 120px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-dark);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.modal-jd-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px var(--glow-color);
+}
+
+/* Step 3: Confirm Summary */
+.confirm-summary-card {
+  background: var(--card-tint);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(232, 216, 197, 0.6);
+}
+
+.confirm-row:last-child {
+  border-bottom: none;
+}
+
+.confirm-label {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.confirm-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+/* Modal Actions Footer */
+.job-modal-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.job-modal-btn {
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.job-modal-btn.primary {
+  background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(129, 0, 26, 0.25);
+}
+
+.job-modal-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(129, 0, 26, 0.35);
+}
+
+.job-modal-btn.secondary {
+  background: var(--sand);
+  color: var(--ink-dark);
+}
+
+.job-modal-btn.secondary:hover {
+  background: #e5d5c0;
+}
+
+.start-analysis-highlight {
+  font-size: 15px !important;
+  padding: 12px 28px !important;
+}
+
+/* Target Role Header Badge in Results */
+.header-left-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.target-role-chip-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-tint);
+  border: 1px solid var(--line);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  width: fit-content;
+}
+
+.target-role-label {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.target-role-val {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.change-role-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 2px;
+}
+
+.change-role-btn:hover {
+  color: var(--accent-dark);
+}
+
+.kw-disclaimer {
+  font-size: 12px;
+  color: #64748b;
+  font-style: italic;
+  margin: 0 0 10px 0;
+}
+
+
 
 

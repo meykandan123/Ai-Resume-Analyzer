@@ -1963,8 +1963,17 @@ const handleResumeAnalyze = async (req, res) => {
       detectedSkills,
       missingKeywords,
       suggestions,
-      extractedData
+      extractedData,
+      targetJobRole,
+      customJobRole,
+      hasJobDescription,
+      jobDescription
     } = req.body;
+
+    const finalTargetRole = (targetJobRole || customJobRole || "").trim();
+    const finalCustomRole = (customJobRole || "").trim();
+    const finalHasJd = Boolean(hasJobDescription || (jobDescription && jobDescription.trim().length > 0));
+    const finalJd = (jobDescription || "").trim();
 
     const finalName = fileName || filename || "resume.pdf";
     const finalScore = Number(atsScore !== undefined ? atsScore : (score !== undefined ? score : 0));
@@ -1990,6 +1999,9 @@ const handleResumeAnalyze = async (req, res) => {
       verdict: verdict || "Analyzed",
       atsScore: finalScore,
       score: finalScore,
+      targetJobRole: finalTargetRole,
+      customJobRole: finalCustomRole,
+      hasJobDescription: finalHasJd,
       detectedSkills: Array.isArray(detectedSkills) ? detectedSkills : [],
       missingKeywords: Array.isArray(missingKeywords) ? missingKeywords : [],
       suggestions: Array.isArray(suggestions) ? suggestions : []
@@ -2026,6 +2038,10 @@ const handleResumeAnalyze = async (req, res) => {
           email: userEmail,
           fileName: finalName,
           atsScore: finalScore,
+          targetJobRole: finalTargetRole,
+          customJobRole: finalCustomRole,
+          hasJobDescription: finalHasJd,
+          jobDescription: finalJd,
           extractedData: computedExtractedData,
           analysisResult: computedAnalysisResult,
           lastUpdatedAt: now
@@ -2062,6 +2078,9 @@ const handleResumeAnalyze = async (req, res) => {
             "history.$.uploadedAt": now,
             "history.$.atsScore": finalScore,
             "history.$.analysisType": computedAnalysisType,
+            "history.$.targetJobRole": finalTargetRole,
+            "history.$.customJobRole": finalCustomRole,
+            "history.$.hasJobDescription": finalHasJd,
             "history.$.status": "analyzed",
             updatedAt: now
           }
@@ -2080,6 +2099,9 @@ const handleResumeAnalyze = async (req, res) => {
               uploadedAt: now,
               analysisType: computedAnalysisType,
               atsScore: finalScore,
+              targetJobRole: finalTargetRole,
+              customJobRole: finalCustomRole,
+              hasJobDescription: finalHasJd,
               status: "analyzed"
             }
           }
@@ -2177,6 +2199,9 @@ app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (
       analysisType: item.analysisType || "normal",
       atsScore: item.atsScore || 0,
       score: item.atsScore || 0,
+      targetJobRole: item.targetJobRole || "",
+      customJobRole: item.customJobRole || "",
+      hasJobDescription: item.hasJobDescription || false,
       status: item.status || "analyzed",
       verdict: "Analyzed",
       uploadedAt: item.uploadedAt,

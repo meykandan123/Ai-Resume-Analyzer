@@ -14,6 +14,457 @@
   let analysisMode = null; // "ats" | "normal" | null
   let historySavedForCurrentUpload = false;
 
+  // ---- Target Job Selection Modal State ----
+  let selectedTargetJobRole = "";
+  let customJobRoleText = "";
+  let hasUserJobDescription = false;
+  let userJobDescriptionText = "";
+  let currentAnalysisType = "ats"; // "ats" | "normal"
+
+  const JOB_ROLE_CATEGORIES = [
+    {
+      name: "Technology / IT",
+      roles: [
+        "Software Developer", "Software Engineer", "Frontend Developer", "Backend Developer", "Full Stack Developer",
+        "Web Developer", "Mobile App Developer", "Android Developer", "iOS Developer", "React Developer",
+        "Java Developer", "Python Developer", "JavaScript Developer", ".NET Developer", "Data Analyst",
+        "Data Scientist", "Data Engineer", "Machine Learning Engineer", "AI Engineer", "AI/ML Engineer",
+        "DevOps Engineer", "Cloud Engineer", "Cybersecurity Analyst", "Cybersecurity Engineer", "Network Engineer",
+        "Database Administrator", "System Administrator", "QA Engineer", "Automation Test Engineer",
+        "UI/UX Designer", "Product Designer", "Technical Support Engineer", "IT Support Specialist"
+      ]
+    },
+    {
+      name: "Business / Management",
+      roles: [
+        "Business Analyst", "Project Manager", "Product Manager", "Operations Manager", "Operations Executive",
+        "Business Development Executive", "Business Development Manager", "Sales Executive", "Sales Manager",
+        "Marketing Executive", "Digital Marketing Specialist", "Marketing Manager", "HR Executive", "HR Manager",
+        "Recruiter", "Customer Success Executive", "Customer Support Executive"
+      ]
+    },
+    {
+      name: "Finance / Accounting",
+      roles: [
+        "Accountant", "Financial Analyst", "Finance Executive", "Banking Associate", "Investment Analyst",
+        "Tax Analyst", "Audit Associate"
+      ]
+    },
+    {
+      name: "Engineering",
+      roles: [
+        "Mechanical Engineer", "Civil Engineer", "Electrical Engineer", "Electronics Engineer",
+        "Automotive Engineer", "Manufacturing Engineer"
+      ]
+    },
+    {
+      name: "Other",
+      roles: [
+        "Content Writer", "Technical Writer", "Graphic Designer", "Teacher", "Lecturer",
+        "Research Assistant", "Consultant", "Healthcare Professional", "Legal Associate",
+        "Architect", "Intern", "Fresher / Graduate", "Other"
+      ]
+    }
+  ];
+
+  const JOB_ROLE_PROFILES = {
+    "frontend developer": {
+      title: "Frontend Developer",
+      skills: ["html", "css", "javascript", "react", "typescript", "responsive design", "ui/ux", "git", "rest api", "next.js", "tailwind", "webpack", "bootstrap"],
+      keyAreas: ["UI Development", "Component Architecture", "State Management", "Cross-Browser Compatibility", "Performance Optimization"]
+    },
+    "react developer": {
+      title: "React Developer",
+      skills: ["react", "javascript", "typescript", "redux", "next.js", "html", "css", "git", "rest api", "jest", "webpack", "responsive design"],
+      keyAreas: ["React Components", "Hooks & State", "API Integration", "Virtual DOM", "Frontend Performance"]
+    },
+    "backend developer": {
+      title: "Backend Developer",
+      skills: ["python", "java", "node.js", "express", "sql", "postgresql", "mongodb", "redis", "rest api", "microservices", "docker", "git", "c#", "spring boot", "django"],
+      keyAreas: ["API Design", "Database Modeling", "Server Logic", "Authentication & Security", "Scalability"]
+    },
+    "software engineer": {
+      title: "Software Engineer",
+      skills: ["python", "java", "c++", "data structures", "algorithms", "git", "sql", "system design", "unit testing", "ci/cd", "problem solving", "object oriented programming", "rest api"],
+      keyAreas: ["Software Architecture", "Algorithm Design", "Code Quality", "Testing & Debugging", "Version Control"]
+    },
+    "software developer": {
+      title: "Software Developer",
+      skills: ["python", "java", "javascript", "sql", "git", "data structures", "algorithms", "rest api", "unit testing", "agile", "problem solving", "web services"],
+      keyAreas: ["Application Development", "Code Optimization", "Database Queries", "Feature Implementation"]
+    },
+    "full stack developer": {
+      title: "Full Stack Developer",
+      skills: ["html", "css", "javascript", "react", "node.js", "express", "sql", "mongodb", "rest api", "git", "typescript", "docker", "aws"],
+      keyAreas: ["End-to-End Development", "Frontend UI", "Backend APIs", "Database Integration"]
+    },
+    "web developer": {
+      title: "Web Developer",
+      skills: ["html", "css", "javascript", "php", "wordpress", "bootstrap", "responsive design", "git", "seo", "mysql", "jquery"],
+      keyAreas: ["Website Layout", "Content Management", "Responsive UI", "Web Performance"]
+    },
+    "data scientist": {
+      title: "Data Scientist",
+      skills: ["python", "sql", "statistics", "machine learning", "pandas", "numpy", "scikit-learn", "data visualization", "model evaluation", "jupyter", "r", "tableau", "deep learning", "nlp"],
+      keyAreas: ["Statistical Modeling", "Predictive Analytics", "Data Mining", "Feature Engineering", "Machine Learning Pipelines"]
+    },
+    "data analyst": {
+      title: "Data Analyst",
+      skills: ["sql", "excel", "python", "tableau", "power bi", "data visualization", "statistics", "data analysis", "analytical skills", "reporting", "r"],
+      keyAreas: ["Data Wrangling", "Dashboard Creation", "Business Intelligence", "Trend Analysis"]
+    },
+    "data engineer": {
+      title: "Data Engineer",
+      skills: ["python", "sql", "spark", "hadoop", "etl", "data warehousing", "postgresql", "aws", "gcp", "kafka", "docker", "pipeline building"],
+      keyAreas: ["ETL Pipelines", "Data Warehousing", "Big Data Processing", "Database Administration"]
+    },
+    "machine learning engineer": {
+      title: "Machine Learning Engineer",
+      skills: ["python", "tensorflow", "pytorch", "machine learning", "deep learning", "scikit-learn", "nlp", "opencv", "docker", "sql", "model deployment", "mlopps"],
+      keyAreas: ["Neural Networks", "Model Optimization", "ML Deployment", "Algorithm Tuning"]
+    },
+    "ai engineer": {
+      title: "AI Engineer",
+      skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "computer vision", "llm", "prompt engineering", "sql"],
+      keyAreas: ["AI Solution Architecture", "LLMs & Generative AI", "Neural Models", "Algorithmic Reasoning"]
+    },
+    "ai/ml engineer": {
+      title: "AI/ML Engineer",
+      skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "scikit-learn", "computer vision", "sql", "model deployment"],
+      keyAreas: ["AI Algorithms", "Model Training & Evaluation", "Feature Engineering"]
+    },
+    "devops engineer": {
+      title: "DevOps Engineer",
+      skills: ["docker", "kubernetes", "ci/cd", "aws", "azure", "jenkins", "linux", "git", "bash", "terraform", "python", "monitoring", "ansible"],
+      keyAreas: ["Infrastructure as Code", "Continuous Integration", "Container Orchestration", "Cloud Security & Monitoring"]
+    },
+    "cloud engineer": {
+      title: "Cloud Engineer",
+      skills: ["aws", "azure", "gcp", "docker", "kubernetes", "linux", "terraform", "cloud security", "networking", "python", "bash", "ci/cd"],
+      keyAreas: ["Cloud Migration", "Infrastructure Provisioning", "High Availability", "Cost Optimization"]
+    },
+    "cybersecurity analyst": {
+      title: "Cybersecurity Analyst",
+      skills: ["network security", "siem", "incident response", "threat detection", "linux", "firewalls", "vulnerability assessment", "security tools", "wireshark", "penetration testing"],
+      keyAreas: ["Threat Monitoring", "Vulnerability Management", "Security Auditing", "Incident Containment"]
+    },
+    "cybersecurity engineer": {
+      title: "Cybersecurity Engineer",
+      skills: ["network security", "firewalls", "linux", "threat detection", "siem", "encryption", "vulnerability assessment", "python", "bash", "cloud security"],
+      keyAreas: ["Security Architecture", "Firewall Configuration", "Intrusion Prevention"]
+    },
+    "ui/ux designer": {
+      title: "UI/UX Designer",
+      skills: ["figma", "user research", "wireframing", "prototyping", "design systems", "adobe xd", "user testing", "information architecture", "interaction design", "responsive design"],
+      keyAreas: ["User-Centered Design", "Usability Testing", "Visual Hierarchy", "Design Systems"]
+    },
+    "product manager": {
+      title: "Product Manager",
+      skills: ["product strategy", "user research", "roadmapping", "agile", "scrum", "a/b testing", "cross-functional leadership", "jira", "metrics", "data analysis", "user stories"],
+      keyAreas: ["Product Roadmap", "Feature Prioritization", "Stakeholder Alignment", "Product Analytics"]
+    },
+    "project manager": {
+      title: "Project Manager",
+      skills: ["project management", "agile", "scrum", "jira", "risk management", "budgeting", "stakeholder management", "communication", "time management", "resource planning"],
+      keyAreas: ["Project Lifecycle", "Scope & Budget Management", "Agile Execution", "Risk Mitigation"]
+    },
+    "business analyst": {
+      title: "Business Analyst",
+      skills: ["business analysis", "sql", "excel", "requirements gathering", "process mapping", "agile", "user stories", "data analysis", "tableau", "jira", "communication"],
+      keyAreas: ["Requirement Specification", "Gap Analysis", "Process Optimization", "Stakeholder Communication"]
+    },
+    "digital marketing specialist": {
+      title: "Digital Marketing Specialist",
+      skills: ["seo", "sem", "google analytics", "content marketing", "social media", "campaign management", "keyword research", "conversion rate optimization", "email marketing"],
+      keyAreas: ["SEO Strategy", "Paid Search (PPC)", "Analytics & Attribution", "Content & Campaign Optimization"]
+    },
+    "accountant": {
+      title: "Accountant",
+      skills: ["excel", "accounting", "financial reporting", "taxation", "auditing", "quickbooks", "tally", "reconciliation", "general ledger", "compliance"],
+      keyAreas: ["Financial Accounting", "Tax Compliance", "Ledger Management", "Financial Statements"]
+    },
+    "mechanical engineer": {
+      title: "Mechanical Engineer",
+      skills: ["cad", "solidworks", "autocad", "thermodynamics", "manufacturing", "engineering drawing", "fea", "mechanical design", "materials science"],
+      keyAreas: ["3D CAD Modeling", "Thermal Analysis", "Manufacturing Processes", "Prototyping"]
+    },
+    "technical writer": {
+      title: "Technical Writer",
+      skills: ["technical writing", "documentation", "api documentation", "markdown", "editing", "proofreading", "user guides", "confluence", "git", "communication"],
+      keyAreas: ["User Documentation", "API References", "Standard Operating Procedures", "Content Editing"]
+    }
+  };
+
+  function getRoleProfile(targetRole, customRole) {
+    const roleKey = (customRole || targetRole || "").toLowerCase().trim();
+    if (JOB_ROLE_PROFILES[roleKey]) {
+      return JOB_ROLE_PROFILES[roleKey];
+    }
+    for (const [key, profile] of Object.entries(JOB_ROLE_PROFILES)) {
+      if (roleKey.includes(key) || key.includes(roleKey)) {
+        return profile;
+      }
+    }
+    const tokens = roleKey.split(/\s+/).filter(Boolean);
+    const dynamicSkills = ["communication", "problem solving", "teamwork", "project management", "time management", "git", "excel"];
+    
+    if (tokens.some(t => ["developer", "engineer", "programmer", "coder", "tech", "software"].includes(t))) {
+      dynamicSkills.push("python", "javascript", "java", "sql", "git", "rest api", "data structures", "algorithms", "testing", "ci/cd");
+    }
+    if (tokens.some(t => ["data", "analyst", "scientist", "ai", "ml"].includes(t))) {
+      dynamicSkills.push("python", "sql", "excel", "statistics", "data analysis", "machine learning", "pandas", "tableau");
+    }
+    if (tokens.some(t => ["design", "designer", "ux", "ui"].includes(t))) {
+      dynamicSkills.push("figma", "ui/ux", "user research", "wireframing", "prototyping", "responsive design");
+    }
+    if (tokens.some(t => ["marketing", "digital", "seo", "sales"].includes(t))) {
+      dynamicSkills.push("seo", "sem", "google analytics", "content marketing", "social media", "email marketing", "communication");
+    }
+    if (tokens.some(t => ["manager", "lead", "head", "director", "scrum"].includes(t))) {
+      dynamicSkills.push("project management", "leadership", "agile", "scrum", "jira", "communication", "roadmapping", "risk management");
+    }
+    if (tokens.some(t => ["finance", "accountant", "tax", "audit"].includes(t))) {
+      dynamicSkills.push("accounting", "excel", "financial reporting", "taxation", "auditing", "reconciliation");
+    }
+
+    return {
+      title: targetRole || customRole || "Target Job Role",
+      skills: [...new Set(dynamicSkills)],
+      keyAreas: ["Target Role Requirements", "Industry Competencies", "Core Responsibilities"]
+    };
+  }
+
+  // ---- Target Job Selection Modal Controller ----
+  function openTargetJobModal(mode) {
+    currentAnalysisType = mode || "ats";
+    const modal = document.getElementById("targetJobModal");
+    if (!modal) return;
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+    goToJobModalStep(1);
+    renderJobCategoryChips();
+  }
+
+  function closeTargetJobModal() {
+    const modal = document.getElementById("targetJobModal");
+    if (modal) modal.style.display = "none";
+    document.body.style.overflow = "";
+  }
+
+  function goToJobModalStep(stepNum) {
+    const s1 = document.getElementById("targetJobStep1");
+    const s2 = document.getElementById("targetJobStep2");
+    const s3 = document.getElementById("targetJobStep3");
+    
+    const p1 = document.getElementById("jobStepIndicator1");
+    const p2 = document.getElementById("jobStepIndicator2");
+    const p3 = document.getElementById("jobStepIndicator3");
+
+    if (s1) s1.style.display = stepNum === 1 ? "block" : "none";
+    if (s2) s2.style.display = stepNum === 2 ? "block" : "none";
+    if (s3) s3.style.display = stepNum === 3 ? "block" : "none";
+
+    [p1, p2, p3].forEach((indicator, idx) => {
+      if (!indicator) return;
+      if (idx + 1 === stepNum) {
+        indicator.classList.add("active");
+        indicator.classList.remove("completed");
+      } else if (idx + 1 < stepNum) {
+        indicator.classList.remove("active");
+        indicator.classList.add("completed");
+      } else {
+        indicator.classList.remove("active", "completed");
+      }
+    });
+
+    if (stepNum === 3) {
+      updateJobModalConfirmationSummary();
+    }
+  }
+
+  function updateJobModalConfirmationSummary() {
+    const roleTitleEl = document.getElementById("confirmTargetRoleTitle");
+    const modeNameEl = document.getElementById("confirmAnalysisModeName");
+    const jdStatusEl = document.getElementById("confirmJdStatus");
+
+    const finalRole = customJobRoleText.trim() || selectedTargetJobRole || "Not specified";
+    if (roleTitleEl) roleTitleEl.textContent = finalRole;
+    if (modeNameEl) modeNameEl.textContent = currentAnalysisType === "ats" ? "ATS Score & Compatibility" : "Full Resume Analysis & Feedback";
+    if (jdStatusEl) {
+      if (hasUserJobDescription && userJobDescriptionText.trim()) {
+        const snippet = userJobDescriptionText.trim().slice(0, 100) + (userJobDescriptionText.length > 100 ? "..." : "");
+        jdStatusEl.textContent = `Provided (${userJobDescriptionText.trim().length} chars): "${snippet}"`;
+        jdStatusEl.style.color = "var(--accent)";
+      } else {
+        jdStatusEl.textContent = "None provided (Using standard job profile evaluation)";
+        jdStatusEl.style.color = "var(--text-muted)";
+      }
+    }
+  }
+
+  function renderJobCategoryChips(filterQuery = "") {
+    const container = document.getElementById("jobCategoryContainer");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const query = (filterQuery || "").toLowerCase().trim();
+
+    JOB_ROLE_CATEGORIES.forEach((cat, index) => {
+      const filteredRoles = cat.roles.filter(r => r.toLowerCase().includes(query));
+      if (query && filteredRoles.length === 0) return;
+
+      const groupDiv = document.createElement("div");
+      groupDiv.className = "job-category-group";
+
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "job-category-header";
+      headerDiv.innerHTML = `<span>${cat.name}</span><span class="job-category-toggle">${query ? '▼' : (index === 0 ? '▲' : '▼')}</span>`;
+
+      const rolesDiv = document.createElement("div");
+      rolesDiv.className = "job-category-roles";
+      if (!query && index !== 0) {
+        rolesDiv.style.display = "none";
+      }
+
+      headerDiv.addEventListener("click", () => {
+        const isHidden = rolesDiv.style.display === "none";
+        rolesDiv.style.display = isHidden ? "flex" : "none";
+        headerDiv.querySelector(".job-category-toggle").textContent = isHidden ? "▲" : "▼";
+      });
+
+      const rolesToRender = query ? filteredRoles : cat.roles;
+      rolesToRender.forEach(role => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "job-role-chip" + (selectedTargetJobRole === role ? " active" : "");
+        chip.textContent = role;
+
+        chip.addEventListener("click", () => {
+          selectedTargetJobRole = role;
+          customJobRoleText = "";
+          const customInput = document.getElementById("customJobRoleInput");
+          if (customInput) customInput.value = "";
+          
+          const radStandard = document.getElementById("jobChoiceStandard");
+          if (radStandard) radStandard.checked = true;
+
+          document.querySelectorAll(".job-role-chip").forEach(c => {
+            c.classList.toggle("active", c.textContent === role);
+          });
+
+          const errBanner = document.getElementById("targetJobStep1Error");
+          if (errBanner) errBanner.style.display = "none";
+        });
+
+        rolesDiv.appendChild(chip);
+      });
+
+      groupDiv.appendChild(headerDiv);
+      groupDiv.appendChild(rolesDiv);
+      container.appendChild(groupDiv);
+    });
+  }
+
+  function setupTargetJobModalListeners() {
+    const modalCloseBtn = document.getElementById("targetJobModalCloseBtn");
+    if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeTargetJobModal);
+
+    const searchInput = document.getElementById("jobSearchInput");
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        renderJobCategoryChips(e.target.value);
+      });
+    }
+
+    const customInput = document.getElementById("customJobRoleInput");
+    if (customInput) {
+      customInput.addEventListener("input", (e) => {
+        customJobRoleText = e.target.value;
+        if (customJobRoleText.trim()) {
+          selectedTargetJobRole = "";
+          const radCustom = document.getElementById("jobChoiceCustom");
+          if (radCustom) radCustom.checked = true;
+          document.querySelectorAll(".job-role-chip").forEach(c => c.classList.remove("active"));
+          const errBanner = document.getElementById("targetJobStep1Error");
+          if (errBanner) errBanner.style.display = "none";
+        }
+      });
+    }
+
+    const radStandard = document.getElementById("jobChoiceStandard");
+    if (radStandard) {
+      radStandard.addEventListener("change", () => {
+        if (radStandard.checked && !selectedTargetJobRole && JOB_ROLE_CATEGORIES[0]?.roles[0]) {
+          selectedTargetJobRole = JOB_ROLE_CATEGORIES[0].roles[0];
+          customJobRoleText = "";
+          if (customInput) customInput.value = "";
+          renderJobCategoryChips();
+        }
+      });
+    }
+
+    const radCustom = document.getElementById("jobChoiceCustom");
+    if (radCustom) {
+      radCustom.addEventListener("change", () => {
+        if (radCustom.checked) {
+          selectedTargetJobRole = "";
+          if (customInput) customInput.focus();
+        }
+      });
+    }
+
+    // Step 1 Next button
+    const step1NextBtn = document.getElementById("jobModalNextBtn");
+    if (step1NextBtn) {
+      step1NextBtn.addEventListener("click", () => {
+        const finalRole = customJobRoleText.trim() || selectedTargetJobRole;
+        if (!finalRole) {
+          const errBanner = document.getElementById("targetJobStep1Error");
+          if (errBanner) {
+            errBanner.textContent = "Please select a job role or type a custom role to continue.";
+            errBanner.style.display = "block";
+          }
+          return;
+        }
+        const errBanner = document.getElementById("targetJobStep1Error");
+        if (errBanner) errBanner.style.display = "none";
+        goToJobModalStep(2);
+      });
+    }
+
+    // Step 2 Back & Next buttons
+    const step2BackBtn = document.getElementById("jobModalBackBtn");
+    if (step2BackBtn) step2BackBtn.addEventListener("click", () => goToJobModalStep(1));
+
+    const step2NextBtn = document.getElementById("jobModalStep2NextBtn");
+    if (step2NextBtn) {
+      step2NextBtn.addEventListener("click", () => {
+        const modalJdInput = document.getElementById("modalJdInput");
+        const mainJdInput = document.getElementById("jdInput");
+
+        if (modalJdInput) {
+          userJobDescriptionText = modalJdInput.value.trim();
+          hasUserJobDescription = userJobDescriptionText.length > 20;
+          if (mainJdInput) mainJdInput.value = userJobDescriptionText;
+        }
+
+        goToJobModalStep(3);
+      });
+    }
+
+    // Step 3 Back & Confirm buttons
+    const confirmBackBtn = document.getElementById("jobModalConfirmBackBtn");
+    if (confirmBackBtn) confirmBackBtn.addEventListener("click", () => goToJobModalStep(2));
+
+    const confirmBtn = document.getElementById("jobModalConfirmBtn");
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", () => {
+        closeTargetJobModal();
+        selectAnalysisMode(currentAnalysisType);
+      });
+    }
+  }
+
   // ---------------------------------------------------------------
   // Comprehensive Industry Skill Dictionary & Precision Extractor
   // ---------------------------------------------------------------
@@ -619,6 +1070,16 @@
   }
 
   function analyzeText(text, filename){
+    const targetRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "Target Job Role";
+    const roleProfile = getRoleProfile(selectedTargetJobRole, customJobRoleText);
+
+    // Update target role badge in results header
+    const roleBadgeEl = document.getElementById("targetRoleHeaderBadge");
+    if (roleBadgeEl) {
+      roleBadgeEl.style.display = "inline-flex";
+      roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(targetRoleTitle)}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+    }
+
     const lines = text.split("\n");
     const name = extractName(text);
     const emailMatch = text.match(EMAIL_RE);
@@ -632,6 +1093,13 @@
     const certifications = extractSection(lines, "certifications");
     const years = estimateExperienceYears(text);
     const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+
+    // Calculate target role skill match ratio
+    const extractedSkillNames = skills.map(s => s.name.toLowerCase());
+    const profileSkills = roleProfile.skills.map(s => s.toLowerCase());
+    const matchedRoleSkills = profileSkills.filter(ps => extractedSkillNames.includes(ps));
+    const missingRoleSkills = profileSkills.filter(ps => !extractedSkillNames.includes(ps));
+    const roleSkillMatchRatio = profileSkills.length > 0 ? (matchedRoleSkills.length / profileSkills.length) : 1.0;
 
     document.getElementById("fileTag").textContent = "Source file: " + filename;
     const fNameEl = document.getElementById("fName"); if (fNameEl) fNameEl.textContent = name;
@@ -1008,6 +1476,15 @@
     // ---- Executive Summary / ATS Improvement Recommendations ----
     const recs = [];
 
+    if (missingRoleSkills && missingRoleSkills.length > 0){
+      recs.push({
+        badge: "Target Role Gap",
+        type: "critical",
+        issue: `Missing Key Skills for ${targetRoleTitle}: ${missingRoleSkills.slice(0, 4).join(", ")}`,
+        fix: `Incorporate experience or training for (${missingRoleSkills.slice(0, 4).join(", ")}) into your resume. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
+      });
+    }
+
     // 1. Critical Contact / Core Sections
     criticalMissingFields.forEach(field => {
       if (missing.includes(field)){
@@ -1113,23 +1590,22 @@
     execFixesEl.innerHTML = "";
 
     if (recs.length > 0){
-      recs.slice(0, 8).forEach(r => {
+      recs.slice(0, 8).forEach((r, idx) => {
+        const prioTag = `Priority ${idx + 1}`;
         const liIssue = document.createElement("li");
-        liIssue.innerHTML = `<span class="exec-icon">✕</span><div><span class="exec-badge ${r.type}">${r.badge}</span><span>${r.issue}</span></div>`;
+        liIssue.innerHTML = `<span class="exec-icon">✕</span><div><span class="exec-badge ${r.type}">${prioTag}: ${r.badge}</span><span>${r.issue}</span></div>`;
         execIssuesEl.appendChild(liIssue);
 
         const liFix = document.createElement("li");
-        liFix.innerHTML = `<span class="exec-icon">✓</span><div><span class="exec-badge fix-${r.type}">${r.badge}</span><span>${r.fix}</span></div>`;
+        liFix.innerHTML = `<span class="exec-icon">✓</span><div><span class="exec-badge fix-${r.type}">${prioTag}: ${r.badge}</span><span>${r.fix}</span></div>`;
         execFixesEl.appendChild(liFix);
       });
     } else {
-      execIssuesEl.innerHTML = "<li class='exec-empty'>No major ATS issues detected — excellent resume structure!</li>";
-      execFixesEl.innerHTML = "<li class='exec-empty'>Keep tailoring your resume keywords for each target job description.</li>";
+      execIssuesEl.innerHTML = "<li class='exec-empty'>No major issues detected — excellent resume structure!</li>";
+      execFixesEl.innerHTML = "<li class='exec-empty'>Keep tailoring your resume keywords for each target job position.</li>";
     }
 
-    // ---- Errors & Issues Found: every detected problem, ordered by ----
-    // ---- severity (Critical → Moderate → Minor) with a plain-English ----
-    // ---- explanation of why it matters and how to fix it.           ----
+    // ---- Errors & Issues Found: every detected problem ----
     const errorItems = [];
     missing.forEach(m => {
       let severity = "high";
@@ -1211,40 +1687,70 @@
       errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
     }
 
-    // ---- ATS Score (0-100) ----
-    // A strict, unboosted multi-factor score built from standard ATS parsing signals.
-    const weightedScore =
-      sectionCoveragePct    * 0.25 +
-      keywordCoveragePct    * 0.24 +
-      contentStrengthPct    * 0.16 +
-      relevanceAlignmentPct * 0.14 +
-      readabilityPct        * 0.09 +
-      formattingPct         * 0.07 +
-      timelineConsistencyPct * 0.05;
+    // ---- Job Role Specific ATS Score (0-100) ----
+    const resumeTextLower = text.toLowerCase();
+    const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
+    const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
 
-    let score = Math.round(weightedScore);
-
-    // Apply strict penalties for missing critical contact & core sections
-    const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
-    score -= criticalMissingCount * 7;
-    score -= Math.min(errorItems.filter(e => e.severity === "high").length, 4) * 4;
-
-    if (adjustedJdRatio !== null){
-      score = Math.round(score * 0.40 + adjustedJdRatio * 100 * 0.60);
+    let weightedScore = 0;
+    if (jdResult && jdResult.ratio !== null) {
+      weightedScore =
+        (titleAlignmentPct * 0.10) +
+        (Math.round(roleSkillMatchRatio * 100) * 0.25) +
+        (Math.round(jdResult.ratio * 100) * 0.20) +
+        (relevanceAlignmentPct * 0.15) +
+        (contentStrengthPct * 0.10) +
+        (timelineConsistencyPct * 0.05) +
+        (sectionCoveragePct * 0.05) +
+        (readabilityPct * 0.10);
+    } else {
+      weightedScore =
+        (titleAlignmentPct * 0.10) +
+        (Math.round(roleSkillMatchRatio * 100) * 0.35) +
+        (relevanceAlignmentPct * 0.20) +
+        (contentStrengthPct * 0.15) +
+        (timelineConsistencyPct * 0.05) +
+        (sectionCoveragePct * 0.05) +
+        (readabilityPct * 0.10);
     }
 
+    let score = Math.round(weightedScore);
+    const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
+    score -= criticalMissingCount * 5;
     score = Math.max(15, Math.min(100, score));
 
-    let color = "#d9534f", verdict = "Needs Work";
-    if (score >= 85){ color = "#2e7d32"; verdict = "Excellent — ATS Friendly"; }
-    else if (score >= 72){ color = "#25855a"; verdict = "Good — Minor Gaps"; }
-    else if (score >= 55){ color = "#c9962c"; verdict = "Fair — Moderate Gaps"; }
-    else { color = "#d9534f"; verdict = "Needs Work — Major Gaps"; }
+    // Verdict labels as specified:
+    // 90-100: Excellent Match
+    // 80-89: Strong Match
+    // 70-79: Good Match
+    // 60-69: Needs Improvement
+    // Below 60: Low Match
+    let color = "#d9534f", verdict = "Low Match";
+    if (score >= 90){ color = "#2e7d32"; verdict = "Excellent Match"; }
+    else if (score >= 80){ color = "#25855a"; verdict = "Strong Match"; }
+    else if (score >= 70){ color = "#1e88e5"; verdict = "Good Match"; }
+    else if (score >= 60){ color = "#c9962c"; verdict = "Needs Improvement"; }
+    else { color = "#d9534f"; verdict = "Low Match"; }
 
     renderATSScore(score, color, verdict);
 
-    // Snapshot everything the PDF export button needs, so it doesn't have
-    // to re-scrape the DOM or re-run analysis.
+    // Visibility controls: Hide score ring gauge and breakdown card when in "normal" resume analysis mode
+    const scoreCardEl = document.getElementById("scoreCard");
+    const scoreBreakdownCardEl = document.getElementById("scoreBreakdownCard");
+    const atsDisclaimerEl = document.getElementById("atsDisclaimerNotice");
+
+    if (analysisMode === "normal") {
+      if (scoreCardEl) scoreCardEl.style.display = "none";
+      if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "none";
+      if (atsDisclaimerEl) atsDisclaimerEl.style.display = "none";
+    } else {
+      if (scoreCardEl) scoreCardEl.style.display = "block";
+      if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "block";
+      if (atsDisclaimerEl) atsDisclaimerEl.style.display = "block";
+    }
+
+    // Snapshot everything the PDF export button needs
     lastAnalysisData = {
       filename, name,
       email: emailMatch ? emailMatch[0] : "Not found",
@@ -1260,6 +1766,7 @@
       quant, uniqueWeakPhrases, duplicateBullets,
       jdResult,
       score, verdict,
+      targetJobRole: targetRoleTitle
     };
 
     if (!historySavedForCurrentUpload){
@@ -1591,10 +2098,12 @@
   }
 
   const chooseAtsBtn = document.getElementById("chooseAtsBtn");
-  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
+  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => openTargetJobModal("ats"));
 
   const chooseNormalBtn = document.getElementById("chooseNormalBtn");
-  if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => selectAnalysisMode("normal"));
+  if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => openTargetJobModal("normal"));
+
+  setupTargetJobModalListeners();
 
   const tabAtsBtn = document.getElementById("tabAtsBtn");
   if (tabAtsBtn) tabAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
@@ -3645,6 +4154,10 @@
       atsScore: score,
       score: score,
       verdict: verdict,
+      targetJobRole: selectedTargetJobRole || "",
+      customJobRole: customJobRoleText || "",
+      hasJobDescription: hasUserJobDescription || false,
+      jobDescription: userJobDescriptionText || "",
       resumeText: pendingResumeText || "",
       detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
       missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
@@ -3654,6 +4167,10 @@
         atsScore: score,
         score: score,
         analysisType: analysisType,
+        targetJobRole: selectedTargetJobRole || "",
+        customJobRole: customJobRoleText || "",
+        hasJobDescription: hasUserJobDescription || false,
+        jobDescription: userJobDescriptionText || "",
         experience: lastAnalysisData ? lastAnalysisData.experience : null,
         education: lastAnalysisData ? lastAnalysisData.education : null,
         projects: lastAnalysisData ? lastAnalysisData.projects : null,
@@ -3680,6 +4197,8 @@
       atsScore: score,
       score: score,
       verdict: verdict,
+      targetJobRole: selectedTargetJobRole || customJobRoleText || "",
+      hasJobDescription: hasUserJobDescription || false,
       uploadDate: new Date(),
       analysisDate: new Date(),
       date: new Date()

@@ -37,6 +37,22 @@ const resumeAnalysisSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  targetJobRole: {
+    type: String,
+    default: ""
+  },
+  customJobRole: {
+    type: String,
+    default: ""
+  },
+  hasJobDescription: {
+    type: Boolean,
+    default: false
+  },
+  jobDescription: {
+    type: String,
+    default: ""
+  },
   extractedData: {
     name: { type: String, default: "" },
     email: { type: String, default: "" },

@@ -258,13 +258,13 @@
   }
 
   function goToJobModalStep(stepNum) {
-    const s1 = document.getElementById("targetJobStep1");
-    const s2 = document.getElementById("targetJobStep2");
-    const s3 = document.getElementById("targetJobStep3");
+    const s1 = document.getElementById("jobModalStep1");
+    const s2 = document.getElementById("jobModalStep2");
+    const s3 = document.getElementById("jobModalStep3");
     
-    const p1 = document.getElementById("jobStepIndicator1");
-    const p2 = document.getElementById("jobStepIndicator2");
-    const p3 = document.getElementById("jobStepIndicator3");
+    const p1 = document.getElementById("jobStepDot1");
+    const p2 = document.getElementById("jobStepDot2");
+    const p3 = document.getElementById("jobStepDot3");
 
     if (s1) s1.style.display = stepNum === 1 ? "block" : "none";
     if (s2) s2.style.display = stepNum === 2 ? "block" : "none";
@@ -289,27 +289,25 @@
   }
 
   function updateJobModalConfirmationSummary() {
-    const roleTitleEl = document.getElementById("confirmTargetRoleTitle");
-    const modeNameEl = document.getElementById("confirmAnalysisModeName");
-    const jdStatusEl = document.getElementById("confirmJdStatus");
+    const roleTitleEl = document.getElementById("confirmTargetJobVal");
+    const jdStatusEl = document.getElementById("confirmJdStatusVal");
 
-    const finalRole = customJobRoleText.trim() || selectedTargetJobRole || "Not specified";
+    const finalRole = customJobRoleText.trim() || selectedTargetJobRole || "Software Developer";
     if (roleTitleEl) roleTitleEl.textContent = finalRole;
-    if (modeNameEl) modeNameEl.textContent = currentAnalysisType === "ats" ? "ATS Score & Compatibility" : "Full Resume Analysis & Feedback";
     if (jdStatusEl) {
       if (hasUserJobDescription && userJobDescriptionText.trim()) {
-        const snippet = userJobDescriptionText.trim().slice(0, 100) + (userJobDescriptionText.length > 100 ? "..." : "");
-        jdStatusEl.textContent = `Provided (${userJobDescriptionText.trim().length} chars): "${snippet}"`;
+        const snippet = userJobDescriptionText.trim().slice(0, 80) + (userJobDescriptionText.length > 80 ? "..." : "");
+        jdStatusEl.textContent = `Provided: "${snippet}"`;
         jdStatusEl.style.color = "var(--accent)";
       } else {
-        jdStatusEl.textContent = "None provided (Using standard job profile evaluation)";
+        jdStatusEl.textContent = "Not provided (Using standard job profile)";
         jdStatusEl.style.color = "var(--text-muted)";
       }
     }
   }
 
   function renderJobCategoryChips(filterQuery = "") {
-    const container = document.getElementById("jobCategoryContainer");
+    const container = document.getElementById("jobCategoriesContainer");
     if (!container) return;
     container.innerHTML = "";
 
@@ -335,7 +333,8 @@
       headerDiv.addEventListener("click", () => {
         const isHidden = rolesDiv.style.display === "none";
         rolesDiv.style.display = isHidden ? "flex" : "none";
-        headerDiv.querySelector(".job-category-toggle").textContent = isHidden ? "▲" : "▼";
+        const toggleSpan = headerDiv.querySelector(".job-category-toggle");
+        if (toggleSpan) toggleSpan.textContent = isHidden ? "▲" : "▼";
       });
 
       const rolesToRender = query ? filteredRoles : cat.roles;
@@ -348,17 +347,14 @@
         chip.addEventListener("click", () => {
           selectedTargetJobRole = role;
           customJobRoleText = "";
-          const customInput = document.getElementById("customJobRoleInput");
+          const customInput = document.getElementById("customJobInput");
           if (customInput) customInput.value = "";
-          
-          const radStandard = document.getElementById("jobChoiceStandard");
-          if (radStandard) radStandard.checked = true;
 
           document.querySelectorAll(".job-role-chip").forEach(c => {
             c.classList.toggle("active", c.textContent === role);
           });
 
-          const errBanner = document.getElementById("targetJobStep1Error");
+          const errBanner = document.getElementById("jobSelectError");
           if (errBanner) errBanner.style.display = "none";
         });
 
@@ -375,81 +371,103 @@
     const modalCloseBtn = document.getElementById("targetJobModalCloseBtn");
     if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeTargetJobModal);
 
+    const cancelBtn = document.getElementById("jobStep1CancelBtn");
+    if (cancelBtn) cancelBtn.addEventListener("click", closeTargetJobModal);
+
     const searchInput = document.getElementById("jobSearchInput");
+    const searchClearBtn = document.getElementById("jobSearchClearBtn");
     if (searchInput) {
       searchInput.addEventListener("input", (e) => {
-        renderJobCategoryChips(e.target.value);
+        const q = e.target.value;
+        if (searchClearBtn) searchClearBtn.style.display = q ? "block" : "none";
+        renderJobCategoryChips(q);
+      });
+    }
+    if (searchClearBtn && searchInput) {
+      searchClearBtn.addEventListener("click", () => {
+        searchInput.value = "";
+        searchClearBtn.style.display = "none";
+        renderJobCategoryChips("");
       });
     }
 
-    const customInput = document.getElementById("customJobRoleInput");
-    if (customInput) {
-      customInput.addEventListener("input", (e) => {
+    const customRoleToggleBtn = document.getElementById("customRoleToggleBtn");
+    const customRoleInputWrap = document.getElementById("customRoleInputWrap");
+    const customJobInput = document.getElementById("customJobInput");
+
+    if (customRoleToggleBtn && customRoleInputWrap) {
+      customRoleToggleBtn.addEventListener("click", () => {
+        const isHidden = customRoleInputWrap.style.display === "none";
+        customRoleInputWrap.style.display = isHidden ? "block" : "none";
+        if (isHidden && customJobInput) customJobInput.focus();
+      });
+    }
+
+    if (customJobInput) {
+      customJobInput.addEventListener("input", (e) => {
         customJobRoleText = e.target.value;
         if (customJobRoleText.trim()) {
           selectedTargetJobRole = "";
-          const radCustom = document.getElementById("jobChoiceCustom");
-          if (radCustom) radCustom.checked = true;
           document.querySelectorAll(".job-role-chip").forEach(c => c.classList.remove("active"));
-          const errBanner = document.getElementById("targetJobStep1Error");
+          const errBanner = document.getElementById("jobSelectError");
           if (errBanner) errBanner.style.display = "none";
         }
       });
     }
 
-    const radStandard = document.getElementById("jobChoiceStandard");
-    if (radStandard) {
-      radStandard.addEventListener("change", () => {
-        if (radStandard.checked && !selectedTargetJobRole && JOB_ROLE_CATEGORIES[0]?.roles[0]) {
-          selectedTargetJobRole = JOB_ROLE_CATEGORIES[0].roles[0];
-          customJobRoleText = "";
-          if (customInput) customInput.value = "";
-          renderJobCategoryChips();
-        }
-      });
-    }
-
-    const radCustom = document.getElementById("jobChoiceCustom");
-    if (radCustom) {
-      radCustom.addEventListener("change", () => {
-        if (radCustom.checked) {
-          selectedTargetJobRole = "";
-          if (customInput) customInput.focus();
-        }
-      });
-    }
-
     // Step 1 Next button
-    const step1NextBtn = document.getElementById("jobModalNextBtn");
+    const step1NextBtn = document.getElementById("jobStep1NextBtn");
     if (step1NextBtn) {
       step1NextBtn.addEventListener("click", () => {
         const finalRole = customJobRoleText.trim() || selectedTargetJobRole;
         if (!finalRole) {
-          const errBanner = document.getElementById("targetJobStep1Error");
-          if (errBanner) {
-            errBanner.textContent = "Please select a job role or type a custom role to continue.";
-            errBanner.style.display = "block";
-          }
-          return;
+          selectedTargetJobRole = "Software Developer";
         }
-        const errBanner = document.getElementById("targetJobStep1Error");
+        const errBanner = document.getElementById("jobSelectError");
         if (errBanner) errBanner.style.display = "none";
         goToJobModalStep(2);
       });
     }
 
+    // Step 2 Decision Buttons (Yes / No)
+    const jdChoiceYesBtn = document.getElementById("jdChoiceYesBtn");
+    const jdChoiceNoBtn = document.getElementById("jdChoiceNoBtn");
+    const modalJdTextareaWrap = document.getElementById("modalJdTextareaWrap");
+
+    if (jdChoiceYesBtn && modalJdTextareaWrap) {
+      jdChoiceYesBtn.addEventListener("click", () => {
+        modalJdTextareaWrap.style.display = "block";
+        jdChoiceYesBtn.classList.add("active");
+        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active");
+        const area = document.getElementById("modalJdInputText");
+        if (area) area.focus();
+      });
+    }
+
+    if (jdChoiceNoBtn && modalJdTextareaWrap) {
+      jdChoiceNoBtn.addEventListener("click", () => {
+        modalJdTextareaWrap.style.display = "none";
+        jdChoiceNoBtn.classList.add("active");
+        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active");
+        const area = document.getElementById("modalJdInputText");
+        if (area) area.value = "";
+        userJobDescriptionText = "";
+        hasUserJobDescription = false;
+      });
+    }
+
     // Step 2 Back & Next buttons
-    const step2BackBtn = document.getElementById("jobModalBackBtn");
+    const step2BackBtn = document.getElementById("jobStep2BackBtn");
     if (step2BackBtn) step2BackBtn.addEventListener("click", () => goToJobModalStep(1));
 
-    const step2NextBtn = document.getElementById("jobModalStep2NextBtn");
+    const step2NextBtn = document.getElementById("jobStep2NextBtn");
     if (step2NextBtn) {
       step2NextBtn.addEventListener("click", () => {
-        const modalJdInput = document.getElementById("modalJdInput");
+        const modalJdArea = document.getElementById("modalJdInputText");
         const mainJdInput = document.getElementById("jdInput");
 
-        if (modalJdInput) {
-          userJobDescriptionText = modalJdInput.value.trim();
+        if (modalJdArea) {
+          userJobDescriptionText = modalJdArea.value.trim();
           hasUserJobDescription = userJobDescriptionText.length > 20;
           if (mainJdInput) mainJdInput.value = userJobDescriptionText;
         }
@@ -458,13 +476,13 @@
       });
     }
 
-    // Step 3 Back & Confirm buttons
-    const confirmBackBtn = document.getElementById("jobModalConfirmBackBtn");
-    if (confirmBackBtn) confirmBackBtn.addEventListener("click", () => goToJobModalStep(2));
+    // Step 3 Back & Start Analysis buttons
+    const step3BackBtn = document.getElementById("jobStep3BackBtn");
+    if (step3BackBtn) step3BackBtn.addEventListener("click", () => goToJobModalStep(2));
 
-    const confirmBtn = document.getElementById("jobModalConfirmBtn");
-    if (confirmBtn) {
-      confirmBtn.addEventListener("click", () => {
+    const startAnalysisBtn = document.getElementById("startAnalysisBtn");
+    if (startAnalysisBtn) {
+      startAnalysisBtn.addEventListener("click", () => {
         closeTargetJobModal();
         selectAnalysisMode(currentAnalysisType);
       });

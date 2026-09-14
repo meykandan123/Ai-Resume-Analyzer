@@ -236,6 +236,12 @@
 
   // ---- Target Job Selection Modal Controller ----
   function openTargetJobModal(mode) {
+    if (!pendingResumeText) {
+      setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
+      const dropzone = document.getElementById("dropzone");
+      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
     currentAnalysisType = mode || "ats";
     const modal = document.getElementById("targetJobModal");
     if (!modal) return;
@@ -3883,12 +3889,13 @@
             }
           }
         } catch (fbErr) {
-          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
-          if (fbErr.code === "auth/cancelled-popup-request") {
-            // Ignore silently as this is the result of overlapping requests
-            console.warn("Firebase sign-in popup cancelled due to concurrent request.");
+          if (fbErr.code === "auth/popup-closed-by-user" || fbErr.code === "auth/cancelled-popup-request") {
+            // User manually closed or cancelled the popup — handle gracefully without scary error logs
+            console.info("Google Sign-In popup was closed by the user.");
             return;
-          } else if (fbErr.code === "auth/popup-blocked" || fbErr.code === "auth/unauthorized-domain") {
+          }
+          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
+          if (fbErr.code === "auth/popup-blocked" || fbErr.code === "auth/unauthorized-domain") {
             // Domain not in Firebase authorized list or popup blocked: offer seamless direct Google email login
             const fallbackEmail = prompt("Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:", "user@gmail.com");
             if (fallbackEmail && isValidEmail(fallbackEmail.trim())) {

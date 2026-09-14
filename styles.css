@@ -3170,37 +3170,43 @@
   border-bottom: 1px solid var(--line);
 }
 
+.job-category-roles,
 .job-chips-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px 12px;
+  padding: 6px 0 10px 0;
 }
 
 .job-role-chip {
-  background: var(--card-tint);
-  border: 1px solid var(--line);
+  background: #fff7f8;
+  border: 1px solid rgba(129, 0, 26, 0.18);
   color: var(--ink-dark);
-  padding: 7px 14px;
+  padding: 8px 16px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 .job-role-chip:hover {
   border-color: var(--accent);
   color: var(--accent-dark);
+  background: #fdf0f2;
   transform: translateY(-1px);
   box-shadow: 0 3px 10px rgba(129, 0, 26, 0.08);
 }
 
-.job-role-chip.selected {
-  background: var(--accent-dark);
-  border-color: var(--accent-dark);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(129, 0, 26, 0.25);
+.job-role-chip.selected,
+.job-role-chip.active {
+  background: #fce4e8 !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-dark) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 3px 12px rgba(129, 0, 26, 0.18), inset 0 0 0 1px var(--accent) !important;
+  transform: translateY(-1px);
 }
 
 /* Custom Role Container */
@@ -3259,8 +3265,8 @@
 }
 
 .jd-choice-btn {
-  background: var(--card-tint);
-  border: 2px solid var(--line);
+  background: #fcf8f9;
+  border: 2px solid rgba(129, 0, 26, 0.16);
   border-radius: var(--radius-sm);
   padding: 16px 20px;
   display: flex;
@@ -3268,14 +3274,31 @@
   gap: 16px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.jd-choice-btn:hover,
-.jd-choice-btn.selected {
+.jd-choice-btn:hover {
   border-color: var(--accent);
-  background: #ffffff;
-  box-shadow: 0 4px 16px rgba(129, 0, 26, 0.1);
+  background: #fff0f3;
+  box-shadow: 0 4px 14px rgba(129, 0, 26, 0.08);
+}
+
+.jd-choice-btn.selected,
+.jd-choice-btn.active {
+  border-color: var(--accent) !important;
+  background: #fdf0f2 !important;
+  box-shadow: 0 4px 18px rgba(129, 0, 26, 0.16) !important;
+}
+
+.jd-choice-btn.selected .choice-text strong,
+.jd-choice-btn.active .choice-text strong {
+  color: var(--accent-dark) !important;
+  font-weight: 700 !important;
+}
+
+.jd-choice-btn.selected .choice-text span,
+.jd-choice-btn.active .choice-text span {
+  color: #334155 !important;
 }
 
 .jd-choice-btn .choice-icon {

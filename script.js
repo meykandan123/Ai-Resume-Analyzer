@@ -287,6 +287,22 @@
       }
     });
 
+    if (stepNum === 2) {
+      const jdChoiceYesBtn = document.getElementById("jdChoiceYesBtn");
+      const jdChoiceNoBtn = document.getElementById("jdChoiceNoBtn");
+      const modalJdTextareaWrap = document.getElementById("modalJdTextareaWrap");
+
+      if (hasUserJobDescription && userJobDescriptionText.trim()) {
+        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.add("active", "selected");
+        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
+        if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "block";
+      } else {
+        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.add("active", "selected");
+        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
+        if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "none";
+      }
+    }
+
     if (stepNum === 3) {
       updateJobModalConfirmationSummary();
     }
@@ -345,7 +361,8 @@
       rolesToRender.forEach(role => {
         const chip = document.createElement("button");
         chip.type = "button";
-        chip.className = "job-role-chip" + (selectedTargetJobRole === role ? " active" : "");
+        const isSelected = (selectedTargetJobRole === role);
+        chip.className = "job-role-chip" + (isSelected ? " active selected" : "");
         chip.textContent = role;
 
         chip.addEventListener("click", () => {
@@ -355,7 +372,9 @@
           if (customInput) customInput.value = "";
 
           document.querySelectorAll(".job-role-chip").forEach(c => {
-            c.classList.toggle("active", c.textContent === role);
+            const isMatch = (c.textContent.trim() === role);
+            c.classList.toggle("active", isMatch);
+            c.classList.toggle("selected", isMatch);
           });
 
           const errBanner = document.getElementById("jobSelectError");
@@ -412,7 +431,9 @@
         customJobRoleText = e.target.value;
         if (customJobRoleText.trim()) {
           selectedTargetJobRole = "";
-          document.querySelectorAll(".job-role-chip").forEach(c => c.classList.remove("active"));
+          document.querySelectorAll(".job-role-chip").forEach(c => {
+            c.classList.remove("active", "selected");
+          });
           const errBanner = document.getElementById("jobSelectError");
           if (errBanner) errBanner.style.display = "none";
         }
@@ -441,8 +462,8 @@
     if (jdChoiceYesBtn && modalJdTextareaWrap) {
       jdChoiceYesBtn.addEventListener("click", () => {
         modalJdTextareaWrap.style.display = "block";
-        jdChoiceYesBtn.classList.add("active");
-        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active");
+        jdChoiceYesBtn.classList.add("active", "selected");
+        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
         const area = document.getElementById("modalJdInputText");
         if (area) area.focus();
       });
@@ -451,8 +472,8 @@
     if (jdChoiceNoBtn && modalJdTextareaWrap) {
       jdChoiceNoBtn.addEventListener("click", () => {
         modalJdTextareaWrap.style.display = "none";
-        jdChoiceNoBtn.classList.add("active");
-        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active");
+        jdChoiceNoBtn.classList.add("active", "selected");
+        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
         const area = document.getElementById("modalJdInputText");
         if (area) area.value = "";
         userJobDescriptionText = "";

@@ -1124,12 +1124,27 @@
 
     // Update target role badge in results header
     const roleBadgeEl = document.getElementById("targetRoleHeaderBadge");
+    const targetRoleChipBar = document.getElementById("targetRoleChipBar");
+    const targetRoleDisplayVal = document.getElementById("targetRoleDisplayVal");
+    const effectiveRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "";
+
     if (roleBadgeEl) {
-      if (analysisMode === "ats" && !selectedTargetJobRole && !customJobRoleText) {
+      if (analysisMode === "ats" && !effectiveRoleTitle) {
         roleBadgeEl.style.display = "none";
       } else {
         roleBadgeEl.style.display = "inline-flex";
-        roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(targetRoleTitle)}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+        roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(effectiveRoleTitle || "Software Developer")}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+      }
+    }
+
+    if (targetRoleChipBar) {
+      if (analysisMode === "ats" && !effectiveRoleTitle) {
+        targetRoleChipBar.style.display = "none";
+      } else {
+        targetRoleChipBar.style.display = "inline-flex";
+        if (targetRoleDisplayVal) {
+          targetRoleDisplayVal.textContent = effectiveRoleTitle || "Software Developer";
+        }
       }
     }
 
@@ -2180,7 +2195,20 @@
   if (tabAtsBtn) tabAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
 
   const tabNormalBtn = document.getElementById("tabNormalBtn");
-  if (tabNormalBtn) tabNormalBtn.addEventListener("click", () => selectAnalysisMode("normal"));
+  if (tabNormalBtn) {
+    tabNormalBtn.addEventListener("click", () => {
+      if (!selectedTargetJobRole && !customJobRoleText) {
+        openTargetJobModal("normal");
+      } else {
+        selectAnalysisMode("normal");
+      }
+    });
+  }
+
+  const changeTargetRoleBtn = document.getElementById("changeTargetRoleBtn");
+  if (changeTargetRoleBtn) {
+    changeTargetRoleBtn.addEventListener("click", () => openTargetJobModal("normal"));
+  }
 
   const backToOptionsBtn = document.getElementById("backToOptionsBtn");
   if (backToOptionsBtn) {

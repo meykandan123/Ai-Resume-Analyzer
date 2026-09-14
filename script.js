@@ -246,6 +246,7 @@
     const modal = document.getElementById("targetJobModal");
     if (!modal) return;
     modal.style.display = "flex";
+    modal.classList.add("active");
     document.body.style.overflow = "hidden";
     goToJobModalStep(1);
     renderJobCategoryChips();
@@ -253,7 +254,10 @@
 
   function closeTargetJobModal() {
     const modal = document.getElementById("targetJobModal");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+      modal.style.display = "none";
+      modal.classList.remove("active");
+    }
     document.body.style.overflow = "";
   }
 

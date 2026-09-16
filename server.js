@@ -1612,11 +1612,11 @@ app.post("/api/support", async (req, res) => {
   }
 });
 
-// Get Support Requests for a user or specific ticket ID
-app.get(["/api/support", "/api/support/:ticketId"], async (req, res) => {
+// Get Support Requests for a user by Email or Query
+app.get("/api/support", async (req, res) => {
   try {
-    const ticketId = req.params.ticketId || req.query.ticketId;
     const email = (req.query.email || req.headers["x-user-email"] || "").toLowerCase().trim();
+    const ticketId = req.query.ticketId;
 
     let query = {};
     if (ticketId) {
@@ -1650,10 +1650,42 @@ app.get(["/api/support", "/api/support/:ticketId"], async (req, res) => {
   }
 });
 
-// Delete Support Request Endpoint
-app.delete(["/api/support/:ticketId", "/api/support"], async (req, res) => {
+// Get Support Request by Ticket ID
+app.get("/api/support/:ticketId", async (req, res) => {
   try {
-    const ticketId = req.params.ticketId || req.body?.ticketId || req.query?.ticketId;
+    const ticketId = req.params.ticketId;
+    const email = (req.query.email || req.headers["x-user-email"] || "").toLowerCase().trim();
+
+    const query = { ticketId: ticketId };
+    if (email) query.email = email;
+
+    const tickets = await SupportRequest.find(query)
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    return res.json({
+      success: true,
+      tickets: tickets.map(t => ({
+        id: t.ticketId,
+        ticketId: t.ticketId,
+        name: t.name,
+        email: t.email,
+        message: t.message,
+        status: t.status || "Active & Sent to Support",
+        date: t.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error("Get support request by ID error:", err);
+    return res.status(500).json({ success: false, message: "Failed to fetch support request." });
+  }
+});
+
+// Delete Support Request Endpoint by Ticket ID
+app.delete("/api/support/:ticketId", async (req, res) => {
+  try {
+    const ticketId = req.params.ticketId;
     const email = (req.body?.email || req.query?.email || req.headers["x-user-email"] || "").toLowerCase().trim();
 
     if (!ticketId) {
@@ -1673,7 +1705,48 @@ app.delete(["/api/support/:ticketId", "/api/support"], async (req, res) => {
       console.warn("support_requests delete warning:", dbErr.message);
     }
 
-    // Log deletion activity in user_activity
+    await logUserActivity(
+      null,
+      "delete support request",
+      `User deleted support request: ${ticketId}`,
+      { ticketId, email },
+      email || null
+    );
+
+    return res.json({
+      success: true,
+      message: `Support request ${ticketId} deleted successfully.`,
+      deletedCount
+    });
+  } catch (err) {
+    console.error("Delete support request error:", err);
+    return res.status(500).json({ success: false, message: "Failed to delete support request." });
+  }
+});
+
+// Delete Support Request Endpoint (Query / Body fallback)
+app.delete("/api/support", async (req, res) => {
+  try {
+    const ticketId = req.body?.ticketId || req.query?.ticketId;
+    const email = (req.body?.email || req.query?.email || req.headers["x-user-email"] || "").toLowerCase().trim();
+
+    if (!ticketId) {
+      return res.status(400).json({ success: false, message: "Ticket ID is required." });
+    }
+
+    const query = { ticketId: ticketId };
+    if (email) {
+      query.email = email;
+    }
+
+    let deletedCount = 0;
+    try {
+      const delResult = await SupportRequest.deleteOne(query);
+      deletedCount = delResult.deletedCount || 0;
+    } catch (dbErr) {
+      console.warn("support_requests delete warning:", dbErr.message);
+    }
+
     await logUserActivity(
       null,
       "delete support request",

@@ -1759,64 +1759,98 @@
       errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
     }
 
-    // ---- ATS Score Calculation (0-100) ----
-    let score = 0;
-    if (analysisMode === "ats") {
-      // Standalone Resume ATS Score (evaluates structure, content quality, formatting, readability, skill density)
-      const weightedScore =
-        (sectionCoveragePct * 0.20) +
-        (keywordCoveragePct * 0.20) +
-        (contentStrengthPct * 0.20) +
-        (formattingPct * 0.15) +
-        (relevanceAlignmentPct * 0.10) +
-        (readabilityPct * 0.10) +
-        (timelineConsistencyPct * 0.05);
+    // ---- Standalone Resume ATS Score (Overall resume quality) ----
+    const standaloneKwCoverage = Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40));
+    const densityDeltaStandalone = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+    const standaloneRelevancePct = Math.max(45, Math.min(100, Math.round(100 - densityDeltaStandalone * 4)));
 
-      score = Math.round(weightedScore);
-    } else {
-      // Role & Job Description Matched ATS Score (evaluates resume against selected target job role and job description)
-      const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-      const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
-      const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
+    const standaloneWeighted =
+      (sectionCoveragePct * 0.20) +
+      (standaloneKwCoverage * 0.20) +
+      (contentStrengthPct * 0.20) +
+      (formattingPct * 0.15) +
+      (standaloneRelevancePct * 0.10) +
+      (readabilityPct * 0.10) +
+      (timelineConsistencyPct * 0.05);
 
-      let weightedScore = 0;
-      if (jdResult && jdResult.ratio !== null) {
-        weightedScore =
-          (titleAlignmentPct * 0.10) +
-          (Math.round(roleSkillMatchRatio * 100) * 0.25) +
-          (Math.round(jdResult.ratio * 100) * 0.20) +
-          (relevanceAlignmentPct * 0.15) +
-          (contentStrengthPct * 0.10) +
-          (timelineConsistencyPct * 0.05) +
-          (sectionCoveragePct * 0.05) +
-          (readabilityPct * 0.10);
-      } else {
-        weightedScore =
-          (titleAlignmentPct * 0.10) +
-          (Math.round(roleSkillMatchRatio * 100) * 0.35) +
-          (relevanceAlignmentPct * 0.20) +
-          (contentStrengthPct * 0.15) +
-          (timelineConsistencyPct * 0.05) +
-          (sectionCoveragePct * 0.05) +
-          (readabilityPct * 0.10);
-      }
-      score = Math.round(weightedScore);
-    }
-
+    let standaloneScore = Math.round(standaloneWeighted);
     const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
-    score -= criticalMissingCount * 5;
-    score = Math.max(15, Math.min(100, score));
+    standaloneScore -= criticalMissingCount * 5;
+    standaloneScore = Math.max(15, Math.min(100, standaloneScore));
+
+    // ---- Role & Job Description Matched ATS Score ----
+    const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
+    const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
+
+    let roleWeighted = 0;
+    if (jdResult && jdResult.ratio !== null) {
+      roleWeighted =
+        (titleAlignmentPct * 0.10) +
+        (Math.round(roleSkillMatchRatio * 100) * 0.25) +
+        (Math.round(jdResult.ratio * 100) * 0.20) +
+        (relevanceAlignmentPct * 0.15) +
+        (contentStrengthPct * 0.10) +
+        (timelineConsistencyPct * 0.05) +
+        (sectionCoveragePct * 0.05) +
+        (readabilityPct * 0.10);
+    } else {
+      roleWeighted =
+        (titleAlignmentPct * 0.10) +
+        (Math.round(roleSkillMatchRatio * 100) * 0.35) +
+        (relevanceAlignmentPct * 0.20) +
+        (contentStrengthPct * 0.15) +
+        (timelineConsistencyPct * 0.05) +
+        (sectionCoveragePct * 0.05) +
+        (readabilityPct * 0.10);
+    }
+    let roleScore = Math.round(roleWeighted);
+    roleScore -= criticalMissingCount * 5;
+    roleScore = Math.max(15, Math.min(100, roleScore));
+
+    // Select active score based on current analysis mode
+    const score = (analysisMode === "ats") ? standaloneScore : roleScore;
 
     // Update Gauge Heading & Subtitle dynamically based on mode
     const verdictSubEl = document.getElementById("atsVerdictSub");
     const atsHeadHeading = document.querySelector(".ats-score-card-head h2");
+    const compBox = document.getElementById("atsComparisonBox");
 
     if (analysisMode === "ats") {
-      if (atsHeadHeading) atsHeadHeading.textContent = "Estimated ATS Compatibility";
-      if (verdictSubEl) verdictSubEl.textContent = "This score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.";
+      if (atsHeadHeading) atsHeadHeading.textContent = "Overall Resume ATS Score";
+      if (verdictSubEl) verdictSubEl.textContent = "This overall score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.";
+      if (compBox) compBox.style.display = "none";
     } else {
       if (atsHeadHeading) atsHeadHeading.textContent = `ATS Score for ${targetRoleTitle}`;
       if (verdictSubEl) verdictSubEl.textContent = `This score evaluates how well your resume matches ${targetRoleTitle}${hasUserJobDescription ? " and the provided job description" : ""}. Actual ATS systems vary.`;
+      
+      // Update ATS with Role Comparison Box
+      if (compBox) {
+        compBox.style.display = "block";
+        const roleScoreEl = document.getElementById("compRoleScoreVal");
+        const overallScoreEl = document.getElementById("compOverallScoreVal");
+        const deltaEl = document.getElementById("compDeltaVal");
+        const compDescEl = document.getElementById("compDescText");
+
+        if (roleScoreEl) roleScoreEl.textContent = `${roleScore} / 100`;
+        if (overallScoreEl) overallScoreEl.textContent = `${standaloneScore} / 100`;
+
+        const diff = roleScore - standaloneScore;
+        if (deltaEl) {
+          deltaEl.className = "ats-comp-delta " + (diff > 0 ? "pos" : (diff < 0 ? "neg" : "zero"));
+          deltaEl.textContent = diff > 0 ? `+${diff} pts higher` : (diff < 0 ? `${diff} pts lower` : "Same as overall");
+        }
+
+        if (compDescEl) {
+          if (diff > 0) {
+            compDescEl.textContent = `Your resume scores ${diff} pts higher for ${targetRoleTitle} because your technical skills align strongly with this specific role.`;
+          } else if (diff < 0) {
+            compDescEl.textContent = `Your resume scores ${Math.abs(diff)} pts lower for ${targetRoleTitle} due to missing role-specific keywords or required skills.`;
+          } else {
+            compDescEl.textContent = `Your target role ATS score matches your general resume ATS score.`;
+          }
+        }
+      }
     }
 
     // Verdict labels:

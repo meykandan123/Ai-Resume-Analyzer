@@ -241,6 +241,26 @@
           <div class="ats-verdict-title" id="atsVerdict">Analyzing…</div>
           <div class="ats-verdict-sub" id="atsVerdictSub">This score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.</div>
         </div>
+
+        <!-- Role ATS Score vs Overall ATS Score Comparison Box (Shown in ATS with Role mode) -->
+        <div class="ats-comparison-card" id="atsComparisonBox" style="display:none;">
+          <div class="ats-comp-head">
+            <span class="ats-comp-badge">Score Comparison</span>
+            <span class="ats-comp-delta" id="compDeltaVal">+0 pts</span>
+          </div>
+          <div class="ats-comp-body">
+            <div class="ats-comp-stat">
+              <span class="ats-comp-label">Target Role Score:</span>
+              <strong class="ats-comp-val" id="compRoleScoreVal">—</strong>
+            </div>
+            <div class="ats-comp-divider"></div>
+            <div class="ats-comp-stat">
+              <span class="ats-comp-label">Overall Resume Score:</span>
+              <strong class="ats-comp-val" id="compOverallScoreVal">—</strong>
+            </div>
+          </div>
+          <div class="ats-comp-desc" id="compDescText"></div>
+        </div>
       </div>
 
       <!-- Score Breakdown Card -->

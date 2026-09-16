@@ -158,6 +158,79 @@
     text-overflow: ellipsis;
   }
 
+  /* ATS Score Comparison Box (Role Score vs Overall ATS Score) */
+  .ats-comparison-card {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--hero-bg, #faf7f2);
+    border: 1px solid var(--line, #e2d7c5);
+    border-radius: 10px;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  }
+  .ats-comp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .ats-comp-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent-2, #8b263e);
+  }
+  .ats-comp-delta {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 12px;
+  }
+  .ats-comp-delta.pos {
+    background: rgba(46, 125, 50, 0.15);
+    color: #2e7d32;
+  }
+  .ats-comp-delta.neg {
+    background: rgba(217, 83, 79, 0.15);
+    color: #d9534f;
+  }
+  .ats-comp-delta.zero {
+    background: rgba(100, 100, 100, 0.12);
+    color: #555555;
+  }
+  .ats-comp-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .ats-comp-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ats-comp-label {
+    color: var(--ink, #444);
+    font-size: 11px;
+  }
+  .ats-comp-val {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .ats-comp-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--line, #ccc);
+  }
+  .ats-comp-desc {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--ink, #555);
+  }
+
   .report-mode-tabs {
     display: flex;
     align-items: center;

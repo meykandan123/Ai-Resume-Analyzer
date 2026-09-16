@@ -1493,7 +1493,9 @@
       ? Math.min(1.0, jdResult.ratio)
       : null;
 
-    const keywordCoveragePct = Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40));
+    const keywordCoveragePct = (analysisMode === "ats")
+      ? Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40))
+      : (adjustedJdRatio !== null ? Math.round(adjustedJdRatio * 100) : Math.round(roleSkillMatchRatio * 100));
 
     let contentStrengthPct = 50; // strict baseline for resume content impact
     if (quant.total > 0) {
@@ -1512,8 +1514,13 @@
     const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
     const readabilityPct = Math.max(45, 100 - gradeDelta * 6);
 
-    const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
-    const relevanceAlignmentPct = Math.max(45, Math.min(100, Math.round(100 - densityDelta * 4)));
+    let relevanceAlignmentPct;
+    if (analysisMode === "normal" && adjustedJdRatio !== null) {
+      relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
+    } else {
+      const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+      relevanceAlignmentPct = Math.max(45, Math.min(100, Math.round(100 - densityDelta * 4)));
+    }
 
     let formattingPct = 60; // strict formatting baseline
     if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
@@ -1538,7 +1545,7 @@
     const recs = [];
 
     if (analysisMode === "normal") {
-      // IN RESUME ANALYSIS MODE: Recommend using user resume with target role and job description
+      // IN ATS WITH ROLE MODE: Recommend using user resume with target role and job description
       if (missingRoleSkills && missingRoleSkills.length > 0){
         recs.push({
           badge: "Target Role Gap",
@@ -1752,23 +1759,67 @@
       errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
     }
 
-    // ---- Standalone Resume ATS Score (0-100) ----
-    // Evaluates ATS compatibility and structural quality based purely on the user's resume
-    const weightedScore =
-      (sectionCoveragePct * 0.20) +
-      (keywordCoveragePct * 0.20) +
-      (contentStrengthPct * 0.20) +
-      (formattingPct * 0.15) +
-      (relevanceAlignmentPct * 0.10) +
-      (readabilityPct * 0.10) +
-      (timelineConsistencyPct * 0.05);
+    // ---- ATS Score Calculation (0-100) ----
+    let score = 0;
+    if (analysisMode === "ats") {
+      // Standalone Resume ATS Score (evaluates structure, content quality, formatting, readability, skill density)
+      const weightedScore =
+        (sectionCoveragePct * 0.20) +
+        (keywordCoveragePct * 0.20) +
+        (contentStrengthPct * 0.20) +
+        (formattingPct * 0.15) +
+        (relevanceAlignmentPct * 0.10) +
+        (readabilityPct * 0.10) +
+        (timelineConsistencyPct * 0.05);
 
-    let score = Math.round(weightedScore);
+      score = Math.round(weightedScore);
+    } else {
+      // Role & Job Description Matched ATS Score (evaluates resume against selected target job role and job description)
+      const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
+      const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
+
+      let weightedScore = 0;
+      if (jdResult && jdResult.ratio !== null) {
+        weightedScore =
+          (titleAlignmentPct * 0.10) +
+          (Math.round(roleSkillMatchRatio * 100) * 0.25) +
+          (Math.round(jdResult.ratio * 100) * 0.20) +
+          (relevanceAlignmentPct * 0.15) +
+          (contentStrengthPct * 0.10) +
+          (timelineConsistencyPct * 0.05) +
+          (sectionCoveragePct * 0.05) +
+          (readabilityPct * 0.10);
+      } else {
+        weightedScore =
+          (titleAlignmentPct * 0.10) +
+          (Math.round(roleSkillMatchRatio * 100) * 0.35) +
+          (relevanceAlignmentPct * 0.20) +
+          (contentStrengthPct * 0.15) +
+          (timelineConsistencyPct * 0.05) +
+          (sectionCoveragePct * 0.05) +
+          (readabilityPct * 0.10);
+      }
+      score = Math.round(weightedScore);
+    }
+
     const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
     score -= criticalMissingCount * 5;
     score = Math.max(15, Math.min(100, score));
 
-    // Verdict labels as specified:
+    // Update Gauge Heading & Subtitle dynamically based on mode
+    const verdictSubEl = document.getElementById("atsVerdictSub");
+    const atsHeadHeading = document.querySelector(".ats-score-card-head h2");
+
+    if (analysisMode === "ats") {
+      if (atsHeadHeading) atsHeadHeading.textContent = "Estimated ATS Compatibility";
+      if (verdictSubEl) verdictSubEl.textContent = "This score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.";
+    } else {
+      if (atsHeadHeading) atsHeadHeading.textContent = `ATS Score for ${targetRoleTitle}`;
+      if (verdictSubEl) verdictSubEl.textContent = `This score evaluates how well your resume matches ${targetRoleTitle}${hasUserJobDescription ? " and the provided job description" : ""}. Actual ATS systems vary.`;
+    }
+
+    // Verdict labels:
     // 90-100: Excellent Match
     // 80-89: Strong Match
     // 70-79: Good Match
@@ -1783,20 +1834,14 @@
 
     renderATSScore(score, color, verdict);
 
-    // Visibility controls: Hide score ring gauge and breakdown card when in "normal" resume analysis mode
-    const scoreCardEl = document.getElementById("scoreCard");
-    const scoreBreakdownCardEl = document.getElementById("scoreBreakdownCard");
+    // Display ATS Gauge card and breakdown in both modes
+    const scoreCardEl = document.getElementById("atsCard");
+    const scoreBreakdownCardEl = document.querySelector(".ats-hero-breakdown");
     const atsDisclaimerEl = document.getElementById("atsDisclaimerNotice");
 
-    if (analysisMode === "normal") {
-      if (scoreCardEl) scoreCardEl.style.display = "none";
-      if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "none";
-      if (atsDisclaimerEl) atsDisclaimerEl.style.display = "none";
-    } else {
-      if (scoreCardEl) scoreCardEl.style.display = "block";
-      if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "block";
-      if (atsDisclaimerEl) atsDisclaimerEl.style.display = "block";
-    }
+    if (scoreCardEl) scoreCardEl.style.display = "block";
+    if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "block";
+    if (atsDisclaimerEl) atsDisclaimerEl.style.display = "block";
 
     // Snapshot everything the PDF export button needs
     lastAnalysisData = {
@@ -2113,13 +2158,13 @@
     if (execHeading){
       execHeading.textContent = mode === "ats"
         ? "ATS Improvement Recommendations"
-        : "Strengths, Weaknesses & Suggestions";
+        : "Target Role & Skill Recommendations";
     }
     if (execColIssues) {
-      execColIssues.textContent = mode === "ats" ? "Top Issues to Fix" : "Weaknesses & Role Gaps";
+      execColIssues.textContent = mode === "ats" ? "Top Issues to Fix" : "Target Role & Skill Gaps";
     }
     if (execColFixes) {
-      execColFixes.textContent = mode === "ats" ? "Quick Fixes" : "Actionable Suggestions";
+      execColFixes.textContent = mode === "ats" ? "Quick Fixes" : "Actionable Role Fixes";
     }
 
     if (mode === "ats") {
@@ -2129,7 +2174,7 @@
     }
     setStatus("Analysis complete ✓");
     if (typeof logUserAction === "function") {
-      logUserAction("mode selection", mode === "ats" ? "User selected ATS Score Check mode" : "User selected Full Breakdown mode", { mode });
+      logUserAction("mode selection", mode === "ats" ? "User selected Check ATS Score mode" : "User selected ATS with Role mode", { mode });
     }
   }
 
@@ -4222,7 +4267,7 @@
     const finalFilename = filename || pendingResumeFilename || "resume.pdf";
     const ext = finalFilename.split(".").pop().toLowerCase();
     const fileType = ["pdf", "docx", "txt"].includes(ext) ? ext : "pdf";
-    const analysisType = (analysisMode === "ats") ? "ATS Check" : "Full Breakdown";
+    const analysisType = (analysisMode === "ats") ? "ATS Check" : "ATS with Role";
 
     const payload = {
       fileName: finalFilename,

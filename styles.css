@@ -2515,9 +2515,8 @@
     animation: smoothFadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
   #results[data-mode="ats"] .normal-only{ display:none !important; }
-  /* Normal Resume Analysis excludes the ATS score and keyword/scoring sections,
-     which are reserved for the dedicated ATS Score check. */
-  #results[data-mode="normal"] .ats-only{ display:none !important; }
+  /* ATS with Role mode displays the role-matched ATS score gauge & breakdown, hiding standalone keyword cards. */
+  #results[data-mode="normal"] .ats-standalone-only{ display:none !important; }
 
   /* ============ PROFILE PAGE ============ */
   .profile-page-overlay {

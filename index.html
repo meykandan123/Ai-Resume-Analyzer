@@ -195,10 +195,10 @@
         <button class="ao-btn" id="chooseAtsBtn" type="button">Check ATS Score</button>
       </div>
       <div class="analysis-option-card" id="normalOptionCard">
-        <div class="ao-icon">📄</div>
-        <h3>Resume Analysis</h3>
-        <p>Get a detailed analysis of your resume, including skills, experience, education, strengths, weaknesses, and improvement suggestions.</p>
-        <button class="ao-btn" id="chooseNormalBtn" type="button">Analyze Resume</button>
+        <div class="ao-icon">🎯</div>
+        <h3>ATS with Role</h3>
+        <p>Calculate your ATS score matched against a specific target job role and job description.</p>
+        <button class="ao-btn" id="chooseNormalBtn" type="button">ATS with Role</button>
       </div>
     </div>
   </div>
@@ -216,12 +216,12 @@
       </div>
       <div class="report-mode-tabs">
         <button class="report-tab-btn active" id="tabAtsBtn" data-mode="ats" type="button">📊 Check ATS Score</button>
-        <button class="report-tab-btn" id="tabNormalBtn" data-mode="normal" type="button">📋 Resume Analysis</button>
+        <button class="report-tab-btn" id="tabNormalBtn" data-mode="normal" type="button">🎯 ATS with Role</button>
       </div>
     </div>
 
-    <!-- ATS HERO ROW (ATS Mode): 2 Columns (Gauge Card + Score Breakdown) -->
-    <div class="ats-hero-row ats-only">
+    <!-- ATS HERO ROW: 2 Columns (Gauge Card + Score Breakdown) -->
+    <div class="ats-hero-row">
       <div class="ats-score-card" id="atsCard">
         <div class="ats-score-card-head">
           <h2>Estimated ATS Compatibility</h2>
@@ -316,8 +316,8 @@
       </div>
     </div>
 
-    <!-- Keywords Analysis (ATS Mode) -->
-    <div class="report-card ats-only">
+    <!-- Keywords Analysis (Check ATS Score Mode) -->
+    <div class="report-card ats-standalone-only">
       <div class="report-card-head"><h2>Keywords Analysis</h2></div>
       <div class="report-card-body">
         <div class="kw-grid">
@@ -341,8 +341,8 @@
       </div>
     </div>
 
-    <!-- Keywords Polish Row (ATS Mode): 2 Columns -->
-    <div class="results-two-col-grid ats-only">
+    <!-- Keywords Polish Row (Check ATS Score Mode): 2 Columns -->
+    <div class="results-two-col-grid ats-standalone-only">
       <div class="report-card">
         <div class="report-card-head"><h2>Missing or Weak Keywords</h2></div>
         <div class="report-card-body">

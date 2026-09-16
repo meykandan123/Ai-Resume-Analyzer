@@ -1353,7 +1353,7 @@
     }
 
     // ---- Job description match (only runs if the user pasted a JD) ----
-    const jdText = (document.getElementById("jdInput").value || "").trim();
+    const jdText = (userJobDescriptionText || (document.getElementById("jdInput") ? document.getElementById("jdInput").value : "") || "").trim();
     const jdCard = document.getElementById("jdCard");
     let jdResult = null;
     if (jdText.length > 20){
@@ -1545,13 +1545,13 @@
     const recs = [];
 
     if (analysisMode === "normal") {
-      // IN ATS WITH ROLE MODE: Recommend using user resume with target role and job description
+      // IN ATS WITH ROLE MODE: Generate role & job description specific recommendations
       if (missingRoleSkills && missingRoleSkills.length > 0){
         recs.push({
-          badge: "Target Role Gap",
+          badge: "Target Role Skill Gap",
           type: "critical",
-          issue: `Missing Key Skills for ${targetRoleTitle}: ${missingRoleSkills.slice(0, 4).join(", ")}`,
-          fix: `Incorporate experience or training for (${missingRoleSkills.slice(0, 4).join(", ")}) into your resume. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
+          issue: `Missing Core ${targetRoleTitle} Skills: ${missingRoleSkills.slice(0, 5).join(", ")}`,
+          fix: `Standard requirements for a ${targetRoleTitle} include (${missingRoleSkills.slice(0, 5).join(", ")}). Highlight relevant projects, experience, or certifications covering these tools. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
         });
       }
 
@@ -1559,8 +1559,28 @@
         recs.push({
           badge: "Job Description Gap",
           type: "keyword",
-          issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 4).join(", ")}${jdResult.missing.length > 4 ? "..." : ""}`,
-          fix: `Incorporate missing keywords (${jdResult.missing.slice(0, 4).join(", ")}) naturally into your Experience or Skills bullet points.`
+          issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 5).join(", ")}${jdResult.missing.length > 5 ? "..." : ""}`,
+          fix: `The provided job description explicitly requests (${jdResult.missing.slice(0, 5).join(", ")}). Incorporate these exact terms naturally into your Experience bullet points or Skills summary.`
+        });
+      } else if (jdResult && jdResult.matched && jdResult.matched.length > 0){
+        recs.push({
+          badge: "Job Description Match",
+          type: "polish",
+          issue: `Strong Job Description Keyword Alignment (${jdResult.matched.length} terms matched)`,
+          fix: `Your resume covers key terms mentioned in the job description (${jdResult.matched.slice(0, 4).join(", ")}). Maintain this strong keyword presence.`
+        });
+      }
+
+      const resumeTextLowerForRecs = (text || "").toLowerCase();
+      const titleTokensRecs = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      const titleMatchedCountRecs = titleTokensRecs.filter(t => resumeTextLowerForRecs.includes(t)).length;
+      const titleAlignmentPctRecs = titleTokensRecs.length > 0 ? Math.round((titleMatchedCountRecs / titleTokensRecs.length) * 100) : 70;
+      if (titleAlignmentPctRecs < 60) {
+        recs.push({
+          badge: "Title Alignment",
+          type: "format",
+          issue: `Target Role Title ("${targetRoleTitle}") Not Prominently Stated`,
+          fix: `Add a clear headline or summary title matching "${targetRoleTitle}" at the top of your resume so candidate tracking systems index your application accurately.`
         });
       }
     }

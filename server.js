@@ -1612,14 +1612,22 @@ app.post("/api/support", async (req, res) => {
   }
 });
 
-// Get Support Requests for a user
-app.get("/api/support", async (req, res) => {
+// Get Support Requests for a user or specific ticket ID
+app.get(["/api/support", "/api/support/:ticketId"], async (req, res) => {
   try {
+    const ticketId = req.params.ticketId || req.query.ticketId;
     const email = (req.query.email || req.headers["x-user-email"] || "").toLowerCase().trim();
-    if (!email) {
+
+    let query = {};
+    if (ticketId) {
+      query.ticketId = ticketId;
+    } else if (email) {
+      query.email = email;
+    } else {
       return res.json({ success: true, tickets: [] });
     }
-    const tickets = await SupportRequest.find({ email: email })
+
+    const tickets = await SupportRequest.find(query)
       .sort({ createdAt: -1 })
       .limit(30)
       .lean();

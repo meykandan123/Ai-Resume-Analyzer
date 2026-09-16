@@ -2840,6 +2840,10 @@
       try {
         const res = await fetch(fullUrl, options);
 
+        if (!res.ok) {
+          console.error(`Error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
+        }
+
         // Auto re-hydrate token if renewed by backend
         const renewedToken = res.headers && res.headers.get("x-auth-token");
         if (renewedToken) {
@@ -2847,14 +2851,14 @@
           if (currentUser) currentUser.token = renewedToken;
         }
 
-        const contentType = res.headers.get("content-type") || "";
+        const contentType = (res.headers && res.headers.get("content-type")) || "";
         if (!contentType.includes("application/json")) {
           return {
             success: false,
             isNonJson: true,
-            isOffline: true,
+            isOffline: !res.ok ? false : true,
             status: res.status,
-            message: `Backend server is offline or unreachable. Please start your server with 'node server.js'.`
+            message: !res.ok ? `HTTP ${res.status} error (${res.statusText || "Not Found"}) at ${fullUrl}` : `Backend server returned non-JSON response.`
           };
         }
         const text = await res.text();
@@ -2865,6 +2869,10 @@
         if (parsed && parsed.token && typeof setAuthToken === "function") {
           setAuthToken(parsed.token);
           if (currentUser) currentUser.token = parsed.token;
+        }
+        if (!res.ok && parsed && typeof parsed === "object") {
+          parsed.success = false;
+          parsed.status = res.status;
         }
         return parsed;
       } catch (err) {

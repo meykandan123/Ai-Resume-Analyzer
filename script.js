@@ -1129,7 +1129,7 @@
     const effectiveRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "";
 
     if (roleBadgeEl) {
-      if (analysisMode === "ats" && !effectiveRoleTitle) {
+      if (analysisMode === "ats") {
         roleBadgeEl.style.display = "none";
       } else {
         roleBadgeEl.style.display = "inline-flex";
@@ -1138,7 +1138,7 @@
     }
 
     if (targetRoleChipBar) {
-      if (analysisMode === "ats" && !effectiveRoleTitle) {
+      if (analysisMode === "ats") {
         targetRoleChipBar.style.display = "none";
       } else {
         targetRoleChipBar.style.display = "inline-flex";
@@ -1493,9 +1493,7 @@
       ? Math.min(1.0, jdResult.ratio)
       : null;
 
-    const keywordCoveragePct = adjustedJdRatio !== null
-      ? Math.round(adjustedJdRatio * 100)
-      : Math.min(100, (skills.length >= 10 ? 90 : skills.length >= 7 ? 80 : skills.length >= 4 ? 65 : skills.length >= 2 ? 50 : 30));
+    const keywordCoveragePct = Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40));
 
     let contentStrengthPct = 50; // strict baseline for resume content impact
     if (quant.total > 0) {
@@ -1514,13 +1512,8 @@
     const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
     const readabilityPct = Math.max(45, 100 - gradeDelta * 6);
 
-    let relevanceAlignmentPct;
-    if (adjustedJdRatio !== null){
-      relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
-    } else {
-      const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
-      relevanceAlignmentPct = Math.max(45, 100 - densityDelta * 4);
-    }
+    const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+    const relevanceAlignmentPct = Math.max(45, Math.min(100, Math.round(100 - densityDelta * 4)));
 
     let formattingPct = 60; // strict formatting baseline
     if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
@@ -1541,23 +1534,35 @@
     renderScoreItem(scoreBreakdownGrid, "Readability", readabilityPct);
     renderScoreItem(scoreBreakdownGrid, "Relevance Alignment", relevanceAlignmentPct);
 
-    // ---- Executive Summary / ATS Improvement Recommendations ----
+    // ---- Executive Summary / Improvement Recommendations ----
     const recs = [];
 
-    if (missingRoleSkills && missingRoleSkills.length > 0){
-      recs.push({
-        badge: "Target Role Gap",
-        type: "critical",
-        issue: `Missing Key Skills for ${targetRoleTitle}: ${missingRoleSkills.slice(0, 4).join(", ")}`,
-        fix: `Incorporate experience or training for (${missingRoleSkills.slice(0, 4).join(", ")}) into your resume. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
-      });
+    if (analysisMode === "normal") {
+      // IN RESUME ANALYSIS MODE: Recommend using user resume with target role and job description
+      if (missingRoleSkills && missingRoleSkills.length > 0){
+        recs.push({
+          badge: "Target Role Gap",
+          type: "critical",
+          issue: `Missing Key Skills for ${targetRoleTitle}: ${missingRoleSkills.slice(0, 4).join(", ")}`,
+          fix: `Incorporate experience or training for (${missingRoleSkills.slice(0, 4).join(", ")}) into your resume. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
+        });
+      }
+
+      if (jdResult && jdResult.missing && jdResult.missing.length > 0){
+        recs.push({
+          badge: "Job Description Gap",
+          type: "keyword",
+          issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 4).join(", ")}${jdResult.missing.length > 4 ? "..." : ""}`,
+          fix: `Incorporate missing keywords (${jdResult.missing.slice(0, 4).join(", ")}) naturally into your Experience or Skills bullet points.`
+        });
+      }
     }
 
-    // 1. Critical Contact / Core Sections
+    // IN ATS SCORE CHECK MODE (and general resume quality): Recommend about the resume structure, completeness, and formatting
     criticalMissingFields.forEach(field => {
       if (missing.includes(field)){
         recs.push({
-          badge: "Critical",
+          badge: "Critical Field",
           type: "critical",
           issue: `Missing Essential Field: ${field}`,
           fix: `Add a clear ${field.replace(/ section$/i, "").toLowerCase()} header — ATS parsers rely on this to map your application data.`
@@ -1565,24 +1570,16 @@
       }
     });
 
-    // 2. Missing Job Description or Common Keywords
-    if (jdResult && jdResult.missing && jdResult.missing.length > 0){
+    if (analysisMode === "ats" && missingCommonKw && missingCommonKw.length > 0){
       recs.push({
-        badge: "Keyword Match",
-        type: "keyword",
-        issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 4).join(", ")}${jdResult.missing.length > 4 ? "..." : ""}`,
-        fix: `Incorporate missing keywords (${jdResult.missing.slice(0, 4).join(", ")}) naturally into your Experience or Skills bullet points.`
-      });
-    } else if (missingCommonKw && missingCommonKw.length > 0){
-      recs.push({
-        badge: "Keywords",
+        badge: "Core Keywords",
         type: "keyword",
         issue: `Missing Core Industry Terms: ${missingCommonKw.slice(0, 4).join(", ")}`,
         fix: `Add relevant industry skills (${missingCommonKw.slice(0, 4).join(", ")}) to improve ATS keyword search ranking.`
       });
     }
 
-    // 3. Bullet Point Impact & Metrics
+    // Bullet Point Impact & Metrics
     if (quant.total === 0 || quant.quantified === 0){
       recs.push({
         badge: "Impact Metrics",
@@ -1592,7 +1589,7 @@
       });
     }
 
-    // 4. Action Verbs & Weak Phrasing
+    // Action Verbs & Weak Phrasing
     if (uniqueWeakPhrases && uniqueWeakPhrases.length > 0){
       recs.push({
         badge: "Verb Strength",
@@ -1602,7 +1599,7 @@
       });
     }
 
-    // 5. Formatting & Length
+    // Formatting & Length
     if (wordCount < 300 || wordCount > 1100){
       recs.push({
         badge: "Formatting",
@@ -1612,7 +1609,7 @@
       });
     }
 
-    // 6. Section Coverage & Structure
+    // Section Coverage & Structure
     const missingSections = allSections.filter(s => !s.found).map(s => s.label);
     if (missingSections.length > 0){
       recs.push({
@@ -1623,7 +1620,7 @@
       });
     }
 
-    // 7. Timeline / Dates
+    // Timeline / Dates
     if (noDatesFound){
       recs.push({
         badge: "Timeline",
@@ -1633,7 +1630,7 @@
       });
     }
 
-    // 8. Buzzwords & Summary Polish
+    // Buzzwords & Summary Polish
     if (buzzwordsFound && buzzwordsFound.length > 0){
       recs.push({
         badge: "Polish",
@@ -1755,33 +1752,16 @@
       errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
     }
 
-    // ---- Job Role Specific ATS Score (0-100) ----
-    const resumeTextLower = text.toLowerCase();
-    const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-    const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
-    const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
-
-    let weightedScore = 0;
-    if (jdResult && jdResult.ratio !== null) {
-      weightedScore =
-        (titleAlignmentPct * 0.10) +
-        (Math.round(roleSkillMatchRatio * 100) * 0.25) +
-        (Math.round(jdResult.ratio * 100) * 0.20) +
-        (relevanceAlignmentPct * 0.15) +
-        (contentStrengthPct * 0.10) +
-        (timelineConsistencyPct * 0.05) +
-        (sectionCoveragePct * 0.05) +
-        (readabilityPct * 0.10);
-    } else {
-      weightedScore =
-        (titleAlignmentPct * 0.10) +
-        (Math.round(roleSkillMatchRatio * 100) * 0.35) +
-        (relevanceAlignmentPct * 0.20) +
-        (contentStrengthPct * 0.15) +
-        (timelineConsistencyPct * 0.05) +
-        (sectionCoveragePct * 0.05) +
-        (readabilityPct * 0.10);
-    }
+    // ---- Standalone Resume ATS Score (0-100) ----
+    // Evaluates ATS compatibility and structural quality based purely on the user's resume
+    const weightedScore =
+      (sectionCoveragePct * 0.20) +
+      (keywordCoveragePct * 0.20) +
+      (contentStrengthPct * 0.20) +
+      (formattingPct * 0.15) +
+      (relevanceAlignmentPct * 0.10) +
+      (readabilityPct * 0.10) +
+      (timelineConsistencyPct * 0.05);
 
     let score = Math.round(weightedScore);
     const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;

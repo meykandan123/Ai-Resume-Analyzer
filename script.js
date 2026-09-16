@@ -2203,16 +2203,14 @@
   const navHomeLink = document.getElementById("navHomeLink");
   if (navHomeLink) {
     navHomeLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      resetAnalysis();
+      goHome(e);
     });
   }
 
   const navBrandLogo = document.getElementById("navBrandLogo");
   if (navBrandLogo) {
     navBrandLogo.addEventListener("click", (e) => {
-      e.preventDefault();
-      resetAnalysis();
+      goHome(e);
     });
   }
 
@@ -5045,7 +5043,10 @@
   const navSignInBtn = document.getElementById("navSignInBtn");
   if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
 
-  async function goHome() {
+  async function goHome(e) {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
     if (typeof closeProfilePage === "function") closeProfilePage();
     if (typeof closeHistory === "function") closeHistory();
     if (typeof closeAuth === "function") closeAuth();
@@ -5054,6 +5055,11 @@
     if (profileDropdown) profileDropdown.classList.remove("open");
     const navMenuDropdown = document.getElementById("navMenuDropdown");
     if (navMenuDropdown) navMenuDropdown.classList.remove("open");
+
+    // Reset analysis & view state to return to clean upload page
+    if (typeof resetAnalysis === "function") {
+      resetAnalysis();
+    }
 
     // Sync user state & history with backend when returning Home
     if (getAuthToken()) {
@@ -5076,10 +5082,7 @@
 
   const navBrandLogoRef = document.getElementById("navBrandLogo");
   if (navBrandLogoRef) {
-    navBrandLogoRef.addEventListener("click", (e) => {
-      e.preventDefault();
-      goHome();
-    });
+    navBrandLogoRef.addEventListener("click", goHome);
   }
 
   if (navActionBtn) {

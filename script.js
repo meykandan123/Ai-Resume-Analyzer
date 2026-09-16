@@ -1779,6 +1779,7 @@
     standaloneScore = Math.max(15, Math.min(100, standaloneScore));
 
     // ---- Role & Job Description Matched ATS Score ----
+    const resumeTextLower = (text || "").toLowerCase();
     const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
     const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
     const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;

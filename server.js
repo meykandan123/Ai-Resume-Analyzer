@@ -68,6 +68,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors());
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
@@ -92,6 +96,11 @@ function saveUploadedFile(fileData, filename) {
     const safeFilename = `${Date.now()}_${cleanName}`;
     const diskPath = path.join(uploadsDir, safeFilename);
     fs.writeFileSync(diskPath, buffer);
+    // Also save directly under cleanName so direct lookup immediately succeeds
+    try {
+      const directPath = path.join(uploadsDir, cleanName);
+      fs.writeFileSync(directPath, buffer);
+    } catch (directErr) {}
     return `/uploads/${safeFilename}`;
   } catch (err) {
     console.error("Failed to save uploaded file buffer:", err.message);
@@ -2125,6 +2134,10 @@ const handleResumeAnalyze = async (req, res) => {
           jobDescription: finalJd,
           extractedData: computedExtractedData,
           analysisResult: computedAnalysisResult,
+          resumeText: resumeText || "",
+          fileUrl: savedFilePath,
+          filePath: savedFilePath,
+          fileData: fileData || "",
           lastUpdatedAt: now
         }
       },
@@ -2162,6 +2175,10 @@ const handleResumeAnalyze = async (req, res) => {
             "history.$.targetJobRole": finalTargetRole,
             "history.$.customJobRole": finalCustomRole,
             "history.$.hasJobDescription": finalHasJd,
+            "history.$.fileUrl": savedFilePath,
+            "history.$.filePath": savedFilePath,
+            "history.$.fileData": fileData || "",
+            "history.$.resumeText": resumeText || "",
             "history.$.status": "analyzed",
             updatedAt: now
           }
@@ -2183,6 +2200,10 @@ const handleResumeAnalyze = async (req, res) => {
               targetJobRole: finalTargetRole,
               customJobRole: finalCustomRole,
               hasJobDescription: finalHasJd,
+              fileUrl: savedFilePath,
+              filePath: savedFilePath,
+              fileData: fileData || "",
+              resumeText: resumeText || "",
               status: "analyzed"
             }
           }
@@ -2276,6 +2297,10 @@ app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (
       userId: userIdStr,
       fileName: item.fileName,
       filename: item.fileName,
+      fileUrl: item.fileUrl || "",
+      filePath: item.filePath || "",
+      fileData: item.fileData || "",
+      resumeText: item.resumeText || "",
       fileType: (item.fileName || "").split(".").pop() || "pdf",
       analysisType: item.analysisType || "normal",
       atsScore: item.atsScore || 0,
@@ -2364,6 +2389,141 @@ app.get("/api/user/resume-analysis/:id", authenticateToken, async (req, res) => 
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Failed to retrieve analysis record." });
+  }
+});
+
+// Download Resume File from History
+app.get(["/api/history/download/:id", "/api/user/resume-download/:id"], authenticateToken, async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const userIdStr = req.user.userId || req.user._id.toString();
+    const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
+    const userQuery = {
+      $or: [
+        { userId: userIdStr },
+        ...(userEmail ? [{ email: userEmail }] : [])
+      ]
+    };
+
+    let record = await ResumeAnalysis.findOne({
+      $and: [
+        userQuery,
+        {
+          $or: [
+            { resumeId: targetId },
+            { fileName: targetId },
+            ...(mongoose.Types.ObjectId.isValid(targetId) ? [{ _id: targetId }] : [])
+          ]
+        }
+      ]
+    });
+
+    let historyItem = null;
+    const histDoc = await ResumeHistory.findOne(userQuery);
+    if (histDoc && Array.isArray(histDoc.history)) {
+      historyItem = histDoc.history.find(h => h.resumeId === targetId || (h._id && h._id.toString() === targetId) || h.fileName === targetId);
+    }
+
+    const fileName = (record && record.fileName) || (historyItem && historyItem.fileName) || `Resume_${targetId}.pdf`;
+    let fileUrl = (record && record.fileUrl) || (historyItem && historyItem.fileUrl) || "";
+    let filePath = (record && record.filePath) || (historyItem && historyItem.filePath) || "";
+
+    // 1. If physical file is on disk in uploads directory
+    let diskPath = null;
+    const cleanTargetName = (fileName || "").replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+    if (filePath) {
+      const cleanRelative = filePath.replace(/^\/uploads\//, "");
+      const candidatePath = path.join(uploadsDir, cleanRelative);
+      if (fs.existsSync(candidatePath)) diskPath = candidatePath;
+    }
+    if (!diskPath && fileUrl) {
+      const cleanRelative = fileUrl.replace(/^\/uploads\//, "");
+      const candidatePath = path.join(uploadsDir, cleanRelative);
+      if (fs.existsSync(candidatePath)) diskPath = candidatePath;
+    }
+    if (!diskPath && cleanTargetName) {
+      const candidatePath = path.join(uploadsDir, cleanTargetName);
+      if (fs.existsSync(candidatePath)) diskPath = candidatePath;
+    }
+    // Search uploadsDir for timestamp-prefixed files matching cleanTargetName
+    if (!diskPath && fs.existsSync(uploadsDir) && cleanTargetName) {
+      try {
+        const files = fs.readdirSync(uploadsDir);
+        const matches = files.filter(f => 
+          f === cleanTargetName ||
+          f.endsWith(`_${cleanTargetName}`) ||
+          f.toLowerCase().endsWith(`_${cleanTargetName.toLowerCase()}`) ||
+          (cleanTargetName.length > 4 && f.toLowerCase().includes(cleanTargetName.toLowerCase()))
+        );
+        if (matches.length > 0) {
+          matches.sort((a, b) => {
+            const statA = fs.statSync(path.join(uploadsDir, a));
+            const statB = fs.statSync(path.join(uploadsDir, b));
+            return statB.mtimeMs - statA.mtimeMs;
+          });
+          diskPath = path.join(uploadsDir, matches[0]);
+        }
+      } catch (scanErr) {
+        console.warn("Uploads directory scan error:", scanErr);
+      }
+    }
+
+    // 2. Restore file to disk if Base64 fileData is in DB
+    let storedFileData = (record && record.fileData) || (historyItem && historyItem.fileData) || "";
+    if (!diskPath && storedFileData && typeof storedFileData === "string" && storedFileData.length > 50) {
+      try {
+        const base64Content = storedFileData.includes(";base64,") ? storedFileData.split(";base64,").pop() : storedFileData;
+        const buffer = Buffer.from(base64Content, "base64");
+        const safeFilename = `${Date.now()}_${cleanTargetName || "resume.pdf"}`;
+        const restoredPath = path.join(uploadsDir, safeFilename);
+        fs.writeFileSync(restoredPath, buffer);
+        diskPath = restoredPath;
+      } catch (writeErr) {
+        console.warn("Could not write restored file from DB base64:", writeErr);
+      }
+    }
+
+    // If disk file found, serve the exact original binary file!
+    if (diskPath && fs.existsSync(diskPath)) {
+      const ext = path.extname(fileName || diskPath).toLowerCase();
+      let mimeType = "application/pdf";
+      if (ext === ".docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      else if (ext === ".doc") mimeType = "application/msword";
+      else if (ext === ".txt") mimeType = "text/plain; charset=utf-8";
+
+      res.setHeader("Content-Type", mimeType);
+      return res.download(path.resolve(diskPath), fileName);
+    }
+
+    // 3. Fallback: If no binary file exists on disk, generate content preserving original format
+    const resumeContent = (record && record.resumeText) || (historyItem && historyItem.resumeText) || "";
+    const extracted = (record && record.extractedData) || {};
+    const score = (record && record.atsScore) || (historyItem && historyItem.atsScore) || 0;
+
+    let contentToServe = "";
+    if (resumeContent && resumeContent.trim().length > 15) {
+      contentToServe = resumeContent;
+    } else {
+      const name = extracted.name || req.user.name || "Candidate Resume";
+      const email = extracted.email || req.user.email || "";
+      const phone = extracted.phone || "";
+      const skills = Array.isArray(extracted.skills) ? extracted.skills.join(", ") : "";
+      const experience = Array.isArray(extracted.experience) ? extracted.experience.join("\n") : (extracted.experience || "");
+      const education = Array.isArray(extracted.education) ? extracted.education.join("\n") : (extracted.education || "");
+      
+      contentToServe = `${name}\n${email}${phone ? " | " + phone : ""}\nATS Score: ${score}\n\n` +
+        `SKILLS:\n${skills || "Not specified"}\n\n` +
+        `EXPERIENCE:\n${experience || "Not specified"}\n\n` +
+        `EDUCATION:\n${education || "Not specified"}\n`;
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Type", fileName.endsWith(".pdf") ? "application/pdf" : "text/plain; charset=utf-8");
+    return res.send(contentToServe);
+  } catch (err) {
+    console.error("Resume download error:", err);
+    return res.status(500).json({ success: false, message: "Failed to download resume file." });
   }
 });
 

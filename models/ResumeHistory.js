@@ -36,6 +36,22 @@ const historyItemSchema = new mongoose.Schema({
   status: {
     type: String,
     default: "analyzed"
+  },
+  fileUrl: {
+    type: String,
+    default: ""
+  },
+  filePath: {
+    type: String,
+    default: ""
+  },
+  resumeText: {
+    type: String,
+    default: ""
+  },
+  fileData: {
+    type: String,
+    default: ""
   }
 }, { _id: false });
 

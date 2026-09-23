@@ -65,6 +65,22 @@ const resumeAnalysisSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  resumeText: {
+    type: String,
+    default: ""
+  },
+  fileUrl: {
+    type: String,
+    default: ""
+  },
+  filePath: {
+    type: String,
+    default: ""
+  },
+  fileData: {
+    type: String,
+    default: ""
+  },
   firstUploadedAt: {
     type: Date,
     default: Date.now

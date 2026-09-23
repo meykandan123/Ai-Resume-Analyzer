@@ -1,8 +1,9 @@
 // Firebase configuration and initialization
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 import {
   getAuth,
+  setPersistence,
+  inMemoryPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
@@ -34,25 +35,24 @@ const firebaseConfig = (typeof window !== "undefined" && window.firebaseConfig)
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-let analytics = null;
-try {
-  if (typeof window !== "undefined") {
-    analytics = getAnalytics(app);
-  }
-} catch (err) {
-  console.warn("Firebase Analytics initialization notice:", err.message || err);
-}
+// Analytics is disabled to prevent unnecessary remote network requests and connection errors
+const analytics = null;
 
-// Initialize Firebase Auth
+// Initialize Firebase Auth with in-memory persistence to avoid background account lookup errors on page load
 let auth = null;
 try {
   auth = getAuth(app);
+  if (auth && typeof setPersistence === "function" && inMemoryPersistence) {
+    setPersistence(auth, inMemoryPersistence).catch(() => {});
+  }
 } catch (err) {
   console.warn("Firebase Auth initialization notice:", err.message || err);
 }
 
 const firebaseAuthHelpers = {
   getAuth,
+  setPersistence,
+  inMemoryPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
@@ -74,6 +74,11 @@ if (typeof window !== "undefined") {
   window.firebaseAuth = auth;
   window.firebaseAuthHelpers = firebaseAuthHelpers;
   window.GoogleAuthProvider = GoogleAuthProvider;
+  try {
+    window.dispatchEvent(new CustomEvent("firebase-ready", {
+      detail: { app, auth, helpers: firebaseAuthHelpers }
+    }));
+  } catch (e) {}
 }
 
 export {

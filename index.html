@@ -435,8 +435,25 @@
     </div>
 
     <div class="results-actions">
-      <button class="results-action-btn back-to-options-btn" id="backToOptionsBtn" type="button">← Back to Options</button>
-      <button class="results-action-btn pdf-export-btn" id="pdfExportBtn" type="button">Download PDF Report</button>
+      <button class="results-action-btn back-to-options-btn" id="backToOptionsBtn" type="button">&larr; Back to Options</button>
+      <button class="results-action-btn original-resume-download-btn" id="downloadOriginalResumeBtn" type="button" title="Download the exact same resume you uploaded">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download Original Resume
+      </button>
+      <button class="results-action-btn pdf-export-btn" id="pdfExportBtn" type="button" title="Download detailed ATS scoring and analysis report">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        Download ATS Report
+      </button>
       <button class="results-action-btn reset-btn" id="resetBtn" type="button">Upload Another Resume</button>
     </div>
   </div>
@@ -538,6 +555,64 @@
   </div>
 </div>
 
+<!-- Resume Preview & Inspection Modal -->
+<div class="modal-overlay support-modal" id="resumePreviewModal">
+  <div class="auth-modal resume-preview-modal-box">
+    <button class="modal-close" id="resumePreviewCloseBtn" type="button" aria-label="Close Preview">&times;</button>
+    
+    <div class="resume-preview-header">
+      <div class="resume-preview-score-badge" id="previewScoreBadge">--</div>
+      <div class="resume-preview-title-wrap">
+        <h2 id="previewFileName">Resume Preview</h2>
+        <div id="previewMeta" class="resume-preview-meta"></div>
+      </div>
+    </div>
+
+    <!-- Action Toolbar -->
+    <div class="resume-preview-actions-bar">
+      <button type="button" class="preview-action-btn preview-btn-download" id="previewDownloadBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download Resume
+      </button>
+      <button type="button" class="preview-action-btn preview-btn-open" id="previewOpenAnalysisBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Open Full Analysis
+      </button>
+    </div>
+
+    <!-- Tabs: Content vs Summary Details -->
+    <div class="resume-preview-tabs">
+      <button type="button" class="preview-tab active" id="tabBtnContent">Resume Document & Content</button>
+      <button type="button" class="preview-tab" id="tabBtnDetails">ATS Insights & Skills</button>
+    </div>
+
+    <div class="resume-preview-body">
+      <!-- Tab 1: Resume Text Preview -->
+      <div class="preview-tab-pane active" id="paneContent">
+        <div class="resume-text-box" id="previewResumeText">
+          <em>Loading resume text...</em>
+        </div>
+      </div>
+
+      <!-- Tab 2: Extracted Details -->
+      <div class="preview-tab-pane" id="paneDetails" style="display:none;">
+        <div class="preview-info-card">
+          <div class="preview-info-label">Candidate Details</div>
+          <div id="previewCandidateInfo" class="preview-info-content"></div>
+        </div>
+        <div class="preview-info-card" style="margin-top:10px;">
+          <div class="preview-info-label">Detected Skills</div>
+          <div id="previewSkillsList" class="preview-tags-container"></div>
+        </div>
+        <div class="preview-info-card" style="margin-top:10px;">
+          <div class="preview-info-label">Missing Recommended Keywords</div>
+          <div id="previewMissingList" class="preview-tags-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Profile page (full page, opened from the profile dropdown) -->
 <div class="profile-page-overlay" id="profilePageOverlay">
   <div class="profile-page">
@@ -615,6 +690,9 @@
         <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.6 35.1 26.9 36 24 36c-5.3 0-9.7-3.1-11.3-7.6l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.6 5.5C41.8 35.9 44 30.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
         Continue with Google
       </button>
+      <div style="text-align:center; margin-top:6px;">
+        <button type="button" class="google-redirect-btn" id="googleLoginRedirectBtn">Popup blocked? Sign in using page redirect</button>
+      </div>
     </form>
 
     <!-- SIGNUP PANEL -->
@@ -650,6 +728,9 @@
         <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.6 35.1 26.9 36 24 36c-5.3 0-9.7-3.1-11.3-7.6l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.6 5.5C41.8 35.9 44 30.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
         Continue with Google
       </button>
+      <div style="text-align:center; margin-top:6px;">
+        <button type="button" class="google-redirect-btn" id="googleSignupRedirectBtn">Popup blocked? Sign up using page redirect</button>
+      </div>
     </form>
 
     <!-- FORGOT PASSWORD PANEL (request the reset email) -->

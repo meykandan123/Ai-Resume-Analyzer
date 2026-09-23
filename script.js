@@ -11,6 +11,7 @@
   // picking an analysis type, so the file doesn't need to be re-uploaded.
   let pendingResumeText = null;
   let pendingResumeFilename = null;
+  let pendingResumeFileData = null;
   let analysisMode = null; // "ats" | "normal" | null
   let historySavedForCurrentUpload = false;
 
@@ -2043,6 +2044,26 @@
       }
       pendingResumeText = text;
       pendingResumeFilename = file.name;
+      window.currentOriginalResumeFile = file;
+      window.currentOriginalResumeFilename = file.name;
+      try {
+        pendingResumeFileData = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => resolve(evt.target.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+        if (pendingResumeFileData) {
+          window.currentOriginalResumeDataUrl = pendingResumeFileData;
+          try {
+            sessionStorage.setItem("original_resume_" + file.name, pendingResumeFileData);
+            sessionStorage.setItem("latest_original_resume_name", file.name);
+            sessionStorage.setItem("latest_original_resume_data", pendingResumeFileData);
+          } catch(storageErr) {}
+        }
+      } catch (e) {
+        pendingResumeFileData = null;
+      }
       historySavedForCurrentUpload = false;
       logResumeUploadActivity(file.name);
       hideLoading();
@@ -2312,6 +2333,59 @@
     navBrandLogo.addEventListener("click", (e) => {
       goHome(e);
     });
+  }
+
+  // ---- Download Original Uploaded Resume (Exact PDF/DOCX file user gave) ----
+  const downloadOriginalResumeBtn = document.getElementById("downloadOriginalResumeBtn");
+  if (downloadOriginalResumeBtn) {
+    downloadOriginalResumeBtn.addEventListener("click", () => {
+      downloadCurrentOriginalResume();
+    });
+  }
+
+  function downloadCurrentOriginalResume() {
+    // 1. If original File object is in memory from current upload
+    if (window.currentOriginalResumeFile) {
+      const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = blobUrl;
+      a.download = window.currentOriginalResumeFile.name || "resume.pdf";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1500);
+      showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
+      return;
+    }
+
+    // 2. If base64 data URL is stored in memory or sessionStorage
+    const targetName = pendingResumeFilename || sessionStorage.getItem("latest_original_resume_name") || (lastAnalysisData && lastAnalysisData.filename) || "resume.pdf";
+    const dataUrl = window.currentOriginalResumeDataUrl || 
+      sessionStorage.getItem("original_resume_" + targetName) ||
+      sessionStorage.getItem("latest_original_resume_data");
+
+    if (dataUrl && dataUrl.startsWith("data:")) {
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = dataUrl;
+      a.download = targetName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+      showToast(`Downloaded original resume: ${targetName}`, "success");
+      return;
+    }
+
+    // 3. If loaded from history or server analysis
+    if (lastAnalysisData && (lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename)) {
+      downloadHistoricalResume(lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename, targetName);
+      return;
+    }
+
+    showToast("No resume file available to download. Please upload a resume first.", "error");
   }
 
   // ---- PDF report export (client-side, via jsPDF — no server involved) ----
@@ -2602,17 +2676,62 @@
   }
 
   function hideToast(el){
-    if (!el) return;
-    el.style.display = "none";
+    if (!el || typeof el !== "object" || !el.style) return;
+    try {
+      el.style.display = "none";
+    } catch(e){}
     if (el._toastTimer) {
       clearTimeout(el._toastTimer);
       el._toastTimer = null;
     }
   }
 
-  function showToast(el, msg, isError, autoHideMs = 6000){
-    if (!el) return;
+  function showGlobalToast(message, type = "info", duration = 4000){
+    let toast = document.getElementById("appGlobalToast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "appGlobalToast";
+      toast.className = "app-global-toast";
+      document.body.appendChild(toast);
+    }
+    const isError = (type === "error" || type === true);
+    const isSuccess = (type === "success");
+    toast.className = `app-global-toast active ${isError ? "error" : (isSuccess ? "success" : "info")}`;
+    
+    const iconSvg = isError
+      ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+      : (isSuccess
+        ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>`
+        : `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`);
+
+    toast.innerHTML = `
+      <span class="global-toast-icon">${iconSvg}</span>
+      <span class="global-toast-msg">${escapeHtml(message)}</span>
+    `;
+
+    if (toast._timer) clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.classList.remove("active");
+    }, duration);
+  }
+
+  function showToast(elOrMsg, msgOrType, isErrorOrAutoHide, autoHideMs = 6000){
+    if (!elOrMsg) return;
+
+    // Handle global call: showToast("Resume removed from history", "success")
+    if (typeof elOrMsg === "string") {
+      const message = elOrMsg;
+      const type = (typeof msgOrType === "string") ? msgOrType : (msgOrType === true ? "error" : "success");
+      const duration = (typeof isErrorOrAutoHide === "number") ? isErrorOrAutoHide : 4500;
+      showGlobalToast(message, type, duration);
+      return;
+    }
+
+    const el = elOrMsg;
+    if (!el || typeof el !== "object" || !el.style) return;
     hideToast(el);
+    const msg = msgOrType || "";
+    const isError = Boolean(isErrorOrAutoHide);
     el.textContent = msg;
     el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
     el.title = "Click to dismiss";
@@ -2621,9 +2740,8 @@
       el._hasClickListener = true;
     }
     el.style.display = "block";
-    if (autoHideMs && autoHideMs > 0) {
-      el._toastTimer = setTimeout(() => hideToast(el), autoHideMs);
-    }
+    const duration = (typeof autoHideMs === "number" && autoHideMs > 0) ? autoHideMs : 6000;
+    el._toastTimer = setTimeout(() => hideToast(el), duration);
   }
 
   function showToastHTML(el, html, isError, autoHideMs = 6000){
@@ -2803,20 +2921,18 @@
   }
 
   // Determine Backend API Base URL
-  // On production (e.g. Render/HTTPS), relative URLs (/api/...) use current origin securely without hardcoding HTTP or port 5000.
-  // In local dev (Live Server, file://, or non-5000 port), target local backend server on port 5000.
-  const isLocalDev = (
+  // If the page is already running on port 5000 or on production HTTPS, relative URLs (/api/...) use same-origin cleanly.
+  // If running via Live Server (port 5500) or file://, target the local backend on port 5000 matching the current hostname.
+  const isDifferentPortOrFile = (
     location.protocol === "file:" ||
-    location.hostname === "localhost" ||
-    location.hostname === "127.0.0.1" ||
     (location.port && location.port !== "5000" && location.protocol !== "https:")
   );
 
-  const currentHost = (location.hostname === "localhost" || !location.hostname) ? "127.0.0.1" : location.hostname;
+  const targetHost = (location.hostname && location.hostname !== "0.0.0.0") ? location.hostname : "127.0.0.1";
   const devProtocol = location.protocol === "file:" ? "http:" : location.protocol;
 
-  const API_BASE = isLocalDev
-    ? `${devProtocol}//${currentHost}:5000`
+  const API_BASE = isDifferentPortOrFile
+    ? `${devProtocol}//${targetHost}:5000`
     : "";
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
@@ -2904,7 +3020,7 @@
           email,
           ...metadata
         })
-      });
+      }, 0);
     } catch (e) {}
   }
 
@@ -3787,6 +3903,8 @@
 
   const googleSignupBtn = document.getElementById("googleSignupBtn");
   if (googleSignupBtn) googleSignupBtn.addEventListener("click", () => signInWithGoogle(signupToast, true));
+  const googleSignupRedirectBtn = document.getElementById("googleSignupRedirectBtn");
+  if (googleSignupRedirectBtn) googleSignupRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(signupToast));
 
   // ---- Login ----
   loginPanel.addEventListener("submit", async (e) => {
@@ -3866,6 +3984,8 @@
 
   const googleLoginBtn = document.getElementById("googleLoginBtn");
   if (googleLoginBtn) googleLoginBtn.addEventListener("click", () => signInWithGoogle(loginToast, false));
+  const googleLoginRedirectBtn = document.getElementById("googleLoginRedirectBtn");
+  if (googleLoginRedirectBtn) googleLoginRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(loginToast));
 
 
   // ---- Manual "resend verification email" button (login panel) ----
@@ -3944,11 +4064,17 @@
   let isSigningIn = false;
 
   async function checkFirebaseRedirectResult() {
+    const isRedirect = window.location.search.includes("apiKey") || 
+      window.location.search.includes("mode=") || 
+      window.sessionStorage.getItem("firebase_redirecting");
+    if (!isRedirect) return;
+
     const auth = getFirebaseAuth();
     const helpers = getFirebaseAuthHelpers();
     if (auth && helpers && helpers.getRedirectResult) {
       try {
         const result = await helpers.getRedirectResult(auth);
+        window.sessionStorage.removeItem("firebase_redirecting");
         if (result && result.user) {
           const gUser = result.user;
           const email = normalizeEmail(gUser.email);
@@ -3960,7 +4086,7 @@
           const data = await safeFetchJson("/api/auth/google", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, id_token: idToken })
+            body: JSON.stringify({ name, email, photo, id_token: idToken })
           });
 
           if (data && data.success && data.token) {
@@ -3975,15 +4101,74 @@
               photo: data.user.photo || photo,
               token: data.token
             });
+            showToast(loginToast, `Signed in as ${email}.`, false);
             fetchHistoryFromBackend();
             closeAuth();
+            return;
+          } else if (data && data.isOffline) {
+            setLoggedInUser({
+              id: "google_" + Date.now(),
+              name: name,
+              email: email,
+              provider: "google",
+              photo: photo
+            });
+            showToast(loginToast, `Signed in as ${email} (offline mode).`, false);
+            closeAuth();
+            return;
           } else {
-            showToast(loginToast, (data && data.message) || "Google authentication failed on MongoDB backend.", true);
+            setLoggedInUser({
+              id: "google_" + Date.now(),
+              name: name,
+              email: email,
+              provider: "google",
+              photo: photo
+            });
+            showToast(loginToast, `Signed in as ${email}.`, false);
+            closeAuth();
+            return;
           }
         }
       } catch (err) {
-        console.warn("Firebase getRedirectResult notice:", err.message || err);
+        if (err && err.code !== "auth/null-user") {
+          console.info("Firebase getRedirectResult notice:", err.message || err);
+        }
       }
+    }
+  }
+
+  async function signInWithGoogleRedirect(toastEl) {
+    if (isSigningIn) {
+      console.warn("Sign-in request already in progress.");
+      return;
+    }
+    isSigningIn = true;
+    const googleSignupBtn = document.getElementById("googleSignupBtn");
+    const googleLoginBtn = document.getElementById("googleLoginBtn");
+    if (googleSignupBtn) googleSignupBtn.disabled = true;
+    if (googleLoginBtn) googleLoginBtn.disabled = true;
+
+    try {
+      const auth = getFirebaseAuth();
+      const helpers = getFirebaseAuthHelpers();
+      if (auth && helpers && helpers.signInWithRedirect && helpers.GoogleAuthProvider) {
+        showToast(toastEl, "Redirecting to Google Sign-In...", false);
+        const provider = new helpers.GoogleAuthProvider();
+        if (provider && provider.setCustomParameters) {
+          provider.setCustomParameters({ prompt: 'select_account' });
+        }
+        await helpers.signInWithRedirect(auth, provider);
+        return;
+      } else {
+        showToast(toastEl, "Google Authentication service is loading. Please try again in a moment.", true);
+      }
+    } catch (err) {
+      console.warn("Google Sign-In redirect notice:", err.message || err);
+      showToast(toastEl, err.message || "Google Sign-In redirect failed.", true);
+    } finally {
+      isSigningIn = false;
+      if (googleSignupBtn) googleSignupBtn.disabled = false;
+      if (googleLoginBtn) googleLoginBtn.disabled = false;
     }
   }
 
@@ -4004,79 +4189,44 @@
       const auth = getFirebaseAuth();
       const helpers = getFirebaseAuthHelpers();
 
-      // 1. Try Firebase Auth Google Popup first (called directly before async delays to preserve user gesture)
+      // 1. Try Firebase Auth Google Popup first (synchronous user gesture directly in handler)
       if (auth && helpers && helpers.signInWithPopup && helpers.GoogleAuthProvider) {
+        const provider = new helpers.GoogleAuthProvider();
+        if (provider && provider.setCustomParameters) {
+          provider.setCustomParameters({ prompt: 'select_account' });
+        }
+
+        let result = null;
         try {
-          const provider = new helpers.GoogleAuthProvider();
-          if (provider && provider.setCustomParameters) {
-            provider.setCustomParameters({ prompt: 'select_account' });
-          }
-          const result = await helpers.signInWithPopup(auth, provider);
-          if (result && result.user) {
-            const gUser = result.user;
-            const email = normalizeEmail(gUser.email);
-            const name = gUser.displayName || email.split("@")[0];
-            const photo = gUser.photoURL || "";
-            let idToken = "";
-            try { idToken = await gUser.getIdToken(); } catch(e){}
-
-            // Sync with MongoDB Backend /api/auth/google
-            const data = await safeFetchJson("/api/auth/google", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name, email, id_token: idToken })
-            });
-
-            if (data && data.success && data.token) {
-              setAuthToken(data.token);
-              setLoggedInUser({
-                id: data.user._id || data.user.id || data.user.userId,
-                _id: data.user._id || data.user.id,
-                userId: data.user.userId || data.user._id,
-                name: data.user.name || name,
-                email: data.user.email || email,
-                provider: "google",
-                photo: data.user.photo || photo,
-                token: data.token
-              });
-              showToast(toastEl, `Signed in as ${email}.`, false);
-              fetchHistoryFromBackend();
-              closeAuth();
-              return;
-            } else if (data && data.isOffline) {
-              setLoggedInUser({
-                id: "google_" + Date.now(),
-                name: name,
-                email: email,
-                provider: "google",
-                photo: photo
-              });
-              showToast(toastEl, `Signed in as ${email} (offline mode).`, false);
-              closeAuth();
-              return;
-            } else {
-              setLoggedInUser({
-                id: "google_" + Date.now(),
-                name: name,
-                email: email,
-                provider: "google",
-                photo: photo
-              });
-              showToast(toastEl, `Signed in as ${email}.`, false);
-              closeAuth();
-              return;
-            }
-          }
+          result = await helpers.signInWithPopup(auth, provider);
         } catch (fbErr) {
+          // Handled case A: User closed or cancelled popup
           if (fbErr.code === "auth/popup-closed-by-user" || fbErr.code === "auth/cancelled-popup-request") {
-            // User manually closed or cancelled the popup — handle gracefully without scary error logs
             console.info("Google Sign-In popup was closed by the user.");
             return;
           }
-          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
-          if (fbErr.code === "auth/popup-blocked" || fbErr.code === "auth/unauthorized-domain") {
-            // Domain not in Firebase authorized list or popup blocked: offer seamless direct Google email login
-            const fallbackEmail = prompt("Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:", "user@gmail.com");
+
+          // Handled case B: Browser popup blocker blocked popup -> Automatically fallback to signInWithRedirect!
+          if (fbErr.code === "auth/popup-blocked") {
+            console.info("Google Sign-In popup was blocked by browser. Automatically switching to redirect mode...");
+            showToast(toastEl, "Popup blocked. Redirecting to Google Sign-In...", false);
+            if (helpers.signInWithRedirect) {
+              try {
+                await helpers.signInWithRedirect(auth, provider);
+                return;
+              } catch (redirErr) {
+                console.warn("Firebase signInWithRedirect fallback notice:", redirErr.message || redirErr);
+              }
+            }
+          }
+
+          // Handled case C: Domain not authorized in Firebase Console
+          if (fbErr.code === "auth/unauthorized-domain") {
+            console.warn("Firebase notice: Domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).");
+            const fallbackEmail = prompt(
+              "Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:",
+              "user@gmail.com"
+            );
             if (fallbackEmail && isValidEmail(fallbackEmail.trim())) {
               const cleanEmail = normalizeEmail(fallbackEmail);
               const cleanName = cleanEmail.split("@")[0];
@@ -4116,10 +4266,11 @@
             }
             showToast(toastEl, "Google sign-in was cancelled.", true);
             return;
-          } else if (fbErr.code === "auth/popup-closed-by-user") {
-            showToast(toastEl, "Google sign-in was cancelled.", true);
-            return;
-          } else if (fbErr.code === "auth/operation-not-allowed") {
+          }
+
+          // Handled case D: Other errors
+          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
+          if (fbErr.code === "auth/operation-not-allowed") {
             showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please use Email / Password signup above.", true);
             return;
           } else if (fbErr.code === "auth/network-request-failed" || (fbErr.message && fbErr.message.includes("ERR_NAME_NOT_RESOLVED"))) {
@@ -4127,6 +4278,62 @@
             return;
           } else {
             showToast(toastEl, fbErr.message || "Google Sign-In failed. Please use Email & Password.", true);
+            return;
+          }
+        }
+
+        if (result && result.user) {
+          const gUser = result.user;
+          const email = normalizeEmail(gUser.email);
+          const name = gUser.displayName || email.split("@")[0];
+          const photo = gUser.photoURL || "";
+          let idToken = "";
+          try { idToken = await gUser.getIdToken(); } catch(e){}
+
+          // Sync with MongoDB Backend /api/auth/google
+          const data = await safeFetchJson("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, photo, id_token: idToken })
+          });
+
+          if (data && data.success && data.token) {
+            setAuthToken(data.token);
+            setLoggedInUser({
+              id: data.user._id || data.user.id || data.user.userId,
+              _id: data.user._id || data.user.id,
+              userId: data.user.userId || data.user._id,
+              name: data.user.name || name,
+              email: data.user.email || email,
+              provider: "google",
+              photo: data.user.photo || photo,
+              token: data.token
+            });
+            showToast(toastEl, `Signed in as ${email}.`, false);
+            fetchHistoryFromBackend();
+            closeAuth();
+            return;
+          } else if (data && data.isOffline) {
+            setLoggedInUser({
+              id: "google_" + Date.now(),
+              name: name,
+              email: email,
+              provider: "google",
+              photo: photo
+            });
+            showToast(toastEl, `Signed in as ${email} (offline mode).`, false);
+            closeAuth();
+            return;
+          } else {
+            setLoggedInUser({
+              id: "google_" + Date.now(),
+              name: name,
+              email: email,
+              provider: "google",
+              photo: photo
+            });
+            showToast(toastEl, `Signed in as ${email}.`, false);
+            closeAuth();
             return;
           }
         }
@@ -4344,6 +4551,7 @@
       customJobRole: customJobRoleText || "",
       hasJobDescription: hasUserJobDescription || false,
       jobDescription: userJobDescriptionText || "",
+      fileData: pendingResumeFileData || "",
       resumeText: pendingResumeText || "",
       detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
       missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
@@ -4385,6 +4593,8 @@
       verdict: verdict,
       targetJobRole: selectedTargetJobRole || customJobRoleText || "",
       hasJobDescription: hasUserJobDescription || false,
+      fileData: pendingResumeFileData || "",
+      resumeText: pendingResumeText || "",
       uploadDate: new Date(),
       analysisDate: new Date(),
       date: new Date()
@@ -4478,14 +4688,36 @@
       row.innerHTML = `
         <div class="history-item-score" style="background:${scoreColor(scoreVal || 0)}" title="ATS Score">${scoreDisplay}</div>
         <div class="history-item-info">
-          <div class="history-item-name">${escapeHtml(fileNameStr)}</div>
+          <div class="history-item-name" title="${escapeHtml(fileNameStr)}">${escapeHtml(fileNameStr)}</div>
           <div class="history-item-meta">
             <span class="history-type-tag" style="background:var(--subtle); padding:2px 6px; border-radius:4px; font-weight:600; font-size:11px;">${escapeHtml(typeText)}</span> &bull; 
             <span>${dateLabel}</span> &bull; 
             <span class="history-status-tag" style="font-weight:600; color:var(--accent);">${escapeHtml(statusText)}</span>
           </div>
         </div>
-        <button class="history-delete-btn" data-id="${idVal}" type="button" aria-label="Delete this entry" title="Delete entry">🗑</button>
+        <div class="history-item-actions">
+          <button class="history-action-btn history-view-btn" data-id="${idVal}" data-filename="${escapeHtml(fileNameStr)}" type="button" aria-label="View resume preview" title="View Resume">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+          <button class="history-action-btn history-download-btn" data-id="${idVal}" data-filename="${escapeHtml(fileNameStr)}" type="button" aria-label="Download original resume" title="Download Resume">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </button>
+          <button class="history-action-btn history-delete-btn" data-id="${idVal}" type="button" aria-label="Delete this entry" title="Delete entry">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+        </div>
       `;
       listEl.appendChild(row);
     });
@@ -4537,6 +4769,7 @@
         }
 
         if (typeof closeHistory === "function") closeHistory();
+        if (typeof closeResumePreviewModal === "function") closeResumePreviewModal();
         const resultsEl = document.getElementById("results");
         if (resultsEl) {
           resultsEl.dataset.mode = modeVal;
@@ -4544,22 +4777,490 @@
           resultsEl.scrollIntoView({ behavior: "smooth" });
         }
         updateReportTabState(modeVal);
-        if (typeof showToast === "function") {
-          showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
-        }
+        showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
       } else {
-        if (typeof showToast === "function") {
-          showToast("Could not load analysis details", "error");
-        }
+        showToast("Could not load analysis details", "error");
       }
     } catch(err){
       hideLoading();
       console.warn("Failed to load historical analysis:", err);
-      if (typeof showToast === "function") {
-        showToast("Error loading saved analysis", "error");
+      showToast("Error loading saved analysis", "error");
+    }
+  }
+
+  // --- Resume Preview Modal & Download Logic ---
+  let currentPreviewId = null;
+  let currentPreviewFileName = "resume.pdf";
+  const resumePreviewModal = document.getElementById("resumePreviewModal");
+  const resumePreviewCloseBtn = document.getElementById("resumePreviewCloseBtn");
+  const previewDownloadBtn = document.getElementById("previewDownloadBtn");
+  const previewOpenAnalysisBtn = document.getElementById("previewOpenAnalysisBtn");
+  const tabBtnContent = document.getElementById("tabBtnContent");
+  const tabBtnDetails = document.getElementById("tabBtnDetails");
+  const paneContent = document.getElementById("paneContent");
+  const paneDetails = document.getElementById("paneDetails");
+
+  function closeResumePreviewModal(){
+    if (resumePreviewModal) {
+      resumePreviewModal.classList.remove("active");
+    }
+  }
+
+  async function downloadHistoricalResume(idVal, fileName){
+    if (!idVal) {
+      showToast("Resume ID not found", "error");
+      return;
+    }
+    const token = getAuthToken();
+    const downloadName = fileName || "resume.pdf";
+
+    // 1. Instant client download if original File object is in memory
+    if (window.currentOriginalResumeFile && (window.currentOriginalResumeFile.name === downloadName || !fileName)) {
+      const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = blobUrl;
+      a.download = window.currentOriginalResumeFile.name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1500);
+      showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
+      return;
+    }
+
+    // 2. Check sessionStorage for cached original base64
+    const cachedData = sessionStorage.getItem("original_resume_" + downloadName) || 
+      (sessionStorage.getItem("latest_original_resume_name") === downloadName ? sessionStorage.getItem("latest_original_resume_data") : null);
+    if (cachedData && cachedData.startsWith("data:")) {
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = cachedData;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+      showToast(`Downloaded original resume: ${downloadName}`, "success");
+      return;
+    }
+
+    // 3. Instant client download if original base64 file data is in userHistoryList
+    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.resumeId || e.analysisId) === idVal || e.fileName === downloadName || e.filename === downloadName);
+    if (entry && entry.fileData && entry.fileData.startsWith("data:")) {
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = entry.fileData;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+      showToast(`Downloaded original resume: ${downloadName}`, "success");
+      return;
+    }
+
+    // 4. Fetch authenticated original file from server
+    try {
+      showLoading("Downloading original resume...");
+      const downloadUrl = "/api/history/download/" + encodeURIComponent(idVal);
+      const res = await fetch(downloadUrl, {
+        headers: token ? { "Authorization": "Bearer " + token } : {}
+      });
+
+      if (res.ok) {
+        const contentType = res.headers.get("Content-Type") || "";
+        // If server sent text fallback for legacy entry without file, generate styled PDF
+        if (contentType.includes("text/plain") && (downloadName.endsWith(".pdf") || downloadName.endsWith(".docx"))) {
+          const rawText = await res.text();
+          hideLoading();
+          fallbackDownloadResumePdf(idVal, downloadName, rawText);
+          return;
+        }
+
+        const blob = await res.blob();
+        hideLoading();
+
+        let targetFilename = downloadName;
+        const disposition = res.headers.get("Content-Disposition");
+        if (disposition && disposition.includes("filename=")) {
+          const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+          if (match && match[1]) targetFilename = match[1];
+        }
+
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = blobUrl;
+        a.download = targetFilename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          window.URL.revokeObjectURL(blobUrl);
+          if (a.parentNode) a.parentNode.removeChild(a);
+        }, 1500);
+
+        showToast(`Downloaded ${targetFilename}`, "success");
+        if (typeof logUserAction === "function") {
+          logUserAction("download resume", `User downloaded resume: ${targetFilename}`);
+        }
+        return;
+      }
+      hideLoading();
+    } catch(err){
+      hideLoading();
+      console.warn("Download request error, falling back to styled PDF generator:", err);
+    }
+
+    fallbackDownloadResumePdf(idVal, downloadName);
+  }
+
+  async function fallbackDownloadResumePdf(idVal, downloadName, passedText){
+    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal);
+    let fullAnalysis = null;
+    const token = getAuthToken();
+    if (token) {
+      try {
+        const data = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        if (data && data.success && data.analysis) {
+          fullAnalysis = data.analysis;
+        }
+      } catch(e){}
+    }
+
+    const ext = (fullAnalysis && fullAnalysis.extractedData) || (entry && entry.extractedData) || {};
+    const resData = (fullAnalysis && fullAnalysis.analysisResult) || {};
+    const textContent = passedText || (fullAnalysis && fullAnalysis.resumeText) || (entry && entry.resumeText) || "";
+    const candidateName = ext.name || fullAnalysis?.name || entry?.name || "Candidate";
+    const candidateEmail = ext.email || fullAnalysis?.email || entry?.email || "";
+    const candidatePhone = ext.phone || "";
+    const scoreVal = entry?.atsScore || fullAnalysis?.atsScore || resData?.atsScore || 0;
+
+    const safePdfName = (downloadName || `${candidateName.replace(/\s+/g, "_")}_Resume.pdf`).replace(/\.txt$/i, ".pdf");
+
+    if (window.jspdf && window.jspdf.jsPDF) {
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: "pt", format: "a4" });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const margin = 45;
+        const maxLineWidth = pageWidth - margin * 2;
+        let y = 52;
+
+        // Top Accent Stripe
+        doc.setFillColor(129, 0, 26);
+        doc.rect(0, 0, pageWidth, 6, "F");
+
+        // Candidate Name Title
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(30, 41, 59);
+        doc.text(candidateName, margin, y);
+        y += 19;
+
+        // Contact info bar
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10.5);
+        doc.setTextColor(100, 116, 139);
+        const contactParts = [candidateEmail, candidatePhone, `ATS Match Score: ${scoreVal}/100`].filter(Boolean);
+        doc.text(contactParts.join("   |   "), margin, y);
+        y += 14;
+
+        // Divider line
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(1.2);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 24;
+
+        // Skills Section
+        const skills = ext.skills || resData.detectedSkills || [];
+        if (skills.length) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(129, 0, 26);
+          doc.text("CORE SKILLS & EXPERTISE", margin, y);
+          y += 15;
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const skillsText = doc.splitTextToSize(skills.join("   •   "), maxLineWidth);
+          doc.text(skillsText, margin, y);
+          y += skillsText.length * 14 + 18;
+        }
+
+        // Experience Section
+        const exp = ext.experience ? (Array.isArray(ext.experience) ? ext.experience.join("\n") : ext.experience) : "";
+        if (exp && exp.trim()) {
+          if (y > 680) { doc.addPage(); y = 50; }
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(129, 0, 26);
+          doc.text("PROFESSIONAL EXPERIENCE", margin, y);
+          y += 15;
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const expLines = doc.splitTextToSize(exp, maxLineWidth);
+          doc.text(expLines, margin, y);
+          y += expLines.length * 14 + 18;
+        }
+
+        // Education Section
+        const edu = ext.education ? (Array.isArray(ext.education) ? ext.education.join("\n") : ext.education) : "";
+        if (edu && edu.trim()) {
+          if (y > 700) { doc.addPage(); y = 50; }
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(129, 0, 26);
+          doc.text("EDUCATION & QUALIFICATIONS", margin, y);
+          y += 15;
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const eduLines = doc.splitTextToSize(edu, maxLineWidth);
+          doc.text(eduLines, margin, y);
+          y += eduLines.length * 14 + 18;
+        }
+
+        // If structured sections were minimal, print the clean text content with pagination
+        if ((!skills.length && !exp) && textContent && textContent.trim()) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(129, 0, 26);
+          doc.text("RESUME CONTENT", margin, y);
+          y += 15;
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(51, 65, 85);
+          const fullLines = doc.splitTextToSize(textContent, maxLineWidth);
+          for (let i = 0; i < fullLines.length; i++) {
+            if (y > 760) {
+              doc.addPage();
+              y = 50;
+            }
+            doc.text(fullLines[i], margin, y);
+            y += 13.5;
+          }
+        }
+
+        doc.save(safePdfName);
+        showToast(`Downloaded formatted resume: ${safePdfName}`, "success");
+        return;
+      } catch (pdfErr) {
+        console.warn("jsPDF generation failed, falling back to formatted text:", pdfErr);
+      }
+    }
+
+    // Text fallback if jsPDF is unavailable
+    const fallbackContent = textContent || `${candidateName}\n${candidateEmail}\nATS Score: ${scoreVal}`;
+    const blob = new Blob([fallbackContent], { type: "text/plain;charset=utf-8" });
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = (downloadName || "resume.txt").replace(/\.pdf$/i, ".txt");
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1200);
+    showToast(`Downloaded resume as ${a.download}`, "success");
+  }
+
+  async function openResumePreviewModal(idVal){
+    if (!idVal) return;
+    currentPreviewId = idVal;
+
+    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal) || {};
+    const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
+    currentPreviewFileName = fileNameStr;
+
+    const previewFileName = document.getElementById("previewFileName");
+    const previewScoreBadge = document.getElementById("previewScoreBadge");
+    const previewMeta = document.getElementById("previewMeta");
+    const previewResumeText = document.getElementById("previewResumeText");
+    const previewCandidateInfo = document.getElementById("previewCandidateInfo");
+    const previewSkillsList = document.getElementById("previewSkillsList");
+    const previewMissingList = document.getElementById("previewMissingList");
+
+    const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
+    const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "--";
+    const statusText = entry.verdict || entry.status || "Analyzed";
+    const typeText = entry.analysisType || "Resume Analysis";
+    const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
+    const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+    if (previewFileName) previewFileName.textContent = fileNameStr;
+    if (previewScoreBadge) {
+      previewScoreBadge.textContent = scoreDisplay;
+      previewScoreBadge.style.background = scoreColor(scoreVal || 0);
+    }
+    if (previewMeta) {
+      previewMeta.innerHTML = `<span style="font-weight:600; color:var(--accent);">${escapeHtml(statusText)}</span> &bull; <span>${escapeHtml(typeText)}</span> &bull; <span>${dateLabel}</span>`;
+    }
+
+    // Reset tabs
+    if (tabBtnContent && tabBtnDetails && paneContent && paneDetails) {
+      tabBtnContent.classList.add("active");
+      tabBtnDetails.classList.remove("active");
+      paneContent.style.display = "block";
+      paneDetails.style.display = "none";
+    }
+
+    if (previewResumeText) {
+      previewResumeText.innerHTML = '<div style="text-align:center; padding:32px; color:#64748b;"><div class="spinner" style="display:inline-block; width:22px; height:22px; border:2.5px solid #cbd5e1; border-top-color:var(--accent, #81001a); border-radius:50%; animation:spin 0.8s linear infinite; margin-right:8px; vertical-align:middle;"></div> Loading resume document...</div>';
+    }
+
+    if (resumePreviewModal) {
+      resumePreviewModal.classList.add("active");
+    }
+
+    const token = getAuthToken();
+    let analysisData = null;
+    if (token) {
+      try {
+        const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        if (res && res.success && res.analysis) {
+          analysisData = res.analysis;
+        }
+      } catch(err){
+        console.warn("Could not fetch detailed resume analysis for preview:", err);
+      }
+    }
+
+    // Populate resume text
+    const textContent = (analysisData && analysisData.resumeText) || entry.resumeText || "";
+    if (previewResumeText) {
+      if (textContent && textContent.trim()) {
+        previewResumeText.textContent = textContent;
+      } else {
+        const ext = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
+        const resResult = (analysisData && analysisData.analysisResult) || {};
+        if (ext.name || ext.skills || resResult.detectedSkills) {
+          const lines = [
+            `======================================================`,
+            `CANDIDATE: ${ext.name || "Candidate"}`,
+            `EMAIL: ${ext.email || "N/A"}   |   PHONE: ${ext.phone || "N/A"}`,
+            `======================================================`,
+            "",
+            "--- DETECTED SKILLS ---",
+            (ext.skills || resResult.detectedSkills || []).join(", ") || "None recorded",
+            "",
+            "--- EXPERIENCE ---",
+            Array.isArray(ext.experience) ? ext.experience.join("\n") : (ext.experience || "Not parsed"),
+            "",
+            "--- EDUCATION ---",
+            Array.isArray(ext.education) ? ext.education.join("\n") : (ext.education || "Not parsed"),
+            "",
+            "--- ATS ANALYSIS SUMMARY ---",
+            `ATS Score: ${scoreDisplay}/100`,
+            `Verdict: ${statusText}`,
+            `Missing Keywords: ${(resResult.missingKeywords || []).join(", ") || "None"}`
+          ];
+          previewResumeText.textContent = lines.join("\n");
+        } else {
+          previewResumeText.innerHTML = '<div style="color:#64748b; font-style:italic; padding:30px; text-align:center;">Resume document text is not cached for this record.<br><br>Click <strong>Download Resume</strong> to fetch file or <strong>Open Full Analysis</strong> to see scoring.</div>';
+        }
+      }
+    }
+
+    // Populate details tab
+    const extData = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
+    const resData = (analysisData && analysisData.analysisResult) || {};
+    const candidateName = extData.name || analysisData?.name || entry?.name || "Candidate";
+    const candidateEmail = extData.email || analysisData?.email || entry?.email || "Not specified";
+    const candidatePhone = extData.phone || "Not specified";
+
+    if (previewCandidateInfo) {
+      previewCandidateInfo.innerHTML = `
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:10px; font-size:12.5px;">
+          <div><strong style="color:var(--ink);">Name:</strong> ${escapeHtml(candidateName)}</div>
+          <div><strong style="color:var(--ink);">Email:</strong> ${escapeHtml(candidateEmail)}</div>
+          <div><strong style="color:var(--ink);">Phone:</strong> ${escapeHtml(candidatePhone)}</div>
+        </div>
+      `;
+    }
+
+    const skills = extData.skills || resData.detectedSkills || entry.detectedSkills || [];
+    if (previewSkillsList) {
+      if (skills && skills.length) {
+        previewSkillsList.innerHTML = skills.map(s => `<span class="preview-tag preview-skill-tag" style="display:inline-block; background:#e0f2fe; color:#0369a1; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">${escapeHtml(s)}</span>`).join("");
+      } else {
+        previewSkillsList.innerHTML = '<span style="color:#888; font-size:12px; font-style:italic;">No detected skills extracted</span>';
+      }
+    }
+
+    const missing = resData.missingKeywords || entry.missingKeywords || [];
+    if (previewMissingList) {
+      if (missing && missing.length) {
+        previewMissingList.innerHTML = missing.map(m => `<span class="preview-tag preview-missing-tag" style="display:inline-block; background:#fee2e2; color:#b91c1c; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">+ ${escapeHtml(m)}</span>`).join("");
+      } else {
+        previewMissingList.innerHTML = '<span style="color:#059669; font-size:12px; font-weight:600;">✓ No missing keywords identified! Excellent match.</span>';
       }
     }
   }
+
+  // Preview Modal Tabs and Button Listeners
+  if (tabBtnContent && tabBtnDetails) {
+    tabBtnContent.addEventListener("click", () => {
+      tabBtnContent.classList.add("active");
+      tabBtnDetails.classList.remove("active");
+      if (paneContent) paneContent.style.display = "block";
+      if (paneDetails) paneDetails.style.display = "none";
+    });
+    tabBtnDetails.addEventListener("click", () => {
+      tabBtnDetails.classList.add("active");
+      tabBtnContent.classList.remove("active");
+      if (paneContent) paneContent.style.display = "none";
+      if (paneDetails) paneDetails.style.display = "block";
+    });
+  }
+
+  if (previewDownloadBtn) {
+    previewDownloadBtn.addEventListener("click", () => {
+      if (currentPreviewId) {
+        downloadHistoricalResume(currentPreviewId, currentPreviewFileName);
+      }
+    });
+  }
+
+  if (previewOpenAnalysisBtn) {
+    previewOpenAnalysisBtn.addEventListener("click", () => {
+      const targetId = currentPreviewId;
+      closeResumePreviewModal();
+      if (targetId) {
+        loadHistoricalAnalysisView(targetId);
+      }
+    });
+  }
+
+  if (resumePreviewCloseBtn) {
+    resumePreviewCloseBtn.addEventListener("click", closeResumePreviewModal);
+  }
+
+  if (resumePreviewModal) {
+    resumePreviewModal.addEventListener("click", (e) => {
+      if (e.target === resumePreviewModal) {
+        closeResumePreviewModal();
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (resumePreviewModal && resumePreviewModal.classList.contains("active")) {
+        closeResumePreviewModal();
+      }
+    }
+  });
 
   document.getElementById("historyList").addEventListener("click", (e) => {
     const deleteBtn = e.target.closest(".history-delete-btn");
@@ -4569,12 +5270,27 @@
       deleteHistoryEntry(currentUser ? currentUser.email : null, id);
       return;
     }
+    const downloadBtn = e.target.closest(".history-download-btn");
+    if (downloadBtn) {
+      e.stopPropagation();
+      const id = downloadBtn.dataset.id;
+      const fn = downloadBtn.dataset.filename || "resume.pdf";
+      downloadHistoricalResume(id, fn);
+      return;
+    }
+    const viewBtn = e.target.closest(".history-view-btn");
+    if (viewBtn) {
+      e.stopPropagation();
+      const id = viewBtn.dataset.id;
+      openResumePreviewModal(id);
+      return;
+    }
     const itemRow = e.target.closest(".history-item");
     if (itemRow) {
       const delBtn = itemRow.querySelector(".history-delete-btn");
       const id = itemRow.dataset.id || (delBtn ? delBtn.dataset.id : null);
       if (id) {
-        loadHistoricalAnalysisView(id);
+        openResumePreviewModal(id);
       }
     }
   });
@@ -5037,54 +5753,102 @@
 
 
 
+  // Filter transient Google API network drops and aborted connections from console
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    const msg = (reason && (reason.message || reason.toString())) || "";
+    if (
+      msg.includes("ERR_CONNECTION_CLOSED") ||
+      msg.includes("Failed to fetch") ||
+      msg.includes("googleapis.com") ||
+      msg.includes("measurement ID") ||
+      (reason && (reason.code === "auth/network-request-failed" || reason.code === "auth/internal-error"))
+    ) {
+      event.preventDefault();
+      console.debug("Filtered background network connection notice:", msg);
+    }
+  });
+
   sessionRestorePromise = restoreSession();
 
   function setupFirebaseAuthStateListener() {
     const auth = getFirebaseAuth();
     const helpers = getFirebaseAuthHelpers();
     if (auth && helpers && helpers.onAuthStateChanged) {
-      helpers.onAuthStateChanged(auth, async (fbUser) => {
-        if (fbUser && fbUser.email && !currentUser) {
-          const email = normalizeEmail(fbUser.email);
-          const token = getAuthToken();
-          if (token) {
-            await restoreSession();
-          } else {
-            try {
-              const data = await safeFetchJson("/api/auth/google", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  name: fbUser.displayName || email.split("@")[0],
-                  email: email
-                })
-              });
-              if (data && data.success && data.token) {
-                setAuthToken(data.token);
-                setLoggedInUser({
-                  id: data.user._id || data.user.id || data.user.userId,
-                  _id: data.user._id || data.user.id,
-                  userId: data.user.userId || data.user._id,
-                  name: data.user.name || fbUser.displayName,
-                  email: data.user.email || email,
-                  provider: data.user.provider || "google",
-                  photo: data.user.photo || fbUser.photoURL || "",
-                  token: data.token
+      try {
+        helpers.onAuthStateChanged(auth, async (fbUser) => {
+          if (fbUser && fbUser.email && !currentUser) {
+            const email = normalizeEmail(fbUser.email);
+            const token = getAuthToken();
+            if (token) {
+              await restoreSession();
+            } else {
+              try {
+                const data = await safeFetchJson("/api/auth/google", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name: fbUser.displayName || email.split("@")[0],
+                    email: email
+                  })
                 });
-                fetchHistoryFromBackend();
-              }
-            } catch (e) {}
+                if (data && data.success && data.token) {
+                  setAuthToken(data.token);
+                  setLoggedInUser({
+                    id: data.user._id || data.user.id || data.user.userId,
+                    _id: data.user._id || data.user.id,
+                    userId: data.user.userId || data.user._id,
+                    name: data.user.name || fbUser.displayName,
+                    email: data.user.email || email,
+                    provider: data.user.provider || "google",
+                    photo: data.user.photo || fbUser.photoURL || "",
+                    token: data.token
+                  });
+                  fetchHistoryFromBackend();
+                }
+              } catch (e) {}
+            }
           }
-        }
-      });
+        }, (authNotice) => {
+          console.debug("Firebase Auth background state notice:", authNotice?.message || authNotice);
+        });
+      } catch (e) {}
     }
   }
   async function checkEmailVerificationURLParams() {
     await checkForVerifyLink();
   }
 
-  setupFirebaseAuthStateListener();
-  checkFirebaseRedirectResult();
+  let firebaseInitDone = false;
+  function initFirebaseIntegration() {
+    if (firebaseInitDone) return;
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (!auth || !helpers) return;
+    firebaseInitDone = true;
+    setupFirebaseAuthStateListener();
+    checkFirebaseRedirectResult();
+  }
+
+  if (window.firebaseAuth && window.firebaseAuthHelpers) {
+    initFirebaseIntegration();
+  } else {
+    window.addEventListener("firebase-ready", () => {
+      initFirebaseIntegration();
+    }, { once: true });
+
+    let fbAttempts = 0;
+    const fbCheckTimer = setInterval(() => {
+      fbAttempts++;
+      if (window.firebaseAuth && window.firebaseAuthHelpers) {
+        clearInterval(fbCheckTimer);
+        initFirebaseIntegration();
+      } else if (fbAttempts > 50) {
+        clearInterval(fbCheckTimer);
+      }
+    }, 100);
+  }
+
   checkEmailVerificationURLParams();
 
   // ---- DEBUG HELPER — list every signed-up account on this browser ----

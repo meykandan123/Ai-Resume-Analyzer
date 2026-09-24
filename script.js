@@ -4243,7 +4243,7 @@
 
           // Handled case C: Domain not authorized in Firebase Console
           if (fbErr.code === "auth/unauthorized-domain") {
-            console.warn("Firebase notice: Domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).");
+            console.info("Firebase notice: Domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).");
             const fallbackEmail = prompt(
               "Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:",
               "user@gmail.com"

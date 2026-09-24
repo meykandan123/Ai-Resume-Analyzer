@@ -2762,13 +2762,13 @@
   function resolveAvatarUrl(photo) {
     if (!photo || typeof photo !== "string") return "";
     const clean = photo.trim();
-    if (clean.startsWith("data:") || clean.startsWith("/uploads/") || clean.startsWith("uploads/")) {
-      return clean.startsWith("uploads/") ? ("/" + clean) : clean;
+    if (clean.startsWith("data:")) return clean;
+    if (clean.startsWith("/uploads/") || clean.startsWith("uploads/")) {
+      const path = clean.startsWith("uploads/") ? ("/" + clean) : clean;
+      return (API_BASE && path.startsWith("/uploads/")) ? (API_BASE + path) : path;
     }
-    // Route external Google usercontent URLs through the local proxy endpoint to eliminate socket & CORS errors
-    if (clean.includes("googleusercontent.com")) {
-      return (API_BASE || "") + "/api/proxy-avatar?url=" + encodeURIComponent(clean);
-    }
+    // Return direct URL: with referrerpolicy="no-referrer" and crossorigin="anonymous" on the <img> tag,
+    // Google profile photos load cleanly without socket errors or requiring a proxy endpoint.
     return clean;
   }
 
@@ -2938,8 +2938,14 @@
   }
 
   // Determine Backend API Base URL
-  // If the page is already running on port 5000 or on production HTTPS, relative URLs (/api/...) use same-origin cleanly.
-  // If running via Live Server (port 5500) or file://, target the local backend on port 5000 matching the current hostname.
+  // If a custom backend URL is explicitly set (e.g. when frontend is on a static CDN and backend is a separate web service), use it.
+  // Otherwise, if running via Live Server (port 5500) or file://, target the local backend on port 5000 matching the current hostname.
+  const customBackendUrl = (
+    (typeof window !== "undefined" && window.__BACKEND_URL__) ||
+    (typeof localStorage !== "undefined" && localStorage.getItem("AI_RESUME_BACKEND_URL")) ||
+    ""
+  );
+
   const isDifferentPortOrFile = (
     location.protocol === "file:" ||
     (location.port && location.port !== "5000" && location.protocol !== "https:")
@@ -2948,9 +2954,9 @@
   const targetHost = (location.hostname && location.hostname !== "0.0.0.0") ? location.hostname : "127.0.0.1";
   const devProtocol = location.protocol === "file:" ? "http:" : location.protocol;
 
-  const API_BASE = isDifferentPortOrFile
-    ? `${devProtocol}//${targetHost}:5000`
-    : "";
+  const API_BASE = customBackendUrl
+    ? customBackendUrl.replace(/\/+$/, "")
+    : (isDifferentPortOrFile ? `${devProtocol}//${targetHost}:5000` : "");
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
   async function safeFetchJson(url, options = {}, retries = 1) {
@@ -2993,7 +2999,8 @@
         if (!res.ok) {
           if (res.status >= 500) {
             console.error(`Server error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
-          } else {
+          } else if (res.status !== 404) {
+            // Do not warn if it is a standard 404 (handled gracefully by frontend fallbacks)
             console.warn(`Request notice ${res.status}: ${res.statusText || "Handled response"} at ${fullUrl}`);
           }
         }
@@ -5623,7 +5630,7 @@
         renderSupportTickets();
       }
     } catch (e){
-      console.warn("Support tickets sync notice:", e);
+      // Handled silently: local storage remains intact if backend is offline or static
     }
   }
 

@@ -830,7 +830,7 @@ app.post("/api/auth/signup", async (req, res) => {
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       devLog("SIGNUP", { email: normalizedEmail, existingUser: true, blocked: true });
-      return res.status(400).json({ success: false, message: "An account with this email already exists." });
+      return res.status(409).json({ success: false, message: "An account with this email already exists." });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -902,7 +902,7 @@ app.post("/api/auth/signup", async (req, res) => {
     });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({ success: false, message: "An account with this email already exists." });
+      return res.status(409).json({ success: false, message: "An account with this email already exists." });
     }
     console.error("Signup error:", err);
     return res.status(500).json({ success: false, message: "Server error during registration." });
@@ -1272,19 +1272,19 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (!user || !hasEmailAuth) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_email_auth", userFound: !!user, authMethods: user?.authMethods });
-      return res.status(400).json({ success: false, message: "Incorrect email or password." });
+      return res.status(401).json({ success: false, message: "Incorrect email or password." });
     }
 
     const storedHash = storedPasswordHash;
     if (!storedHash) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, reason: "no_password_hash" });
-      return res.status(400).json({ success: false, message: "Incorrect email or password." });
+      return res.status(401).json({ success: false, message: "Incorrect email or password." });
     }
 
     const isMatch = await bcrypt.compare(password, storedHash);
     if (!isMatch) {
       devLog("LOGIN_FAIL", { email: normalizedIdentifier, userId: user._id.toString(), reason: "wrong_password" });
-      return res.status(400).json({ success: false, message: "Incorrect email or password." });
+      return res.status(401).json({ success: false, message: "Incorrect email or password." });
     }
 
     // Strict verification check: unverified accounts cannot log in
@@ -1346,11 +1346,14 @@ app.post("/api/auth/google", async (req, res) => {
     let { name, email, photo, access_token, id_token } = req.body;
 
     // Verify the Google token server-side to get the canonical email
-    if (id_token || access_token) {
+    const cleanIdToken = (typeof id_token === "string" && id_token.trim().length > 10) ? id_token.trim() : "";
+    const cleanAccessToken = (typeof access_token === "string" && access_token.trim().length > 10) ? access_token.trim() : "";
+
+    if (cleanIdToken || cleanAccessToken) {
       try {
-        const tokenInfoUrl = id_token
-          ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`
-          : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(access_token)}`;
+        const tokenInfoUrl = cleanIdToken
+          ? `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(cleanIdToken)}`
+          : `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(cleanAccessToken)}`;
         const gRes = await fetch(tokenInfoUrl);
         if (gRes.ok) {
           const gInfo = await gRes.json();
@@ -1518,7 +1521,7 @@ app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
       const isMatch = await bcrypt.compare(currentPassword, storedHash);
       if (!isMatch) {
         devLog("PASSWORD_CHANGE_FAIL", { email: user.email, userId: user._id.toString(), reason: "wrong_current_password" });
-        return res.status(400).json({ success: false, message: "Current password is incorrect." });
+        return res.status(401).json({ success: false, message: "Current password is incorrect." });
       }
     }
     // If Google-only (no password yet), allow setting password without currentPassword check
@@ -2035,6 +2038,7 @@ app.post("/api/activity/download", authenticateToken, async (req, res) => {
 // Save & Process Resume Analysis
 const handleResumeAnalyze = async (req, res) => {
   try {
+    const body = req.body || {};
     const {
       fileName,
       filename,
@@ -2058,22 +2062,18 @@ const handleResumeAnalyze = async (req, res) => {
       customJobRole,
       hasJobDescription,
       jobDescription
-    } = req.body;
+    } = body;
 
     const finalTargetRole = (targetJobRole || customJobRole || "").trim();
     const finalCustomRole = (customJobRole || "").trim();
     const finalHasJd = Boolean(hasJobDescription || (jobDescription && jobDescription.trim().length > 0));
     const finalJd = (jobDescription || "").trim();
 
-    const finalName = fileName || filename || "resume.pdf";
+    const finalName = (fileName || filename || "resume.pdf").trim() || "resume.pdf";
     const finalScore = Number(atsScore !== undefined ? atsScore : (score !== undefined ? score : 0));
     const userIdStr = req.user.userId || req.user._id.toString();
     const userName = req.user.name || "";
     const userEmail = req.user.email ? req.user.email.toLowerCase().trim() : "";
-
-    if (!finalName) {
-      return res.status(400).json({ success: false, message: "fileName/filename is required." });
-    }
 
     let savedFilePath = incomingFilePath || incomingFileUrl || "";
     if (fileData) {

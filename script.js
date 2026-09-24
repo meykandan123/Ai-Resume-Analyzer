@@ -2637,14 +2637,7 @@
     account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid exactly 5 minutes
     if (accounts[email]) saveAccounts();
 
-    // Trigger Firebase Auth Email Verification if Firebase user is logged in
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && auth.currentUser && helpers && helpers.sendEmailVerification) {
-      helpers.sendEmailVerification(auth.currentUser).catch(err => {
-        console.warn("Firebase Auth sendEmailVerification notice:", err.message || err);
-      });
-    }
+    // Email verification delivery is handled reliably by the backend NodeMailer service
 
     let origin = location.origin;
     let pathname = location.pathname;
@@ -2937,12 +2930,29 @@
 
   // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
   async function safeFetchJson(url, options = {}, retries = 1) {
-    const fullUrl = (url.startsWith("/api/") && API_BASE)
+    const rawFullUrl = (url.startsWith("/api/") && API_BASE)
       ? (API_BASE + url)
       : url;
+    const fullUrl = rawFullUrl.replace(/([^:])\/\/+/g, "$1/");
 
     options = options || {};
     options.headers = options.headers || {};
+
+    const method = (options.method || "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD") {
+      delete options.body;
+      delete options.headers["Content-Type"];
+      delete options.headers["content-type"];
+    } else if (options.body && typeof options.body === "object" && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
+      try {
+        options.body = JSON.stringify(options.body);
+        if (!options.headers["Content-Type"] && !options.headers["content-type"]) {
+          options.headers["Content-Type"] = "application/json";
+        }
+      } catch (err) {
+        console.warn("safeFetchJson JSON body stringify error:", err);
+      }
+    }
 
     const token = getAuthToken();
     if (token && !options.headers["Authorization"] && !options.headers["authorization"]) {
@@ -2957,7 +2967,11 @@
         const res = await fetch(fullUrl, options);
 
         if (!res.ok) {
-          console.error(`Error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
+          if (res.status >= 500) {
+            console.error(`Server error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
+          } else {
+            console.warn(`Request notice ${res.status}: ${res.statusText || "Handled response"} at ${fullUrl}`);
+          }
         }
 
         // Auto re-hydrate token if renewed by backend
@@ -3491,14 +3505,7 @@
       return;
     }
 
-    // Trigger Firebase Auth Password Reset Email Session
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.sendPasswordResetEmail) {
-      helpers.sendPasswordResetEmail(auth, email).catch(err => {
-        console.warn("Firebase Auth sendPasswordResetEmail notice:", err.message || err);
-      });
-    }
+    // Password reset email delivery is handled by the backend NodeMailer service (/api/auth/forgot-password)
 
     try {
       const data = await safeFetchJson("/api/auth/forgot-password", {
@@ -3816,24 +3823,7 @@
       return;
     }
 
-    // 1. Firebase Auth Signup & Email Verification Session
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.createUserWithEmailAndPassword) {
-      try {
-        const userCredential = await helpers.createUserWithEmailAndPassword(auth, email, password);
-        if (userCredential && userCredential.user) {
-          if (helpers.updateProfile) {
-            await helpers.updateProfile(userCredential.user, { displayName: name }).catch(() => {});
-          }
-          if (helpers.sendEmailVerification) {
-            await helpers.sendEmailVerification(userCredential.user).catch(() => {});
-          }
-        }
-      } catch (fbErr) {
-        console.warn("Firebase Auth createUser notice:", fbErr.message || fbErr);
-      }
-    }
+    // Account registration and email verification are handled by the MongoDB backend service (/api/auth/signup)
 
     // 2. MongoDB Backend Sync with Local Offline Fallback
     try {

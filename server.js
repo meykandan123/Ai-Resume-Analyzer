@@ -108,6 +108,32 @@ function saveUploadedFile(fileData, filename) {
   }
 }
 
+// Helper: Cache Remote Avatar (e.g. Google usercontent) to Local Disk
+async function cacheRemoteAvatar(photoUrl, identifier) {
+  if (!photoUrl || typeof photoUrl !== "string") return photoUrl;
+  if (!photoUrl.startsWith("http://") && !photoUrl.startsWith("https://")) return photoUrl;
+  try {
+    const cleanId = (identifier || "avatar").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const filename = `avatar_${cleanId}.jpg`;
+    const diskPath = path.join(uploadsDir, filename);
+
+    if (fs.existsSync(diskPath) && fs.statSync(diskPath).size > 100) {
+      return `/uploads/${filename}`;
+    }
+
+    const res = await fetch(photoUrl);
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(diskPath, buffer);
+      return `/uploads/${filename}`;
+    }
+  } catch (err) {
+    console.warn("Avatar caching notice:", err.message || err);
+  }
+  return photoUrl;
+}
+
 let MongoMemoryServer;
 try {
   MongoMemoryServer = require("mongodb-memory-server").MongoMemoryServer;
@@ -1380,6 +1406,12 @@ app.post("/api/auth/google", async (req, res) => {
     let isNewUser = false;
     let googleLinked = false;
 
+    // Cache remote Google avatar to disk to eliminate ERR_SOCKET_NOT_CONNECTED
+    if (photo && (photo.startsWith("http://") || photo.startsWith("https://"))) {
+      const cachedPhoto = await cacheRemoteAvatar(photo, (user && user.userId) || normalizedEmail);
+      if (cachedPhoto) photo = cachedPhoto;
+    }
+
     if (user) {
       // DO NOT create a new document. Link Google to the existing account.
       const methods = Array.isArray(user.authMethods) ? [...user.authMethods] : [];
@@ -1392,8 +1424,8 @@ app.post("/api/auth/google", async (req, res) => {
       user.emailVerified = true;
       user.verified = true;
       if (!user.verifiedAt) user.verifiedAt = now;
-      // Update photo only if not already set and Google provides one
-      if (photo && !user.photo) user.photo = photo;
+      // Update photo with locally cached avatar
+      if (photo) user.photo = photo;
       user.updatedAt = now;
       if (!user.userId) user.userId = user._id.toString();
       // Do NOT touch passwordHash — preserve existing password auth
@@ -1864,11 +1896,65 @@ app.post(["/api/auth/session-token", "/api/auth/refresh-token"], async (req, res
   }
 });
 
+// Avatar Proxy to securely serve avatars and eliminate ERR_SOCKET_NOT_CONNECTED on Google CDN
+app.get("/api/proxy-avatar", async (req, res) => {
+  try {
+    const targetUrl = req.query.url;
+    if (!targetUrl || typeof targetUrl !== "string" || !targetUrl.startsWith("http")) {
+      return res.status(400).json({ success: false, message: "Valid image URL is required." });
+    }
+
+    const parsed = new URL(targetUrl);
+    const allowedHosts = ["googleusercontent.com", "gstatic.com", "google.com"];
+    const isAllowed = allowedHosts.some(host => parsed.hostname.endsWith(host));
+    if (!isAllowed) {
+      return res.status(403).json({ success: false, message: "Host not allowed for avatar proxy." });
+    }
+
+    const hash = crypto.createHash("md5").update(targetUrl).digest("hex");
+    const cachedFile = path.join(uploadsDir, `avatar_${hash}.jpg`);
+
+    if (fs.existsSync(cachedFile)) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+      return res.sendFile(path.resolve(cachedFile));
+    }
+
+    const response = await fetch(targetUrl);
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, message: "Failed to fetch upstream avatar." });
+    }
+
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    try { fs.writeFileSync(cachedFile, buffer); } catch(e){}
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+    return res.send(buffer);
+  } catch (err) {
+    console.warn("Avatar proxy warning:", err.message);
+    return res.status(500).json({ success: false, message: "Failed to proxy avatar." });
+  }
+});
+
 // ==================== USER PROFILE ROUTES ====================
 
 // Get Current User Profile
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
   try {
+    let userPhoto = req.user.photo || "";
+    if (userPhoto && (userPhoto.startsWith("http://") || userPhoto.startsWith("https://"))) {
+      const cached = await cacheRemoteAvatar(userPhoto, req.user.userId || req.user._id.toString());
+      if (cached && cached !== userPhoto) {
+        userPhoto = cached;
+        req.user.photo = cached;
+        User.updateOne({ _id: req.user._id }, { $set: { photo: cached } }).catch(() => {});
+      }
+    }
+
     return res.json({
       success: true,
       user: {
@@ -1879,7 +1965,7 @@ app.get("/api/user/profile", authenticateToken, async (req, res) => {
         email: req.user.email,
         emailVerified: req.user.emailVerified || req.user.verified,
         provider: req.user.provider,
-        photo: req.user.photo,
+        photo: userPhoto,
         createdAt: req.user.createdAt,
         updatedAt: req.user.updatedAt
       }

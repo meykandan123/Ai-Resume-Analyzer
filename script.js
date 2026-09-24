@@ -2759,9 +2759,45 @@
     return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
   }
 
+  function resolveAvatarUrl(photo) {
+    if (!photo || typeof photo !== "string") return "";
+    const clean = photo.trim();
+    if (clean.startsWith("data:") || clean.startsWith("/uploads/") || clean.startsWith("uploads/")) {
+      return clean.startsWith("uploads/") ? ("/" + clean) : clean;
+    }
+    // Route external Google usercontent URLs through the local proxy endpoint to eliminate socket & CORS errors
+    if (clean.includes("googleusercontent.com")) {
+      return (API_BASE || "") + "/api/proxy-avatar?url=" + encodeURIComponent(clean);
+    }
+    return clean;
+  }
+
+  function applyAvatarToElement(imgEl, fallbackEl, resolvedPhoto) {
+    if (!imgEl) return;
+    imgEl.referrerPolicy = "no-referrer";
+    imgEl.crossOrigin = "anonymous";
+
+    if (resolvedPhoto) {
+      imgEl.onerror = function() {
+        this.onerror = null;
+        this.style.display = "none";
+        if (fallbackEl) fallbackEl.style.display = "flex";
+      };
+      imgEl.onload = function() {
+        this.style.display = "block";
+        if (fallbackEl) fallbackEl.style.display = "none";
+      };
+      imgEl.src = resolvedPhoto;
+    } else {
+      imgEl.style.display = "none";
+      if (fallbackEl) fallbackEl.style.display = "flex";
+    }
+  }
+
   function renderAvatarEverywhere(user){
     if (!user) return;
     const photo = (user && user.photo) ? user.photo : null;
+    const resolvedPhoto = resolveAvatarUrl(photo);
     const initialsText = initials((user && user.name) ? user.name : "");
 
     const avatarText = document.getElementById("userAvatar");
@@ -2775,21 +2811,9 @@
     if (avatarLargeInitials) avatarLargeInitials.textContent = initialsText;
     if (pageInitials) pageInitials.textContent = initialsText;
 
-    if (photo){
-      if (avatarImg) { avatarImg.src = photo; avatarImg.style.display = "block"; }
-      if (avatarText) avatarText.style.display = "none";
-      if (avatarLargeImg) { avatarLargeImg.src = photo; avatarLargeImg.style.display = "block"; }
-      if (avatarLargeInitials) avatarLargeInitials.style.display = "none";
-      if (pageImg) { pageImg.src = photo; pageImg.style.display = "block"; }
-      if (pageInitials) pageInitials.style.display = "none";
-    } else {
-      if (avatarImg) avatarImg.style.display = "none";
-      if (avatarText) avatarText.style.display = "flex";
-      if (avatarLargeImg) avatarLargeImg.style.display = "none";
-      if (avatarLargeInitials) avatarLargeInitials.style.display = "flex";
-      if (pageImg) pageImg.style.display = "none";
-      if (pageInitials) pageInitials.style.display = "flex";
-    }
+    applyAvatarToElement(avatarImg, avatarText, resolvedPhoto);
+    applyAvatarToElement(avatarLargeImg, avatarLargeInitials, resolvedPhoto);
+    applyAvatarToElement(pageImg, pageInitials, resolvedPhoto);
   }
 
   function setLoggedInUser(user){
@@ -5361,13 +5385,9 @@
     const dashInitials = document.getElementById("dashAvatarInitials");
     const dashImg = document.getElementById("dashAvatarImg");
     if (dashInitials && dashImg) {
-      if (u.photo) {
-        dashImg.src = u.photo;
-        dashImg.style.display = "block";
-        dashInitials.style.display = "none";
-      } else {
-        dashImg.style.display = "none";
-        dashInitials.style.display = "inline";
+      const resolvedDashPhoto = resolveAvatarUrl(u.photo);
+      applyAvatarToElement(dashImg, dashInitials, resolvedDashPhoto);
+      if (!resolvedDashPhoto) {
         dashInitials.textContent = (u.name || "U").trim().charAt(0).toUpperCase();
       }
     }

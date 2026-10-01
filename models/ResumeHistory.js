@@ -52,6 +52,10 @@ const historyItemSchema = new mongoose.Schema({
   fileData: {
     type: String,
     default: ""
+  },
+  extractedData: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 }, { _id: false });
 

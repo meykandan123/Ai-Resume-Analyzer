@@ -2183,7 +2183,24 @@ const handleResumeAnalyze = async (req, res) => {
       suggestions: Array.isArray(suggestions) ? suggestions : []
     };
 
-    const computedExtractedData = extractedData || {
+    const computedExtractedData = extractedData ? {
+      name: (extractedData.name || userName || "").trim(),
+      email: (extractedData.email || userEmail || "").trim(),
+      phone: extractedData.phone || "",
+      location: extractedData.location || "",
+      linkedin: extractedData.linkedin || "",
+      github: extractedData.github || "",
+      portfolio: extractedData.portfolio || "",
+      summary: extractedData.summary || "",
+      skills: Array.isArray(extractedData.skills) ? extractedData.skills : (Array.isArray(detectedSkills) ? detectedSkills : []),
+      education: extractedData.education || [],
+      experience: extractedData.experience || [],
+      projects: extractedData.projects || [],
+      certifications: extractedData.certifications || [],
+      languages: extractedData.languages || [],
+      achievements: extractedData.achievements || [],
+      sections: extractedData.sections || {}
+    } : {
       name: userName,
       email: userEmail,
       phone: "",
@@ -2265,6 +2282,7 @@ const handleResumeAnalyze = async (req, res) => {
             "history.$.filePath": savedFilePath,
             "history.$.fileData": fileData || "",
             "history.$.resumeText": resumeText || "",
+            "history.$.extractedData": computedExtractedData,
             "history.$.status": "analyzed",
             updatedAt: now
           }
@@ -2290,6 +2308,7 @@ const handleResumeAnalyze = async (req, res) => {
               filePath: savedFilePath,
               fileData: fileData || "",
               resumeText: resumeText || "",
+              extractedData: computedExtractedData,
               status: "analyzed"
             }
           }
@@ -2396,6 +2415,7 @@ app.get(["/api/history", "/api/user/resume-history"], authenticateToken, async (
       hasJobDescription: item.hasJobDescription || false,
       status: item.status || "analyzed",
       verdict: "Analyzed",
+      extractedData: item.extractedData || {},
       uploadedAt: item.uploadedAt,
       date: item.uploadedAt
     }));

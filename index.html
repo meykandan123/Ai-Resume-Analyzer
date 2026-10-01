@@ -272,34 +272,50 @@
       </div>
     </div>
 
-    <!-- Resume Content Overview (Normal Mode): 3-Column Grid -->
-    <div class="report-card normal-only">
+    <!-- Resume Content Overview: What We Found In Your Resume (Available in Normal Mode, hidden in ATS Check) -->
+    <div class="report-card normal-only" id="resumeOverviewCard">
       <div class="report-card-head"><h2>📋 What We Found In Your Resume</h2></div>
       <div class="report-card-body">
-        <div class="content-overview-grid">
-          <div class="co-item">
+        <div class="content-overview-grid" id="contentOverviewGrid">
+          <div class="co-item" id="coItemPersonal">
             <div class="co-item-head"><span class="co-icon">🧑</span><h3>Personal Information</h3></div>
             <div class="co-item-body" id="coPersonal"></div>
           </div>
-          <div class="co-item">
+          <div class="co-item" id="coItemSummary" style="display:none;">
+            <div class="co-item-head"><span class="co-icon">📝</span><h3>Professional Summary</h3></div>
+            <div class="co-item-body" id="coSummary"></div>
+          </div>
+          <div class="co-item" id="coItemSkills">
             <div class="co-item-head"><span class="co-icon">🛠️</span><h3>Skills</h3></div>
             <div class="co-item-body" id="coSkills"></div>
           </div>
-          <div class="co-item">
-            <div class="co-item-head"><span class="co-icon">💼</span><h3>Experience</h3></div>
+          <div class="co-item" id="coItemExperience">
+            <div class="co-item-head"><span class="co-icon">💼</span><h3>Experience &amp; Internships</h3></div>
             <div class="co-item-body" id="coExperience"></div>
           </div>
-          <div class="co-item">
-            <div class="co-item-head"><span class="co-icon">🎓</span><h3>Education</h3></div>
+          <div class="co-item" id="coItemEducation">
+            <div class="co-item-head"><span class="co-icon">🎓</span><h3>Education &amp; Academics</h3></div>
             <div class="co-item-body" id="coEducation"></div>
           </div>
-          <div class="co-item">
-            <div class="co-item-head"><span class="co-icon">📜</span><h3>Certificates</h3></div>
-            <div class="co-item-body" id="coCertifications"></div>
-          </div>
-          <div class="co-item">
+          <div class="co-item" id="coItemProjects">
             <div class="co-item-head"><span class="co-icon">🚀</span><h3>Projects</h3></div>
             <div class="co-item-body" id="coProjects"></div>
+          </div>
+          <div class="co-item" id="coItemCertifications">
+            <div class="co-item-head"><span class="co-icon">📜</span><h3>Certificates &amp; Credentials</h3></div>
+            <div class="co-item-body" id="coCertifications"></div>
+          </div>
+          <div class="co-item" id="coItemAchievements" style="display:none;">
+            <div class="co-item-head"><span class="co-icon">🏆</span><h3>Achievements &amp; Awards</h3></div>
+            <div class="co-item-body" id="coAchievements"></div>
+          </div>
+          <div class="co-item" id="coItemLanguages" style="display:none;">
+            <div class="co-item-head"><span class="co-icon">🌐</span><h3>Languages</h3></div>
+            <div class="co-item-body" id="coLanguages"></div>
+          </div>
+          <div class="co-item" id="coItemLeadership" style="display:none;">
+            <div class="co-item-head"><span class="co-icon">🤝</span><h3>Leadership &amp; Activities</h3></div>
+            <div class="co-item-body" id="coLeadership"></div>
           </div>
         </div>
       </div>

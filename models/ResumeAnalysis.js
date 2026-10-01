@@ -57,9 +57,19 @@ const resumeAnalysisSchema = new mongoose.Schema({
     name: { type: String, default: "" },
     email: { type: String, default: "" },
     phone: { type: String, default: "" },
+    location: { type: String, default: "" },
+    linkedin: { type: String, default: "" },
+    github: { type: String, default: "" },
+    portfolio: { type: String, default: "" },
+    summary: { type: String, default: "" },
     skills: { type: [String], default: [] },
-    education: { type: [String], default: [] },
-    experience: { type: [String], default: [] }
+    education: { type: mongoose.Schema.Types.Mixed, default: [] },
+    experience: { type: mongoose.Schema.Types.Mixed, default: [] },
+    projects: { type: mongoose.Schema.Types.Mixed, default: [] },
+    certifications: { type: mongoose.Schema.Types.Mixed, default: [] },
+    languages: { type: mongoose.Schema.Types.Mixed, default: [] },
+    achievements: { type: mongoose.Schema.Types.Mixed, default: [] },
+    sections: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   analysisResult: {
     type: mongoose.Schema.Types.Mixed,

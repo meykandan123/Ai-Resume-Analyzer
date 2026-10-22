@@ -2764,6 +2764,69 @@ app.get("/api/user/dashboard", authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== SEO & CRAWLER ROUTES ====================
+// Dedicated robots.txt route with proper headers & dynamic sitemap URL
+app.get("/robots.txt", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.get("host") || `localhost:${PORT}`;
+  const sitemapUrl = `${protocol}://${host}/sitemap.xml`;
+  
+  res.type("text/plain; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=86400");
+  res.send(`# Robots.txt for AI Resume Analyzer
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /styles.css
+Allow: /script.js
+Allow: /logo.png
+Allow: /favicon.png
+Allow: /favicon.ico
+Allow: /manifest.json
+
+# Disallow private and backend endpoints
+Disallow: /api/
+Disallow: /uploads/
+
+# Sitemap specification
+Sitemap: ${sitemapUrl}
+`);
+});
+
+// Dedicated dynamic XML sitemap with correct XML headers & request host
+app.get("/sitemap.xml", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.get("host") || `localhost:${PORT}`;
+  const baseUrl = `${protocol}://${host}`;
+  const today = new Date().toISOString().split("T")[0];
+
+  res.type("application/xml; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=86400");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.00</priority>
+  </url>
+</urlset>`);
+});
+
+// Dedicated manifest.json route with correct MIME type
+app.get("/manifest.json", (req, res) => {
+  const manifestPath = path.join(__dirname, "manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    res.type("application/manifest+json; charset=utf-8");
+    res.set("Cache-Control", "public, max-age=86400");
+    return res.sendFile(manifestPath);
+  }
+  return res.status(404).json({ success: false, message: "Manifest not found" });
+});
+
 // Serve static frontend files (CSS, JS, assets)
 app.use(express.static(path.join(__dirname)));
 

@@ -1,3 +1,20 @@
+  // Dynamically resolve canonical URL & Open Graph / Twitter image URLs at runtime
+  try {
+    if (typeof window !== "undefined" && window.location && window.location.origin) {
+      const pageOrigin = window.location.origin;
+      const canonicalEl = document.getElementById("canonicalLink");
+      if (canonicalEl) canonicalEl.href = pageOrigin + window.location.pathname;
+      const ogUrlEl = document.getElementById("ogUrl");
+      if (ogUrlEl) ogUrlEl.content = pageOrigin + window.location.pathname;
+      const ogImgEl = document.getElementById("ogImage");
+      if (ogImgEl && ogImgEl.content.startsWith("/")) ogImgEl.content = pageOrigin + ogImgEl.content;
+      const ogImgSecEl = document.getElementById("ogImageSecure");
+      if (ogImgSecEl && ogImgSecEl.content.startsWith("/")) ogImgSecEl.content = pageOrigin + ogImgSecEl.content;
+      const twImgEl = document.getElementById("twitterImage");
+      if (twImgEl && twImgEl.content.startsWith("/")) twImgEl.content = pageOrigin + twImgEl.content;
+    }
+  } catch (seoErr) {}
+
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
   // Snapshot of the most recent analysis, used by the "Download PDF Report" button.
@@ -6508,3 +6525,18 @@
       if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
     });
   }
+
+  const footerHistoryLink = document.getElementById("footerHistoryLink");
+  if (footerHistoryLink) {
+    footerHistoryLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      const historyBtnRef = document.getElementById("historyBtn");
+      if (currentUser && historyBtnRef) {
+        historyBtnRef.click();
+      } else {
+        const navLoginBtnRef = document.getElementById("navLoginBtn");
+        if (navLoginBtnRef) navLoginBtnRef.click();
+      }
+    });
+  }
+

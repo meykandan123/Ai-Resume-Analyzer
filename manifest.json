@@ -1,0 +1,25 @@
+{
+  "short_name": "AI Resume",
+  "name": "AI Resume Analyzer - Free ATS Resume Checker",
+  "description": "Free AI Resume Analyzer & ATS resume checker. Scan your resume against job descriptions, calculate ATS score, detect skill gaps, and get instant recommendations.",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "type": "image/png",
+      "sizes": "32x32 48x48 64x64"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#fff9f2",
+  "theme_color": "#81001a",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": ["business", "productivity", "utilities"]
+}

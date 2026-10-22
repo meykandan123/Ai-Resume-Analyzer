@@ -1,0 +1,17 @@
+# Robots.txt for AI Resume Analyzer
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /styles.css
+Allow: /script.js
+Allow: /logo.png
+Allow: /favicon.png
+Allow: /favicon.ico
+Allow: /manifest.json
+
+# Disallow private and backend endpoints
+Disallow: /api/
+Disallow: /uploads/
+
+# Host & Sitemap specification
+Sitemap: /sitemap.xml

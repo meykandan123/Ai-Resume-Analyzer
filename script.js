@@ -1490,8 +1490,9 @@
   }
 
   function renderKwColumn(container, items){
+    if (!container) return;
     container.innerHTML = "";
-    if (!items.length){
+    if (!items || !items.length){
       container.innerHTML = "<div class='kw-empty'>None detected.</div>";
       return;
     }

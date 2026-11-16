@@ -1,7 +1,7 @@
 {
   "name": "ai-resume",
   "version": "1.0.0",
-  "description": "",
+  "description": "AI Resume Analyzer & ATS Score Optimizer engineered by Meykandan. Fast, browser-based resume scanner against job descriptions with intelligent keyword gap analysis.",
   "main": "script.js",
   "scripts": {
     "start": "node server.js",
@@ -11,8 +11,17 @@
     "type": "git",
     "url": "git+https://github.com/meykandan123/Ai-Resume-Analyzer.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai-resume-analyzer",
+    "ats-checker",
+    "ats-score",
+    "resume-optimizer",
+    "meykandan",
+    "keyword-matcher",
+    "pdf-resume-parser",
+    "career-tools"
+  ],
+  "author": "Meykandan <meykandan123@gmail.com>",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {

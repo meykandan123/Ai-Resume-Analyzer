@@ -3867,6 +3867,204 @@
   margin: 0 0 10px 0;
 }
 
+/* ==================== SEO PROJECT & DEVELOPER SECTION ==================== */
+.project-seo-section {
+  margin: 48px auto 24px;
+  padding: 0;
+  max-width: 100%;
+}
+
+.project-seo-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.project-seo-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  background: rgba(213, 79, 96, 0.1);
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+}
+
+.project-seo-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 10px;
+  letter-spacing: -0.5px;
+}
+
+.project-seo-subtitle {
+  font-size: 14.5px;
+  color: #64748b;
+  max-width: 680px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.project-seo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.project-seo-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 24px 20px;
+  box-shadow: 0 2px 8px rgba(129, 0, 26, 0.04);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.project-seo-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent-2);
+  box-shadow: 0 8px 24px rgba(129, 0, 26, 0.08);
+}
+
+.project-card-icon {
+  font-size: 28px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.project-seo-card h3 {
+  font-size: 17px;
+  font-weight: 750;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+
+.project-seo-card p {
+  font-size: 13.5px;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.developer-spotlight-card {
+  background: linear-gradient(135deg, rgba(255, 249, 242, 0.96) 0%, rgba(243, 231, 214, 0.55) 100%);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 26px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 4px 18px rgba(129, 0, 26, 0.05);
+}
+
+.developer-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.developer-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(129, 0, 26, 0.25);
+  border: 3px solid #ffffff;
+}
+
+.developer-info {
+  flex: 1;
+}
+
+.developer-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--ink);
+  background: rgba(129, 0, 26, 0.08);
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
+.developer-name {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+.developer-bio {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+
+.developer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dev-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.dev-link-btn.primary {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.dev-link-btn.primary:hover {
+  background: var(--ink-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(129, 0, 26, 0.2);
+}
+
+.dev-link-btn.secondary {
+  background: #ffffff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.dev-link-btn.secondary:hover {
+  border-color: var(--accent);
+  background: var(--card-tint);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .developer-spotlight-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 22px 18px;
+  }
+  .developer-links {
+    justify-content: center;
+  }
+}
+
 /* ==================== SEO FAQ SECTION ==================== */
 .faq-section {
   margin: 48px auto 24px;

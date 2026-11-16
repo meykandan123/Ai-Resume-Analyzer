@@ -1354,29 +1354,105 @@
     });
   }
 
-  // Overused resume clichés / vague buzzwords, flagged for the reader to
-  // replace with something more specific.
-  const BUZZWORDS = [
-    { re: /\bai\b/i, label: "AI" },
-    { re: /\bresponsive\b/i, label: "responsive" },
-    { re: /\bcurrently learning\b/i, label: "currently learning" },
-    { re: /\bteam player\b/i, label: "team player" },
-    { re: /\bhard[- ]working\b/i, label: "hard-working" },
-    { re: /\bdetail[- ]oriented\b/i, label: "detail-oriented" },
-    { re: /\bresults[- ]driven\b/i, label: "results-driven" },
-    { re: /\bgo[- ]getter\b/i, label: "go-getter" },
-    { re: /\bself[- ]starter\b/i, label: "self-starter" },
-    { re: /\bfast[- ]paced\b/i, label: "fast-paced" },
-    { re: /\bsynergy\b/i, label: "synergy" },
-    { re: /\bpassionate\b/i, label: "passionate" },
-    { re: /\bdynamic\b/i, label: "dynamic" },
-    { re: /\bproactive\b/i, label: "proactive" },
-    { re: /\bthink outside the box\b/i, label: "think outside the box" },
-    { re: /\bexcellent communication\b/i, label: "excellent communication" },
+  // =========================================================================
+  // AI vs. Man Made Content Detection (OpenAI / ChatGPT / LLM pattern analyzer)
+  // =========================================================================
+  const AI_PATTERNS = [
+    // Direct AI leakage / prompt residuals
+    { re: /\bas an ai\b/i, label: "as an ai", weight: 45, isExplicit: true },
+    { re: /\bchatgpt\b/i, label: "ChatGPT mention", weight: 45, isExplicit: true },
+    { re: /\bopenai\b/i, label: "OpenAI mention", weight: 45, isExplicit: true },
+    { re: /\blanguage model\b/i, label: "language model", weight: 45, isExplicit: true },
+    { re: /\bhere is (a|the|your) resume\b/i, label: "here is a resume prompt", weight: 45, isExplicit: true },
+    { re: /\bcertainly,?\s+(here|below)\b/i, label: "certainly, here is...", weight: 45, isExplicit: true },
+    { re: /\[insert\s+[a-z_\s]+\]/i, label: "[insert placeholder]", weight: 35, isExplicit: true },
+
+    // Signature OpenAI / LLM vocabulary & clichés
+    { re: /\bdelve(d|s)?\s+into\b/i, label: "delve into", weight: 22 },
+    { re: /\btestament to\b/i, label: "testament to", weight: 22 },
+    { re: /\btapestry of\b/i, label: "tapestry of", weight: 22 },
+    { re: /\bbeacon of\b/i, label: "beacon of", weight: 20 },
+    { re: /\bunwavering commitment\b/i, label: "unwavering commitment", weight: 20 },
+    { re: /\bharness(ed|ing)?\s+the power\b/i, label: "harnessing the power", weight: 18 },
+    { re: /\bleverag(ed|ing)\s+cutting[- ]edge\b/i, label: "leveraging cutting-edge", weight: 18 },
+    { re: /\bspearhead(ed|ing)?\b/i, label: "spearheaded", weight: 12 },
+    { re: /\bproven track record\b/i, label: "proven track record", weight: 15 },
+    { re: /\bseamlessly integrat(e|ed|ing)\b/i, label: "seamlessly integrate", weight: 16 },
+    { re: /\bpivotal role\b/i, label: "pivotal role", weight: 15 },
+    { re: /\bdriv(e|ing|en)\s+impactful results\b/i, label: "driving impactful results", weight: 16 },
+    { re: /\borchestrat(ed|ing)\s+cross[- ]functional\b/i, label: "orchestrated cross-functional", weight: 16 },
+    { re: /\badept (at|in)\b/i, label: "adept at", weight: 14 },
+    { re: /\bfoster(ed|ing)?\s+a culture\b/i, label: "fostering a culture", weight: 15 },
+    { re: /\bpassionate and (results[- ]driven|detail[- ]oriented)\b/i, label: "passionate & results-driven", weight: 15 },
+    { re: /\bdynamic and forward[- ]thinking\b/i, label: "dynamic and forward-thinking", weight: 15 },
+    { re: /\bholistic approach\b/i, label: "holistic approach", weight: 14 },
+    { re: /\bin today('s)?\s+fast[- ]paced\b/i, label: "in today's fast-paced", weight: 15 },
+    { re: /\bin an ever[- ]evolving\b/i, label: "in an ever-evolving", weight: 15 },
+    { re: /\bmeticulously (crafted|designed|executed)\b/i, label: "meticulously crafted", weight: 15 },
+    { re: /\bcatalyst for (change|growth|success)\b/i, label: "catalyst for change", weight: 15 },
+    { re: /\bnavigating complex\b/i, label: "navigating complex", weight: 14 },
+    { re: /\bsynergistic\b/i, label: "synergistic", weight: 14 },
+    { re: /\bthrives in fast[- ]paced\b/i, label: "thrives in fast-paced", weight: 14 },
+    { re: /\belevate organizational performance\b/i, label: "elevate performance", weight: 15 },
+    { re: /\bkeen eye for detail\b/i, label: "keen eye for detail", weight: 12 },
+    { re: /\bresults[- ]driven professional\b/i, label: "results-driven professional", weight: 14 },
+    { re: /\bcommitted to excellence\b/i, label: "committed to excellence", weight: 12 },
+    { re: /\bdeep dive\b/i, label: "deep dive", weight: 10 },
+    { re: /\bthink outside the box\b/i, label: "think outside the box", weight: 12 }
   ];
 
+  function detectAiOrHuman(text){
+    if (!text || typeof text !== "string") {
+      return { isAi: false, aiScore: 4, humanScore: 96, detectedPhrases: [], explicitLeak: false };
+    }
+
+    const detected = [];
+    let rawScore = 0;
+    let explicitLeak = false;
+
+    AI_PATTERNS.forEach(pat => {
+      if (pat.re.test(text)){
+        detected.push(pat.label);
+        rawScore += pat.weight;
+        if (pat.isExplicit) explicitLeak = true;
+      }
+    });
+
+    // Check sentence length burstiness (AI typically produces uniform bullet cadence)
+    const sentences = text.split(/[.\n;•]+/).map(s => s.trim()).filter(s => s.split(/\s+/).length >= 5);
+    let uniformPenalty = 0;
+    if (sentences.length >= 6) {
+      const lengths = sentences.map(s => s.split(/\s+/).length);
+      const avg = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+      const variance = lengths.reduce((acc, len) => acc + Math.pow(len - avg, 2), 0) / lengths.length;
+      const stdDev = Math.sqrt(variance);
+      if (stdDev < 3.2 && avg >= 12 && avg <= 25) {
+        uniformPenalty = 15;
+      }
+    }
+
+    let calculatedAiScore = Math.min(96, Math.round(rawScore + uniformPenalty));
+    if (explicitLeak) {
+      calculatedAiScore = Math.max(94, calculatedAiScore);
+    }
+
+    // Classification threshold
+    const isAi = explicitLeak || calculatedAiScore >= 35 || detected.length >= 3;
+    const finalAiScore = isAi ? Math.max(54, calculatedAiScore) : Math.min(24, Math.max(3, calculatedAiScore));
+    const humanScore = 100 - finalAiScore;
+
+    return {
+      isAi,
+      aiScore: finalAiScore,
+      humanScore,
+      detectedPhrases: detected,
+      explicitLeak
+    };
+  }
+
   function findBuzzwords(text){
-    return BUZZWORDS.filter(b => b.re.test(text)).map(b => b.label);
+    const res = detectAiOrHuman(text);
+    return res.detectedPhrases;
   }
 
   // Counts total occurrences (not just presence) of every SKILL_KEYWORDS
@@ -1897,19 +1973,98 @@
       missingCommonEl.innerHTML = "<span class='kw-empty'>None — your resume covers all the common keywords we check for.</span>";
     }
 
-    // Overused buzzwords
-    const buzzwordsFound = findBuzzwords(text);
+    // Overused buzzwords -> AI vs Man Made Detection
+    const aiAnalysis = detectAiOrHuman(text);
+    const buzzwordsFound = aiAnalysis.detectedPhrases;
     const buzzwordEl = document.getElementById("buzzwordTags");
-    buzzwordEl.innerHTML = "";
-    if (buzzwordsFound.length){
-      buzzwordsFound.forEach(b => {
-        const span = document.createElement("span");
-        span.className = "tag missing";
-        span.textContent = "! " + b;
-        buzzwordEl.appendChild(span);
-      });
-    } else {
-      buzzwordEl.innerHTML = "<span class='kw-empty'>No overused buzzwords detected.</span>";
+    const aiOriginBadge = document.getElementById("aiOriginBadge");
+    const aiOriginBanner = document.getElementById("aiOriginBanner");
+    const aiOriginDetails = document.getElementById("aiOriginDetails");
+
+    if (aiOriginBadge) {
+      if (aiAnalysis.isAi) {
+        aiOriginBadge.className = "ai-origin-badge badge-ai";
+        aiOriginBadge.innerHTML = "🤖 AI Generated";
+      } else {
+        aiOriginBadge.className = "ai-origin-badge badge-human";
+        aiOriginBadge.innerHTML = "✍️ Man Made";
+      }
+    }
+
+    if (aiOriginBanner) {
+      if (aiAnalysis.isAi) {
+        aiOriginBanner.innerHTML = `
+          <div class="ai-banner-box is-ai">
+            <div class="ai-banner-icon">🤖</div>
+            <div class="ai-banner-text">
+              <div class="ai-banner-title">Made by AI / OpenAI</div>
+              <div class="ai-banner-desc">This resume exhibits phrasing structures, repetition, and clichés typical of AI language models like ChatGPT / OpenAI.</div>
+            </div>
+          </div>
+        `;
+      } else {
+        aiOriginBanner.innerHTML = `
+          <div class="ai-banner-box is-human">
+            <div class="ai-banner-icon">✍️</div>
+            <div class="ai-banner-text">
+              <div class="ai-banner-title">Man Made (Human Written)</div>
+              <div class="ai-banner-desc">No significant AI or OpenAI patterns detected. Authentic human craftsmanship and natural personal tone verified.</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    if (aiOriginDetails) {
+      if (aiAnalysis.isAi) {
+        aiOriginDetails.innerHTML = `
+          <div class="ai-score-bar-wrap">
+            <div class="ai-score-label">
+              <span>AI Content Probability</span>
+              <span>${aiAnalysis.aiScore}% AI</span>
+            </div>
+            <div class="ai-score-track">
+              <div class="ai-score-fill" style="width:${aiAnalysis.aiScore}%;"></div>
+            </div>
+          </div>
+          <div class="ai-indicators-heading">Detected AI / OpenAI Markers (${aiAnalysis.detectedPhrases.length}):</div>
+        `;
+      } else {
+        aiOriginDetails.innerHTML = `
+          <div class="ai-score-bar-wrap">
+            <div class="ai-score-label">
+              <span>Human Authenticity Score</span>
+              <span>${aiAnalysis.humanScore}% Man Made</span>
+            </div>
+            <div class="ai-score-track">
+              <div class="ai-score-fill human" style="width:${aiAnalysis.humanScore}%;"></div>
+            </div>
+          </div>
+          <div class="ai-indicators-heading">Origin Verification Status:</div>
+        `;
+      }
+    }
+
+    if (buzzwordEl){
+      buzzwordEl.innerHTML = "";
+      if (aiAnalysis.isAi){
+        if (aiAnalysis.detectedPhrases.length){
+          aiAnalysis.detectedPhrases.forEach(b => {
+            const span = document.createElement("span");
+            span.className = "tag missing";
+            span.textContent = "🤖 " + b;
+            buzzwordEl.appendChild(span);
+          });
+        } else {
+          buzzwordEl.innerHTML = "<span class='kw-empty'>AI sentence cadence detected. Consider varying bullet structures.</span>";
+        }
+      } else {
+        buzzwordEl.innerHTML = `
+          <span class="tag all-good">✓ 100% Man Made</span>
+          <span class="tag all-good">✓ Authentic Tone</span>
+          <span class="tag all-good">✓ Natural Phrasing</span>
+        `;
+      }
     }
 
     // Readability & content quality metrics
@@ -2102,13 +2257,20 @@
       });
     }
 
-    // Buzzwords & Summary Polish
-    if (buzzwordsFound && buzzwordsFound.length > 0){
+    // AI vs Man Made & Summary Polish
+    if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound && buzzwordsFound.length > 0){
       recs.push({
-        badge: "Polish",
+        badge: "AI Origin",
         type: "polish",
-        issue: `Overused Buzzwords Detected: ${buzzwordsFound.slice(0, 3).join(", ")}`,
-        fix: "Swap generic fluff terms for concrete technical tools and verifiable achievements."
+        issue: `AI-Generated Patterns Detected: ${buzzwordsFound.slice(0, 3).join(", ")}`,
+        fix: "Humanize your resume by replacing robotic AI clichés with personal, quantifiable achievements."
+      });
+    } else if (aiAnalysis && aiAnalysis.isAi){
+      recs.push({
+        badge: "AI Origin",
+        type: "polish",
+        issue: "Robotic / AI sentence cadence detected across bullet points",
+        fix: "Vary your bullet point lengths and lead with specific tools and measurable project impacts."
       });
     }
 
@@ -2177,7 +2339,13 @@
         detail:"Several bullet points use very similar wording — vary your language across roles and projects."
       });
     }
-    if (buzzwordsFound.length){
+    if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound.length){
+      errorItems.push({
+        severity:"low",
+        title:`AI / OpenAI generated patterns detected (${buzzwordsFound.length})`,
+        detail:`Phrases like ${buzzwordsFound.slice(0,3).join(", ")} sound generated by ChatGPT/AI — swap them for specific, human-written achievements.`
+      });
+    } else if (buzzwordsFound.length){
       errorItems.push({
         severity:"low",
         title:`Overused buzzwords found (${buzzwordsFound.length})`,

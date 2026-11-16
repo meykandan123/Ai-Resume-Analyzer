@@ -2300,6 +2300,113 @@
     background:#2e7d32;
   }
 
+  /* ============ AI vs. MAN MADE DETECTION CARD ============ */
+  .ai-origin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 750;
+    padding: 3px 10px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.25s ease;
+  }
+  .ai-origin-badge.badge-ai {
+    background: rgba(213, 79, 96, 0.15);
+    color: #b3261e;
+    border: 1px solid rgba(179, 38, 30, 0.3);
+  }
+  .ai-origin-badge.badge-human {
+    background: rgba(46, 125, 50, 0.15);
+    color: #15803d;
+    border: 1px solid rgba(46, 125, 50, 0.3);
+  }
+  .ai-origin-banner {
+    margin-bottom: 12px;
+  }
+  .ai-banner-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+  }
+  .ai-banner-box.is-ai {
+    background: #fff5f5;
+    border: 1.5px solid #fecaca;
+  }
+  .ai-banner-box.is-human {
+    background: #f0fdf4;
+    border: 1.5px solid #bbf7d0;
+  }
+  .ai-banner-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .ai-banner-text {
+    flex: 1;
+  }
+  .ai-banner-title {
+    font-size: 14.5px;
+    font-weight: 800;
+    margin-bottom: 3px;
+  }
+  .ai-banner-box.is-ai .ai-banner-title {
+    color: #b3261e;
+  }
+  .ai-banner-box.is-human .ai-banner-title {
+    color: #15803d;
+  }
+  .ai-banner-desc {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: #475569;
+  }
+  .ai-score-bar-wrap {
+    margin-bottom: 12px;
+    background: rgba(0, 0, 0, 0.02);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+  }
+  .ai-score-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .ai-score-track {
+    width: 100%;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .ai-score-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #f59e0b, #dc2626);
+    transition: width 0.6s var(--ease-spring);
+  }
+  .ai-score-fill.human {
+    background: linear-gradient(90deg, #10b981, #059669);
+  }
+  .ai-indicators-heading {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 8px 0 6px;
+  }
+
   .jd-wrap{ margin-top:16px; }
   .jd-label{
     display:block;

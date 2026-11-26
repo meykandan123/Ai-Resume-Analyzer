@@ -1,1546 +1,1546 @@
-  // Dynamically resolve canonical URL & Open Graph / Twitter image URLs at runtime
-  try {
-    if (typeof window !== "undefined" && window.location && window.location.origin) {
-      const pageOrigin = window.location.origin;
-      const canonicalEl = document.getElementById("canonicalLink");
-      if (canonicalEl) canonicalEl.href = pageOrigin + window.location.pathname;
-      const ogUrlEl = document.getElementById("ogUrl");
-      if (ogUrlEl) ogUrlEl.content = pageOrigin + window.location.pathname;
-      const ogImgEl = document.getElementById("ogImage");
-      if (ogImgEl && ogImgEl.content.startsWith("/")) ogImgEl.content = pageOrigin + ogImgEl.content;
-      const ogImgSecEl = document.getElementById("ogImageSecure");
-      if (ogImgSecEl && ogImgSecEl.content.startsWith("/")) ogImgSecEl.content = pageOrigin + ogImgSecEl.content;
-      const twImgEl = document.getElementById("twitterImage");
-      if (twImgEl && twImgEl.content.startsWith("/")) twImgEl.content = pageOrigin + twImgEl.content;
+// Dynamically resolve canonical URL & Open Graph / Twitter image URLs at runtime
+try {
+  if (typeof window !== "undefined" && window.location && window.location.origin) {
+    const pageOrigin = window.location.origin;
+    const canonicalEl = document.getElementById("canonicalLink");
+    if (canonicalEl) canonicalEl.href = pageOrigin + window.location.pathname;
+    const ogUrlEl = document.getElementById("ogUrl");
+    if (ogUrlEl) ogUrlEl.content = pageOrigin + window.location.pathname;
+    const ogImgEl = document.getElementById("ogImage");
+    if (ogImgEl && ogImgEl.content.startsWith("/")) ogImgEl.content = pageOrigin + ogImgEl.content;
+    const ogImgSecEl = document.getElementById("ogImageSecure");
+    if (ogImgSecEl && ogImgSecEl.content.startsWith("/")) ogImgSecEl.content = pageOrigin + ogImgSecEl.content;
+    const twImgEl = document.getElementById("twitterImage");
+    if (twImgEl && twImgEl.content.startsWith("/")) twImgEl.content = pageOrigin + twImgEl.content;
+  }
+} catch (seoErr) { }
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// Snapshot of the most recent analysis, used by the "Download PDF Report" button.
+let lastAnalysisData = null;
+
+// Active authenticated user state
+let currentUser = null;
+
+// ---- Analysis mode selection state ----
+// Holds the extracted resume text/filename between "upload" and the user
+// picking an analysis type, so the file doesn't need to be re-uploaded.
+let pendingResumeText = null;
+let pendingResumeFilename = null;
+let pendingResumeFileData = null;
+let analysisMode = null; // "ats" | "normal" | null
+let historySavedForCurrentUpload = false;
+
+// ---- Target Job Selection Modal State ----
+let selectedTargetJobRole = "";
+let customJobRoleText = "";
+let hasUserJobDescription = false;
+let userJobDescriptionText = "";
+let currentAnalysisType = "ats"; // "ats" | "normal"
+
+// ---- AI Recommendations State & Cache (OpenRouter Free Models) ----
+const aiRecsCache = new Map();
+let currentAIAbortController = null;
+let lastAIAnalysisContext = null;
+
+const JOB_ROLE_CATEGORIES = [
+  {
+    name: "Technology / IT",
+    roles: [
+      "Software Developer", "Software Engineer", "Frontend Developer", "Backend Developer", "Full Stack Developer",
+      "Web Developer", "Mobile App Developer", "Android Developer", "iOS Developer", "React Developer",
+      "Java Developer", "Python Developer", "JavaScript Developer", ".NET Developer", "Data Analyst",
+      "Data Scientist", "Data Engineer", "Machine Learning Engineer", "AI Engineer", "AI/ML Engineer",
+      "DevOps Engineer", "Cloud Engineer", "Cybersecurity Analyst", "Cybersecurity Engineer", "Network Engineer",
+      "Database Administrator", "System Administrator", "QA Engineer", "Automation Test Engineer",
+      "UI/UX Designer", "Product Designer", "Technical Support Engineer", "IT Support Specialist"
+    ]
+  },
+  {
+    name: "Business / Management",
+    roles: [
+      "Business Analyst", "Project Manager", "Product Manager", "Operations Manager", "Operations Executive",
+      "Business Development Executive", "Business Development Manager", "Sales Executive", "Sales Manager",
+      "Marketing Executive", "Digital Marketing Specialist", "Marketing Manager", "HR Executive", "HR Manager",
+      "Recruiter", "Customer Success Executive", "Customer Support Executive"
+    ]
+  },
+  {
+    name: "Finance / Accounting",
+    roles: [
+      "Accountant", "Financial Analyst", "Finance Executive", "Banking Associate", "Investment Analyst",
+      "Tax Analyst", "Audit Associate"
+    ]
+  },
+  {
+    name: "Engineering",
+    roles: [
+      "Mechanical Engineer", "Civil Engineer", "Electrical Engineer", "Electronics Engineer",
+      "Automotive Engineer", "Manufacturing Engineer"
+    ]
+  },
+  {
+    name: "Other",
+    roles: [
+      "Content Writer", "Technical Writer", "Graphic Designer", "Teacher", "Lecturer",
+      "Research Assistant", "Consultant", "Healthcare Professional", "Legal Associate",
+      "Architect", "Intern", "Fresher / Graduate", "Other"
+    ]
+  }
+];
+
+const JOB_ROLE_PROFILES = {
+  "frontend developer": {
+    title: "Frontend Developer",
+    skills: ["html", "css", "javascript", "react", "typescript", "responsive design", "ui/ux", "git", "rest api", "next.js", "tailwind", "webpack", "bootstrap"],
+    keyAreas: ["UI Development", "Component Architecture", "State Management", "Cross-Browser Compatibility", "Performance Optimization"]
+  },
+  "react developer": {
+    title: "React Developer",
+    skills: ["react", "javascript", "typescript", "redux", "next.js", "html", "css", "git", "rest api", "jest", "webpack", "responsive design"],
+    keyAreas: ["React Components", "Hooks & State", "API Integration", "Virtual DOM", "Frontend Performance"]
+  },
+  "backend developer": {
+    title: "Backend Developer",
+    skills: ["python", "java", "node.js", "express", "sql", "postgresql", "mongodb", "redis", "rest api", "microservices", "docker", "git", "c#", "spring boot", "django"],
+    keyAreas: ["API Design", "Database Modeling", "Server Logic", "Authentication & Security", "Scalability"]
+  },
+  "software engineer": {
+    title: "Software Engineer",
+    skills: ["python", "java", "c++", "data structures", "algorithms", "git", "sql", "system design", "unit testing", "ci/cd", "problem solving", "object oriented programming", "rest api"],
+    keyAreas: ["Software Architecture", "Algorithm Design", "Code Quality", "Testing & Debugging", "Version Control"]
+  },
+  "software developer": {
+    title: "Software Developer",
+    skills: ["python", "java", "javascript", "sql", "git", "data structures", "algorithms", "rest api", "unit testing", "agile", "problem solving", "web services"],
+    keyAreas: ["Application Development", "Code Optimization", "Database Queries", "Feature Implementation"]
+  },
+  "full stack developer": {
+    title: "Full Stack Developer",
+    skills: ["html", "css", "javascript", "react", "node.js", "express", "sql", "mongodb", "rest api", "git", "typescript", "docker", "aws"],
+    keyAreas: ["End-to-End Development", "Frontend UI", "Backend APIs", "Database Integration"]
+  },
+  "web developer": {
+    title: "Web Developer",
+    skills: ["html", "css", "javascript", "php", "wordpress", "bootstrap", "responsive design", "git", "seo", "mysql", "jquery"],
+    keyAreas: ["Website Layout", "Content Management", "Responsive UI", "Web Performance"]
+  },
+  "data scientist": {
+    title: "Data Scientist",
+    skills: ["python", "sql", "statistics", "machine learning", "pandas", "numpy", "scikit-learn", "data visualization", "model evaluation", "jupyter", "r", "tableau", "deep learning", "nlp"],
+    keyAreas: ["Statistical Modeling", "Predictive Analytics", "Data Mining", "Feature Engineering", "Machine Learning Pipelines"]
+  },
+  "data analyst": {
+    title: "Data Analyst",
+    skills: ["sql", "excel", "python", "tableau", "power bi", "data visualization", "statistics", "data analysis", "analytical skills", "reporting", "r"],
+    keyAreas: ["Data Wrangling", "Dashboard Creation", "Business Intelligence", "Trend Analysis"]
+  },
+  "data engineer": {
+    title: "Data Engineer",
+    skills: ["python", "sql", "spark", "hadoop", "etl", "data warehousing", "postgresql", "aws", "gcp", "kafka", "docker", "pipeline building"],
+    keyAreas: ["ETL Pipelines", "Data Warehousing", "Big Data Processing", "Database Administration"]
+  },
+  "machine learning engineer": {
+    title: "Machine Learning Engineer",
+    skills: ["python", "tensorflow", "pytorch", "machine learning", "deep learning", "scikit-learn", "nlp", "opencv", "docker", "sql", "model deployment", "mlopps"],
+    keyAreas: ["Neural Networks", "Model Optimization", "ML Deployment", "Algorithm Tuning"]
+  },
+  "ai engineer": {
+    title: "AI Engineer",
+    skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "computer vision", "llm", "prompt engineering", "sql"],
+    keyAreas: ["AI Solution Architecture", "LLMs & Generative AI", "Neural Models", "Algorithmic Reasoning"]
+  },
+  "ai/ml engineer": {
+    title: "AI/ML Engineer",
+    skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "scikit-learn", "computer vision", "sql", "model deployment"],
+    keyAreas: ["AI Algorithms", "Model Training & Evaluation", "Feature Engineering"]
+  },
+  "devops engineer": {
+    title: "DevOps Engineer",
+    skills: ["docker", "kubernetes", "ci/cd", "aws", "azure", "jenkins", "linux", "git", "bash", "terraform", "python", "monitoring", "ansible"],
+    keyAreas: ["Infrastructure as Code", "Continuous Integration", "Container Orchestration", "Cloud Security & Monitoring"]
+  },
+  "cloud engineer": {
+    title: "Cloud Engineer",
+    skills: ["aws", "azure", "gcp", "docker", "kubernetes", "linux", "terraform", "cloud security", "networking", "python", "bash", "ci/cd"],
+    keyAreas: ["Cloud Migration", "Infrastructure Provisioning", "High Availability", "Cost Optimization"]
+  },
+  "cybersecurity analyst": {
+    title: "Cybersecurity Analyst",
+    skills: ["network security", "siem", "incident response", "threat detection", "linux", "firewalls", "vulnerability assessment", "security tools", "wireshark", "penetration testing"],
+    keyAreas: ["Threat Monitoring", "Vulnerability Management", "Security Auditing", "Incident Containment"]
+  },
+  "cybersecurity engineer": {
+    title: "Cybersecurity Engineer",
+    skills: ["network security", "firewalls", "linux", "threat detection", "siem", "encryption", "vulnerability assessment", "python", "bash", "cloud security"],
+    keyAreas: ["Security Architecture", "Firewall Configuration", "Intrusion Prevention"]
+  },
+  "ui/ux designer": {
+    title: "UI/UX Designer",
+    skills: ["figma", "user research", "wireframing", "prototyping", "design systems", "adobe xd", "user testing", "information architecture", "interaction design", "responsive design"],
+    keyAreas: ["User-Centered Design", "Usability Testing", "Visual Hierarchy", "Design Systems"]
+  },
+  "product manager": {
+    title: "Product Manager",
+    skills: ["product strategy", "user research", "roadmapping", "agile", "scrum", "a/b testing", "cross-functional leadership", "jira", "metrics", "data analysis", "user stories"],
+    keyAreas: ["Product Roadmap", "Feature Prioritization", "Stakeholder Alignment", "Product Analytics"]
+  },
+  "project manager": {
+    title: "Project Manager",
+    skills: ["project management", "agile", "scrum", "jira", "risk management", "budgeting", "stakeholder management", "communication", "time management", "resource planning"],
+    keyAreas: ["Project Lifecycle", "Scope & Budget Management", "Agile Execution", "Risk Mitigation"]
+  },
+  "business analyst": {
+    title: "Business Analyst",
+    skills: ["business analysis", "sql", "excel", "requirements gathering", "process mapping", "agile", "user stories", "data analysis", "tableau", "jira", "communication"],
+    keyAreas: ["Requirement Specification", "Gap Analysis", "Process Optimization", "Stakeholder Communication"]
+  },
+  "digital marketing specialist": {
+    title: "Digital Marketing Specialist",
+    skills: ["seo", "sem", "google analytics", "content marketing", "social media", "campaign management", "keyword research", "conversion rate optimization", "email marketing"],
+    keyAreas: ["SEO Strategy", "Paid Search (PPC)", "Analytics & Attribution", "Content & Campaign Optimization"]
+  },
+  "accountant": {
+    title: "Accountant",
+    skills: ["excel", "accounting", "financial reporting", "taxation", "auditing", "quickbooks", "tally", "reconciliation", "general ledger", "compliance"],
+    keyAreas: ["Financial Accounting", "Tax Compliance", "Ledger Management", "Financial Statements"]
+  },
+  "mechanical engineer": {
+    title: "Mechanical Engineer",
+    skills: ["cad", "solidworks", "autocad", "thermodynamics", "manufacturing", "engineering drawing", "fea", "mechanical design", "materials science"],
+    keyAreas: ["3D CAD Modeling", "Thermal Analysis", "Manufacturing Processes", "Prototyping"]
+  },
+  "technical writer": {
+    title: "Technical Writer",
+    skills: ["technical writing", "documentation", "api documentation", "markdown", "editing", "proofreading", "user guides", "confluence", "git", "communication"],
+    keyAreas: ["User Documentation", "API References", "Standard Operating Procedures", "Content Editing"]
+  }
+};
+
+function getRoleProfile(targetRole, customRole) {
+  const roleKey = (customRole || targetRole || "").toLowerCase().trim();
+  if (JOB_ROLE_PROFILES[roleKey]) {
+    return JOB_ROLE_PROFILES[roleKey];
+  }
+  for (const [key, profile] of Object.entries(JOB_ROLE_PROFILES)) {
+    if (roleKey.includes(key) || key.includes(roleKey)) {
+      return profile;
     }
-  } catch (seoErr) {}
+  }
+  const tokens = roleKey.split(/\s+/).filter(Boolean);
+  const dynamicSkills = ["communication", "problem solving", "teamwork", "project management", "time management", "git", "excel"];
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  if (tokens.some(t => ["developer", "engineer", "programmer", "coder", "tech", "software"].includes(t))) {
+    dynamicSkills.push("python", "javascript", "java", "sql", "git", "rest api", "data structures", "algorithms", "testing", "ci/cd");
+  }
+  if (tokens.some(t => ["data", "analyst", "scientist", "ai", "ml"].includes(t))) {
+    dynamicSkills.push("python", "sql", "excel", "statistics", "data analysis", "machine learning", "pandas", "tableau");
+  }
+  if (tokens.some(t => ["design", "designer", "ux", "ui"].includes(t))) {
+    dynamicSkills.push("figma", "ui/ux", "user research", "wireframing", "prototyping", "responsive design");
+  }
+  if (tokens.some(t => ["marketing", "digital", "seo", "sales"].includes(t))) {
+    dynamicSkills.push("seo", "sem", "google analytics", "content marketing", "social media", "email marketing", "communication");
+  }
+  if (tokens.some(t => ["manager", "lead", "head", "director", "scrum"].includes(t))) {
+    dynamicSkills.push("project management", "leadership", "agile", "scrum", "jira", "communication", "roadmapping", "risk management");
+  }
+  if (tokens.some(t => ["finance", "accountant", "tax", "audit"].includes(t))) {
+    dynamicSkills.push("accounting", "excel", "financial reporting", "taxation", "auditing", "reconciliation");
+  }
 
-  // Snapshot of the most recent analysis, used by the "Download PDF Report" button.
-  let lastAnalysisData = null;
-
-  // Active authenticated user state
-  let currentUser = null;
-
-  // ---- Analysis mode selection state ----
-  // Holds the extracted resume text/filename between "upload" and the user
-  // picking an analysis type, so the file doesn't need to be re-uploaded.
-  let pendingResumeText = null;
-  let pendingResumeFilename = null;
-  let pendingResumeFileData = null;
-  let analysisMode = null; // "ats" | "normal" | null
-  let historySavedForCurrentUpload = false;
-
-  // ---- Target Job Selection Modal State ----
-  let selectedTargetJobRole = "";
-  let customJobRoleText = "";
-  let hasUserJobDescription = false;
-  let userJobDescriptionText = "";
-  let currentAnalysisType = "ats"; // "ats" | "normal"
-
-  // ---- AI Recommendations State & Cache (OpenRouter Free Models) ----
-  const aiRecsCache = new Map();
-  let currentAIAbortController = null;
-  let lastAIAnalysisContext = null;
-
-  const JOB_ROLE_CATEGORIES = [
-    {
-      name: "Technology / IT",
-      roles: [
-        "Software Developer", "Software Engineer", "Frontend Developer", "Backend Developer", "Full Stack Developer",
-        "Web Developer", "Mobile App Developer", "Android Developer", "iOS Developer", "React Developer",
-        "Java Developer", "Python Developer", "JavaScript Developer", ".NET Developer", "Data Analyst",
-        "Data Scientist", "Data Engineer", "Machine Learning Engineer", "AI Engineer", "AI/ML Engineer",
-        "DevOps Engineer", "Cloud Engineer", "Cybersecurity Analyst", "Cybersecurity Engineer", "Network Engineer",
-        "Database Administrator", "System Administrator", "QA Engineer", "Automation Test Engineer",
-        "UI/UX Designer", "Product Designer", "Technical Support Engineer", "IT Support Specialist"
-      ]
-    },
-    {
-      name: "Business / Management",
-      roles: [
-        "Business Analyst", "Project Manager", "Product Manager", "Operations Manager", "Operations Executive",
-        "Business Development Executive", "Business Development Manager", "Sales Executive", "Sales Manager",
-        "Marketing Executive", "Digital Marketing Specialist", "Marketing Manager", "HR Executive", "HR Manager",
-        "Recruiter", "Customer Success Executive", "Customer Support Executive"
-      ]
-    },
-    {
-      name: "Finance / Accounting",
-      roles: [
-        "Accountant", "Financial Analyst", "Finance Executive", "Banking Associate", "Investment Analyst",
-        "Tax Analyst", "Audit Associate"
-      ]
-    },
-    {
-      name: "Engineering",
-      roles: [
-        "Mechanical Engineer", "Civil Engineer", "Electrical Engineer", "Electronics Engineer",
-        "Automotive Engineer", "Manufacturing Engineer"
-      ]
-    },
-    {
-      name: "Other",
-      roles: [
-        "Content Writer", "Technical Writer", "Graphic Designer", "Teacher", "Lecturer",
-        "Research Assistant", "Consultant", "Healthcare Professional", "Legal Associate",
-        "Architect", "Intern", "Fresher / Graduate", "Other"
-      ]
-    }
-  ];
-
-  const JOB_ROLE_PROFILES = {
-    "frontend developer": {
-      title: "Frontend Developer",
-      skills: ["html", "css", "javascript", "react", "typescript", "responsive design", "ui/ux", "git", "rest api", "next.js", "tailwind", "webpack", "bootstrap"],
-      keyAreas: ["UI Development", "Component Architecture", "State Management", "Cross-Browser Compatibility", "Performance Optimization"]
-    },
-    "react developer": {
-      title: "React Developer",
-      skills: ["react", "javascript", "typescript", "redux", "next.js", "html", "css", "git", "rest api", "jest", "webpack", "responsive design"],
-      keyAreas: ["React Components", "Hooks & State", "API Integration", "Virtual DOM", "Frontend Performance"]
-    },
-    "backend developer": {
-      title: "Backend Developer",
-      skills: ["python", "java", "node.js", "express", "sql", "postgresql", "mongodb", "redis", "rest api", "microservices", "docker", "git", "c#", "spring boot", "django"],
-      keyAreas: ["API Design", "Database Modeling", "Server Logic", "Authentication & Security", "Scalability"]
-    },
-    "software engineer": {
-      title: "Software Engineer",
-      skills: ["python", "java", "c++", "data structures", "algorithms", "git", "sql", "system design", "unit testing", "ci/cd", "problem solving", "object oriented programming", "rest api"],
-      keyAreas: ["Software Architecture", "Algorithm Design", "Code Quality", "Testing & Debugging", "Version Control"]
-    },
-    "software developer": {
-      title: "Software Developer",
-      skills: ["python", "java", "javascript", "sql", "git", "data structures", "algorithms", "rest api", "unit testing", "agile", "problem solving", "web services"],
-      keyAreas: ["Application Development", "Code Optimization", "Database Queries", "Feature Implementation"]
-    },
-    "full stack developer": {
-      title: "Full Stack Developer",
-      skills: ["html", "css", "javascript", "react", "node.js", "express", "sql", "mongodb", "rest api", "git", "typescript", "docker", "aws"],
-      keyAreas: ["End-to-End Development", "Frontend UI", "Backend APIs", "Database Integration"]
-    },
-    "web developer": {
-      title: "Web Developer",
-      skills: ["html", "css", "javascript", "php", "wordpress", "bootstrap", "responsive design", "git", "seo", "mysql", "jquery"],
-      keyAreas: ["Website Layout", "Content Management", "Responsive UI", "Web Performance"]
-    },
-    "data scientist": {
-      title: "Data Scientist",
-      skills: ["python", "sql", "statistics", "machine learning", "pandas", "numpy", "scikit-learn", "data visualization", "model evaluation", "jupyter", "r", "tableau", "deep learning", "nlp"],
-      keyAreas: ["Statistical Modeling", "Predictive Analytics", "Data Mining", "Feature Engineering", "Machine Learning Pipelines"]
-    },
-    "data analyst": {
-      title: "Data Analyst",
-      skills: ["sql", "excel", "python", "tableau", "power bi", "data visualization", "statistics", "data analysis", "analytical skills", "reporting", "r"],
-      keyAreas: ["Data Wrangling", "Dashboard Creation", "Business Intelligence", "Trend Analysis"]
-    },
-    "data engineer": {
-      title: "Data Engineer",
-      skills: ["python", "sql", "spark", "hadoop", "etl", "data warehousing", "postgresql", "aws", "gcp", "kafka", "docker", "pipeline building"],
-      keyAreas: ["ETL Pipelines", "Data Warehousing", "Big Data Processing", "Database Administration"]
-    },
-    "machine learning engineer": {
-      title: "Machine Learning Engineer",
-      skills: ["python", "tensorflow", "pytorch", "machine learning", "deep learning", "scikit-learn", "nlp", "opencv", "docker", "sql", "model deployment", "mlopps"],
-      keyAreas: ["Neural Networks", "Model Optimization", "ML Deployment", "Algorithm Tuning"]
-    },
-    "ai engineer": {
-      title: "AI Engineer",
-      skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "computer vision", "llm", "prompt engineering", "sql"],
-      keyAreas: ["AI Solution Architecture", "LLMs & Generative AI", "Neural Models", "Algorithmic Reasoning"]
-    },
-    "ai/ml engineer": {
-      title: "AI/ML Engineer",
-      skills: ["python", "artificial intelligence", "machine learning", "deep learning", "tensorflow", "pytorch", "nlp", "scikit-learn", "computer vision", "sql", "model deployment"],
-      keyAreas: ["AI Algorithms", "Model Training & Evaluation", "Feature Engineering"]
-    },
-    "devops engineer": {
-      title: "DevOps Engineer",
-      skills: ["docker", "kubernetes", "ci/cd", "aws", "azure", "jenkins", "linux", "git", "bash", "terraform", "python", "monitoring", "ansible"],
-      keyAreas: ["Infrastructure as Code", "Continuous Integration", "Container Orchestration", "Cloud Security & Monitoring"]
-    },
-    "cloud engineer": {
-      title: "Cloud Engineer",
-      skills: ["aws", "azure", "gcp", "docker", "kubernetes", "linux", "terraform", "cloud security", "networking", "python", "bash", "ci/cd"],
-      keyAreas: ["Cloud Migration", "Infrastructure Provisioning", "High Availability", "Cost Optimization"]
-    },
-    "cybersecurity analyst": {
-      title: "Cybersecurity Analyst",
-      skills: ["network security", "siem", "incident response", "threat detection", "linux", "firewalls", "vulnerability assessment", "security tools", "wireshark", "penetration testing"],
-      keyAreas: ["Threat Monitoring", "Vulnerability Management", "Security Auditing", "Incident Containment"]
-    },
-    "cybersecurity engineer": {
-      title: "Cybersecurity Engineer",
-      skills: ["network security", "firewalls", "linux", "threat detection", "siem", "encryption", "vulnerability assessment", "python", "bash", "cloud security"],
-      keyAreas: ["Security Architecture", "Firewall Configuration", "Intrusion Prevention"]
-    },
-    "ui/ux designer": {
-      title: "UI/UX Designer",
-      skills: ["figma", "user research", "wireframing", "prototyping", "design systems", "adobe xd", "user testing", "information architecture", "interaction design", "responsive design"],
-      keyAreas: ["User-Centered Design", "Usability Testing", "Visual Hierarchy", "Design Systems"]
-    },
-    "product manager": {
-      title: "Product Manager",
-      skills: ["product strategy", "user research", "roadmapping", "agile", "scrum", "a/b testing", "cross-functional leadership", "jira", "metrics", "data analysis", "user stories"],
-      keyAreas: ["Product Roadmap", "Feature Prioritization", "Stakeholder Alignment", "Product Analytics"]
-    },
-    "project manager": {
-      title: "Project Manager",
-      skills: ["project management", "agile", "scrum", "jira", "risk management", "budgeting", "stakeholder management", "communication", "time management", "resource planning"],
-      keyAreas: ["Project Lifecycle", "Scope & Budget Management", "Agile Execution", "Risk Mitigation"]
-    },
-    "business analyst": {
-      title: "Business Analyst",
-      skills: ["business analysis", "sql", "excel", "requirements gathering", "process mapping", "agile", "user stories", "data analysis", "tableau", "jira", "communication"],
-      keyAreas: ["Requirement Specification", "Gap Analysis", "Process Optimization", "Stakeholder Communication"]
-    },
-    "digital marketing specialist": {
-      title: "Digital Marketing Specialist",
-      skills: ["seo", "sem", "google analytics", "content marketing", "social media", "campaign management", "keyword research", "conversion rate optimization", "email marketing"],
-      keyAreas: ["SEO Strategy", "Paid Search (PPC)", "Analytics & Attribution", "Content & Campaign Optimization"]
-    },
-    "accountant": {
-      title: "Accountant",
-      skills: ["excel", "accounting", "financial reporting", "taxation", "auditing", "quickbooks", "tally", "reconciliation", "general ledger", "compliance"],
-      keyAreas: ["Financial Accounting", "Tax Compliance", "Ledger Management", "Financial Statements"]
-    },
-    "mechanical engineer": {
-      title: "Mechanical Engineer",
-      skills: ["cad", "solidworks", "autocad", "thermodynamics", "manufacturing", "engineering drawing", "fea", "mechanical design", "materials science"],
-      keyAreas: ["3D CAD Modeling", "Thermal Analysis", "Manufacturing Processes", "Prototyping"]
-    },
-    "technical writer": {
-      title: "Technical Writer",
-      skills: ["technical writing", "documentation", "api documentation", "markdown", "editing", "proofreading", "user guides", "confluence", "git", "communication"],
-      keyAreas: ["User Documentation", "API References", "Standard Operating Procedures", "Content Editing"]
-    }
+  return {
+    title: targetRole || customRole || "Target Job Role",
+    skills: [...new Set(dynamicSkills)],
+    keyAreas: ["Target Role Requirements", "Industry Competencies", "Core Responsibilities"]
   };
+}
 
-  function getRoleProfile(targetRole, customRole) {
-    const roleKey = (customRole || targetRole || "").toLowerCase().trim();
-    if (JOB_ROLE_PROFILES[roleKey]) {
-      return JOB_ROLE_PROFILES[roleKey];
-    }
-    for (const [key, profile] of Object.entries(JOB_ROLE_PROFILES)) {
-      if (roleKey.includes(key) || key.includes(roleKey)) {
-        return profile;
-      }
-    }
-    const tokens = roleKey.split(/\s+/).filter(Boolean);
-    const dynamicSkills = ["communication", "problem solving", "teamwork", "project management", "time management", "git", "excel"];
-    
-    if (tokens.some(t => ["developer", "engineer", "programmer", "coder", "tech", "software"].includes(t))) {
-      dynamicSkills.push("python", "javascript", "java", "sql", "git", "rest api", "data structures", "algorithms", "testing", "ci/cd");
-    }
-    if (tokens.some(t => ["data", "analyst", "scientist", "ai", "ml"].includes(t))) {
-      dynamicSkills.push("python", "sql", "excel", "statistics", "data analysis", "machine learning", "pandas", "tableau");
-    }
-    if (tokens.some(t => ["design", "designer", "ux", "ui"].includes(t))) {
-      dynamicSkills.push("figma", "ui/ux", "user research", "wireframing", "prototyping", "responsive design");
-    }
-    if (tokens.some(t => ["marketing", "digital", "seo", "sales"].includes(t))) {
-      dynamicSkills.push("seo", "sem", "google analytics", "content marketing", "social media", "email marketing", "communication");
-    }
-    if (tokens.some(t => ["manager", "lead", "head", "director", "scrum"].includes(t))) {
-      dynamicSkills.push("project management", "leadership", "agile", "scrum", "jira", "communication", "roadmapping", "risk management");
-    }
-    if (tokens.some(t => ["finance", "accountant", "tax", "audit"].includes(t))) {
-      dynamicSkills.push("accounting", "excel", "financial reporting", "taxation", "auditing", "reconciliation");
-    }
-
-    return {
-      title: targetRole || customRole || "Target Job Role",
-      skills: [...new Set(dynamicSkills)],
-      keyAreas: ["Target Role Requirements", "Industry Competencies", "Core Responsibilities"]
-    };
+// ---- Target Job Selection Modal Controller ----
+function openTargetJobModal(mode) {
+  if (!pendingResumeText) {
+    setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
+    const dropzone = document.getElementById("dropzone");
+    if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+    return;
   }
+  currentAnalysisType = mode || "ats";
+  const modal = document.getElementById("targetJobModal");
+  if (!modal) return;
+  modal.style.display = "flex";
+  modal.classList.add("active");
+  document.body.style.overflow = "hidden";
+  goToJobModalStep(1);
+  renderJobCategoryChips();
+}
 
-  // ---- Target Job Selection Modal Controller ----
-  function openTargetJobModal(mode) {
-    if (!pendingResumeText) {
-      setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
-      const dropzone = document.getElementById("dropzone");
-      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
-      return;
-    }
-    currentAnalysisType = mode || "ats";
-    const modal = document.getElementById("targetJobModal");
-    if (!modal) return;
-    modal.style.display = "flex";
-    modal.classList.add("active");
-    document.body.style.overflow = "hidden";
-    goToJobModalStep(1);
-    renderJobCategoryChips();
+function closeTargetJobModal() {
+  const modal = document.getElementById("targetJobModal");
+  if (modal) {
+    modal.style.display = "none";
+    modal.classList.remove("active");
   }
+  document.body.style.overflow = "";
+}
 
-  function closeTargetJobModal() {
-    const modal = document.getElementById("targetJobModal");
-    if (modal) {
-      modal.style.display = "none";
-      modal.classList.remove("active");
+function goToJobModalStep(stepNum) {
+  const s1 = document.getElementById("jobModalStep1");
+  const s2 = document.getElementById("jobModalStep2");
+  const s3 = document.getElementById("jobModalStep3");
+
+  const p1 = document.getElementById("jobStepDot1");
+  const p2 = document.getElementById("jobStepDot2");
+  const p3 = document.getElementById("jobStepDot3");
+
+  if (s1) s1.style.display = stepNum === 1 ? "block" : "none";
+  if (s2) s2.style.display = stepNum === 2 ? "block" : "none";
+  if (s3) s3.style.display = stepNum === 3 ? "block" : "none";
+
+  [p1, p2, p3].forEach((indicator, idx) => {
+    if (!indicator) return;
+    if (idx + 1 === stepNum) {
+      indicator.classList.add("active");
+      indicator.classList.remove("completed");
+    } else if (idx + 1 < stepNum) {
+      indicator.classList.remove("active");
+      indicator.classList.add("completed");
+    } else {
+      indicator.classList.remove("active", "completed");
     }
-    document.body.style.overflow = "";
-  }
+  });
 
-  function goToJobModalStep(stepNum) {
-    const s1 = document.getElementById("jobModalStep1");
-    const s2 = document.getElementById("jobModalStep2");
-    const s3 = document.getElementById("jobModalStep3");
-    
-    const p1 = document.getElementById("jobStepDot1");
-    const p2 = document.getElementById("jobStepDot2");
-    const p3 = document.getElementById("jobStepDot3");
-
-    if (s1) s1.style.display = stepNum === 1 ? "block" : "none";
-    if (s2) s2.style.display = stepNum === 2 ? "block" : "none";
-    if (s3) s3.style.display = stepNum === 3 ? "block" : "none";
-
-    [p1, p2, p3].forEach((indicator, idx) => {
-      if (!indicator) return;
-      if (idx + 1 === stepNum) {
-        indicator.classList.add("active");
-        indicator.classList.remove("completed");
-      } else if (idx + 1 < stepNum) {
-        indicator.classList.remove("active");
-        indicator.classList.add("completed");
-      } else {
-        indicator.classList.remove("active", "completed");
-      }
-    });
-
-    if (stepNum === 2) {
-      const jdChoiceYesBtn = document.getElementById("jdChoiceYesBtn");
-      const jdChoiceNoBtn = document.getElementById("jdChoiceNoBtn");
-      const modalJdTextareaWrap = document.getElementById("modalJdTextareaWrap");
-
-      if (hasUserJobDescription && userJobDescriptionText.trim()) {
-        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.add("active", "selected");
-        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
-        if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "block";
-      } else {
-        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.add("active", "selected");
-        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
-        if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "none";
-      }
-    }
-
-    if (stepNum === 3) {
-      updateJobModalConfirmationSummary();
-    }
-  }
-
-  function updateJobModalConfirmationSummary() {
-    const roleTitleEl = document.getElementById("confirmTargetJobVal");
-    const jdStatusEl = document.getElementById("confirmJdStatusVal");
-
-    const finalRole = customJobRoleText.trim() || selectedTargetJobRole || "Software Developer";
-    if (roleTitleEl) roleTitleEl.textContent = finalRole;
-    if (jdStatusEl) {
-      if (hasUserJobDescription && userJobDescriptionText.trim()) {
-        const snippet = userJobDescriptionText.trim().slice(0, 80) + (userJobDescriptionText.length > 80 ? "..." : "");
-        jdStatusEl.textContent = `Provided: "${snippet}"`;
-        jdStatusEl.style.color = "var(--accent)";
-      } else {
-        jdStatusEl.textContent = "Not provided (Using standard job profile)";
-        jdStatusEl.style.color = "var(--text-muted)";
-      }
-    }
-  }
-
-  function renderJobCategoryChips(filterQuery = "") {
-    const container = document.getElementById("jobCategoriesContainer");
-    if (!container) return;
-    container.innerHTML = "";
-
-    const query = (filterQuery || "").toLowerCase().trim();
-
-    JOB_ROLE_CATEGORIES.forEach((cat, index) => {
-      const filteredRoles = cat.roles.filter(r => r.toLowerCase().includes(query));
-      if (query && filteredRoles.length === 0) return;
-
-      const groupDiv = document.createElement("div");
-      groupDiv.className = "job-category-group";
-
-      const headerDiv = document.createElement("div");
-      headerDiv.className = "job-category-header";
-      headerDiv.innerHTML = `<span>${cat.name}</span><span class="job-category-toggle">${query ? '▼' : (index === 0 ? '▲' : '▼')}</span>`;
-
-      const rolesDiv = document.createElement("div");
-      rolesDiv.className = "job-category-roles";
-      if (!query && index !== 0) {
-        rolesDiv.style.display = "none";
-      }
-
-      headerDiv.addEventListener("click", () => {
-        const isHidden = rolesDiv.style.display === "none";
-        rolesDiv.style.display = isHidden ? "flex" : "none";
-        const toggleSpan = headerDiv.querySelector(".job-category-toggle");
-        if (toggleSpan) toggleSpan.textContent = isHidden ? "▲" : "▼";
-      });
-
-      const rolesToRender = query ? filteredRoles : cat.roles;
-      rolesToRender.forEach(role => {
-        const chip = document.createElement("button");
-        chip.type = "button";
-        const isSelected = (selectedTargetJobRole === role);
-        chip.className = "job-role-chip" + (isSelected ? " active selected" : "");
-        chip.textContent = role;
-
-        chip.addEventListener("click", () => {
-          selectedTargetJobRole = role;
-          customJobRoleText = "";
-          const customInput = document.getElementById("customJobInput");
-          if (customInput) customInput.value = "";
-
-          document.querySelectorAll(".job-role-chip").forEach(c => {
-            const isMatch = (c.textContent.trim() === role);
-            c.classList.toggle("active", isMatch);
-            c.classList.toggle("selected", isMatch);
-          });
-
-          const errBanner = document.getElementById("jobSelectError");
-          if (errBanner) errBanner.style.display = "none";
-        });
-
-        rolesDiv.appendChild(chip);
-      });
-
-      groupDiv.appendChild(headerDiv);
-      groupDiv.appendChild(rolesDiv);
-      container.appendChild(groupDiv);
-    });
-  }
-
-  function setupTargetJobModalListeners() {
-    const modalCloseBtn = document.getElementById("targetJobModalCloseBtn");
-    if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeTargetJobModal);
-
-    const cancelBtn = document.getElementById("jobStep1CancelBtn");
-    if (cancelBtn) cancelBtn.addEventListener("click", closeTargetJobModal);
-
-    const searchInput = document.getElementById("jobSearchInput");
-    const searchClearBtn = document.getElementById("jobSearchClearBtn");
-    if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
-        const q = e.target.value;
-        if (searchClearBtn) searchClearBtn.style.display = q ? "block" : "none";
-        renderJobCategoryChips(q);
-      });
-    }
-    if (searchClearBtn && searchInput) {
-      searchClearBtn.addEventListener("click", () => {
-        searchInput.value = "";
-        searchClearBtn.style.display = "none";
-        renderJobCategoryChips("");
-      });
-    }
-
-    const customRoleToggleBtn = document.getElementById("customRoleToggleBtn");
-    const customRoleInputWrap = document.getElementById("customRoleInputWrap");
-    const customJobInput = document.getElementById("customJobInput");
-
-    if (customRoleToggleBtn && customRoleInputWrap) {
-      customRoleToggleBtn.addEventListener("click", () => {
-        const isHidden = customRoleInputWrap.style.display === "none";
-        customRoleInputWrap.style.display = isHidden ? "block" : "none";
-        if (isHidden && customJobInput) customJobInput.focus();
-      });
-    }
-
-    if (customJobInput) {
-      customJobInput.addEventListener("input", (e) => {
-        customJobRoleText = e.target.value;
-        if (customJobRoleText.trim()) {
-          selectedTargetJobRole = "";
-          document.querySelectorAll(".job-role-chip").forEach(c => {
-            c.classList.remove("active", "selected");
-          });
-          const errBanner = document.getElementById("jobSelectError");
-          if (errBanner) errBanner.style.display = "none";
-        }
-      });
-    }
-
-    // Step 1 Next button
-    const step1NextBtn = document.getElementById("jobStep1NextBtn");
-    if (step1NextBtn) {
-      step1NextBtn.addEventListener("click", () => {
-        const finalRole = customJobRoleText.trim() || selectedTargetJobRole;
-        if (!finalRole) {
-          selectedTargetJobRole = "Software Developer";
-        }
-        const errBanner = document.getElementById("jobSelectError");
-        if (errBanner) errBanner.style.display = "none";
-        goToJobModalStep(2);
-      });
-    }
-
-    // Step 2 Decision Buttons (Yes / No)
+  if (stepNum === 2) {
     const jdChoiceYesBtn = document.getElementById("jdChoiceYesBtn");
     const jdChoiceNoBtn = document.getElementById("jdChoiceNoBtn");
     const modalJdTextareaWrap = document.getElementById("modalJdTextareaWrap");
 
-    if (jdChoiceYesBtn && modalJdTextareaWrap) {
-      jdChoiceYesBtn.addEventListener("click", () => {
-        modalJdTextareaWrap.style.display = "block";
-        jdChoiceYesBtn.classList.add("active", "selected");
-        if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
-        const area = document.getElementById("modalJdInputText");
-        if (area) area.focus();
+    if (hasUserJobDescription && userJobDescriptionText.trim()) {
+      if (jdChoiceYesBtn) jdChoiceYesBtn.classList.add("active", "selected");
+      if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
+      if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "block";
+    } else {
+      if (jdChoiceNoBtn) jdChoiceNoBtn.classList.add("active", "selected");
+      if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
+      if (modalJdTextareaWrap) modalJdTextareaWrap.style.display = "none";
+    }
+  }
+
+  if (stepNum === 3) {
+    updateJobModalConfirmationSummary();
+  }
+}
+
+function updateJobModalConfirmationSummary() {
+  const roleTitleEl = document.getElementById("confirmTargetJobVal");
+  const jdStatusEl = document.getElementById("confirmJdStatusVal");
+
+  const finalRole = customJobRoleText.trim() || selectedTargetJobRole || "Software Developer";
+  if (roleTitleEl) roleTitleEl.textContent = finalRole;
+  if (jdStatusEl) {
+    if (hasUserJobDescription && userJobDescriptionText.trim()) {
+      const snippet = userJobDescriptionText.trim().slice(0, 80) + (userJobDescriptionText.length > 80 ? "..." : "");
+      jdStatusEl.textContent = `Provided: "${snippet}"`;
+      jdStatusEl.style.color = "var(--accent)";
+    } else {
+      jdStatusEl.textContent = "Not provided (Using standard job profile)";
+      jdStatusEl.style.color = "var(--text-muted)";
+    }
+  }
+}
+
+function renderJobCategoryChips(filterQuery = "") {
+  const container = document.getElementById("jobCategoriesContainer");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const query = (filterQuery || "").toLowerCase().trim();
+
+  JOB_ROLE_CATEGORIES.forEach((cat, index) => {
+    const filteredRoles = cat.roles.filter(r => r.toLowerCase().includes(query));
+    if (query && filteredRoles.length === 0) return;
+
+    const groupDiv = document.createElement("div");
+    groupDiv.className = "job-category-group";
+
+    const headerDiv = document.createElement("div");
+    headerDiv.className = "job-category-header";
+    headerDiv.innerHTML = `<span>${cat.name}</span><span class="job-category-toggle">${query ? '▼' : (index === 0 ? '▲' : '▼')}</span>`;
+
+    const rolesDiv = document.createElement("div");
+    rolesDiv.className = "job-category-roles";
+    if (!query && index !== 0) {
+      rolesDiv.style.display = "none";
+    }
+
+    headerDiv.addEventListener("click", () => {
+      const isHidden = rolesDiv.style.display === "none";
+      rolesDiv.style.display = isHidden ? "flex" : "none";
+      const toggleSpan = headerDiv.querySelector(".job-category-toggle");
+      if (toggleSpan) toggleSpan.textContent = isHidden ? "▲" : "▼";
+    });
+
+    const rolesToRender = query ? filteredRoles : cat.roles;
+    rolesToRender.forEach(role => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      const isSelected = (selectedTargetJobRole === role);
+      chip.className = "job-role-chip" + (isSelected ? " active selected" : "");
+      chip.textContent = role;
+
+      chip.addEventListener("click", () => {
+        selectedTargetJobRole = role;
+        customJobRoleText = "";
+        const customInput = document.getElementById("customJobInput");
+        if (customInput) customInput.value = "";
+
+        document.querySelectorAll(".job-role-chip").forEach(c => {
+          const isMatch = (c.textContent.trim() === role);
+          c.classList.toggle("active", isMatch);
+          c.classList.toggle("selected", isMatch);
+        });
+
+        const errBanner = document.getElementById("jobSelectError");
+        if (errBanner) errBanner.style.display = "none";
       });
-    }
 
-    if (jdChoiceNoBtn && modalJdTextareaWrap) {
-      jdChoiceNoBtn.addEventListener("click", () => {
-        modalJdTextareaWrap.style.display = "none";
-        jdChoiceNoBtn.classList.add("active", "selected");
-        if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
-        const area = document.getElementById("modalJdInputText");
-        if (area) area.value = "";
-        userJobDescriptionText = "";
-        hasUserJobDescription = false;
-      });
-    }
+      rolesDiv.appendChild(chip);
+    });
 
-    // Step 2 Back & Next buttons
-    const step2BackBtn = document.getElementById("jobStep2BackBtn");
-    if (step2BackBtn) step2BackBtn.addEventListener("click", () => goToJobModalStep(1));
+    groupDiv.appendChild(headerDiv);
+    groupDiv.appendChild(rolesDiv);
+    container.appendChild(groupDiv);
+  });
+}
 
-    const step2NextBtn = document.getElementById("jobStep2NextBtn");
-    if (step2NextBtn) {
-      step2NextBtn.addEventListener("click", () => {
-        const modalJdArea = document.getElementById("modalJdInputText");
-        const mainJdInput = document.getElementById("jdInput");
+function setupTargetJobModalListeners() {
+  const modalCloseBtn = document.getElementById("targetJobModalCloseBtn");
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeTargetJobModal);
 
-        if (modalJdArea) {
-          userJobDescriptionText = modalJdArea.value.trim();
-          hasUserJobDescription = userJobDescriptionText.length > 20;
-          if (mainJdInput) mainJdInput.value = userJobDescriptionText;
-        }
+  const cancelBtn = document.getElementById("jobStep1CancelBtn");
+  if (cancelBtn) cancelBtn.addEventListener("click", closeTargetJobModal);
 
-        goToJobModalStep(3);
-      });
-    }
-
-    // Step 3 Back & Start Analysis buttons
-    const step3BackBtn = document.getElementById("jobStep3BackBtn");
-    if (step3BackBtn) step3BackBtn.addEventListener("click", () => goToJobModalStep(2));
-
-    const startAnalysisBtn = document.getElementById("startAnalysisBtn");
-    if (startAnalysisBtn) {
-      startAnalysisBtn.addEventListener("click", () => {
-        closeTargetJobModal();
-        selectAnalysisMode(currentAnalysisType);
-      });
-    }
+  const searchInput = document.getElementById("jobSearchInput");
+  const searchClearBtn = document.getElementById("jobSearchClearBtn");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      const q = e.target.value;
+      if (searchClearBtn) searchClearBtn.style.display = q ? "block" : "none";
+      renderJobCategoryChips(q);
+    });
+  }
+  if (searchClearBtn && searchInput) {
+    searchClearBtn.addEventListener("click", () => {
+      searchInput.value = "";
+      searchClearBtn.style.display = "none";
+      renderJobCategoryChips("");
+    });
   }
 
-  // ---------------------------------------------------------------
-  // Comprehensive Industry Skill Dictionary & Precision Extractor
-  // ---------------------------------------------------------------
-  const SKILL_KEYWORDS = [
-    // Programming languages (lang)
-    { name: "python", type: "lang" },
-    { name: "java", type: "lang" },
-    { name: "javascript", type: "lang" },
-    { name: "typescript", type: "lang" },
-    { name: "c++", type: "lang" },
-    { name: "c#", type: "lang" },
-    { name: "c", type: "lang" },
-    { name: "php", type: "lang" },
-    { name: "ruby", type: "lang" },
-    { name: "go", type: "lang" },
-    { name: "rust", type: "lang" },
-    { name: "swift", type: "lang" },
-    { name: "kotlin", type: "lang" },
-    { name: "sql", type: "lang" },
-    { name: "html", type: "lang" },
-    { name: "html5", type: "lang" },
-    { name: "css", type: "lang" },
-    { name: "css3", type: "lang" },
-    { name: "bash", type: "lang" },
-    { name: "shell", type: "lang" },
-    { name: "r", type: "lang" },
-    { name: "dart", type: "lang" },
-    { name: "scala", type: "lang" },
+  const customRoleToggleBtn = document.getElementById("customRoleToggleBtn");
+  const customRoleInputWrap = document.getElementById("customRoleInputWrap");
+  const customJobInput = document.getElementById("customJobInput");
 
-    // Frameworks & Libraries (tool)
-    { name: "react", type: "tool" },
-    { name: "react.js", type: "tool" },
-    { name: "react native", type: "tool" },
-    { name: "angular", type: "tool" },
-    { name: "vue", type: "tool" },
-    { name: "vue.js", type: "tool" },
-    { name: "next.js", type: "tool" },
-    { name: "node.js", type: "tool" },
-    { name: "express", type: "tool" },
-    { name: "express.js", type: "tool" },
-    { name: "django", type: "tool" },
-    { name: "flask", type: "tool" },
-    { name: "fastapi", type: "tool" },
-    { name: "spring", type: "tool" },
-    { name: "spring boot", type: "tool" },
-    { name: ".net", type: "tool" },
-    { name: "asp.net", type: "tool" },
-    { name: "laravel", type: "tool" },
-    { name: "bootstrap", type: "tool" },
-    { name: "tailwind", type: "tool" },
-    { name: "tailwind css", type: "tool" },
-    { name: "redux", type: "tool" },
-    { name: "flutter", type: "tool" },
-    { name: "jquery", type: "tool" },
-
-    // Data / AI / ML
-    { name: "machine learning", type: "tool" },
-    { name: "deep learning", type: "tool" },
-    { name: "nlp", type: "tool" },
-    { name: "artificial intelligence", type: "tool" },
-    { name: "tensorflow", type: "tool" },
-    { name: "pytorch", type: "tool" },
-    { name: "keras", type: "tool" },
-    { name: "scikit-learn", type: "tool" },
-    { name: "opencv", type: "tool" },
-    { name: "pandas", type: "tool" },
-    { name: "numpy", type: "tool" },
-    { name: "data analysis", type: "tool" },
-    { name: "data science", type: "tool" },
-    { name: "tableau", type: "tool" },
-    { name: "power bi", type: "tool" },
-
-    // Databases & Storage
-    { name: "mysql", type: "tool" },
-    { name: "postgresql", type: "tool" },
-    { name: "mongodb", type: "tool" },
-    { name: "redis", type: "tool" },
-    { name: "sqlite", type: "tool" },
-    { name: "oracle", type: "tool" },
-    { name: "firebase", type: "tool" },
-    { name: "prisma", type: "tool" },
-    { name: "mongoose", type: "tool" },
-
-    // Cloud / DevOps / Tools
-    { name: "aws", type: "tool" },
-    { name: "amazon web services", type: "tool" },
-    { name: "azure", type: "tool" },
-    { name: "gcp", type: "tool" },
-    { name: "google cloud", type: "tool" },
-    { name: "docker", type: "tool" },
-    { name: "kubernetes", type: "tool" },
-    { name: "jenkins", type: "tool" },
-    { name: "ci/cd", type: "tool" },
-    { name: "git", type: "tool" },
-    { name: "github", type: "tool" },
-    { name: "gitlab", type: "tool" },
-    { name: "linux", type: "tool" },
-    { name: "nginx", type: "tool" },
-    { name: "apache", type: "tool" },
-    { name: "rest api", type: "tool" },
-    { name: "graphql", type: "tool" },
-    { name: "microservices", type: "tool" },
-    { name: "system design", type: "tool" },
-
-    // Testing & Tools
-    { name: "jest", type: "tool" },
-    { name: "cypress", type: "tool" },
-    { name: "selenium", type: "tool" },
-    { name: "junit", type: "tool" },
-    { name: "figma", type: "tool" },
-    { name: "jira", type: "tool" },
-
-    // Soft / Management / Core
-    { name: "project management", type: "soft" },
-    { name: "communication", type: "soft" },
-    { name: "leadership", type: "soft" },
-    { name: "teamwork", type: "soft" },
-    { name: "problem solving", type: "soft" },
-    { name: "agile", type: "soft" },
-    { name: "scrum", type: "soft" },
-    { name: "excel", type: "soft" },
-    { name: "analytical skills", type: "soft" },
-    { name: "time management", type: "soft" }
-  ];
-
-  // Comprehensive canonical section definitions and aliases
-  const SECTION_DEFINITIONS = [
-    {
-      key: "personal",
-      label: "Contact Information",
-      icon: "🧑",
-      isCore: true,
-      headers: [
-        "personal information", "personal details", "personal info", "contact",
-        "contact information", "contact info", "contact details", "about me", "about", "bio"
-      ]
-    },
-    {
-      key: "summary",
-      label: "Professional Summary",
-      icon: "📝",
-      isCore: false,
-      headers: [
-        "summary", "professional summary", "career summary", "summary of qualifications",
-        "executive summary", "profile", "professional profile", "personal profile",
-        "career objective", "objective", "professional statement", "statement", "overview",
-        "synopsis", "brief profile"
-      ]
-    },
-    {
-      key: "skills",
-      label: "Skills & Proficiencies",
-      icon: "🛠️",
-      isCore: true,
-      headers: [
-        "skills", "technical skills", "key skills", "core skills", "core competencies",
-        "key competencies", "skills & tools", "skills & expertise", "skills & proficiencies",
-        "skills and abilities", "technical proficiencies", "technologies", "skillset",
-        "skill set", "technical stack", "tech stack", "toolset", "programming skills",
-        "programming languages", "tools & platforms", "tools & technologies", "database skills",
-        "web technologies", "core concepts", "software skills", "computer skills", "it skills",
-        "areas of expertise", "domain expertise", "professional skills", "hard skills", "soft skills"
-      ]
-    },
-    {
-      key: "experience",
-      label: "Experience & Internships",
-      icon: "💼",
-      isCore: true,
-      headers: [
-        "experience", "work experience", "employment history", "professional experience",
-        "career history", "work history", "employment", "relevant experience",
-        "practical experience", "professional background", "job history", "past experience",
-        "corporate experience", "industry experience", "internships", "internship",
-        "internship experience", "virtual internship", "industrial training", "training",
-        "trainings", "experience / training", "experience/training", "experience & training",
-        "internships & training", "internship / training", "experience and training"
-      ]
-    },
-    {
-      key: "education",
-      label: "Education & Academics",
-      icon: "🎓",
-      isCore: true,
-      headers: [
-        "education", "academics", "academic background", "academic details",
-        "academic qualifications", "academic qualification", "educational qualifications",
-        "educational qualification", "educational background", "educational details",
-        "academic profile", "academic history", "academic record", "academic credentials",
-        "educational history", "qualifications", "education & qualifications", "education & training",
-        "degrees", "degrees & certifications", "studies", "college", "university",
-        "higher education", "schooling", "education details", "formal education"
-      ]
-    },
-    {
-      key: "projects",
-      label: "Projects",
-      icon: "🚀",
-      isCore: true,
-      headers: [
-        "projects", "personal projects", "academic projects", "technical projects",
-        "key projects", "selected projects", "major projects", "mini projects",
-        "project work", "project experience", "featured projects", "recent projects",
-        "notable projects", "portfolio projects", "client projects", "freelance projects",
-        "project", "personal project", "academic project", "technical project",
-        "hands-on projects", "software projects", "web projects", "web development projects",
-        "course projects", "capstone projects", "independent projects", "side projects",
-        "my projects", "projects & applications", "projects & work", "projects / work",
-        "projects details", "project details"
-      ]
-    },
-    {
-      key: "certifications",
-      label: "Certifications & Credentials",
-      icon: "📜",
-      isCore: true,
-      headers: [
-        "certifications", "certification", "certificates", "certifications & badges",
-        "certification badges", "licenses & certifications", "certifications & achievements",
-        "professional certifications", "courses & certifications", "licenses",
-        "accreditations", "credentials", "online courses", "training certificates"
-      ]
-    },
-    {
-      key: "achievements",
-      label: "Achievements & Awards",
-      icon: "🏆",
-      isCore: false,
-      headers: [
-        "achievements", "accomplishments", "awards", "honors", "awards & honors",
-        "honors & awards", "awards & achievements", "hackathons & achievements",
-        "hackathons", "competitions", "key achievements", "recognitions", "honours"
-      ]
-    },
-    {
-      key: "leadership",
-      label: "Leadership & Activities",
-      icon: "🤝",
-      isCore: false,
-      headers: [
-        "leadership", "activities", "leadership & activities", "leadership/activities",
-        "extracurricular activities", "extra-curricular activities", "extracurriculars",
-        "co-curricular activities", "volunteer experience", "volunteering", "volunteer work",
-        "community service", "campus ambassador", "positions of responsibility"
-      ]
-    },
-    {
-      key: "publications",
-      label: "Publications & Research",
-      icon: "📚",
-      isCore: false,
-      headers: [
-        "publications", "research papers", "published papers", "scientific publications",
-        "conference publications", "patents", "journal articles"
-      ]
-    },
-    {
-      key: "languages",
-      label: "Languages",
-      icon: "🌐",
-      isCore: false,
-      headers: [
-        "languages", "languages known", "language proficiency", "linguistic skills", "languages spoken"
-      ]
-    },
-    {
-      key: "interests",
-      label: "Interests & Hobbies",
-      icon: "🎯",
-      isCore: false,
-      headers: [
-        "interests", "hobbies", "personal interests", "hobbies & interests", "areas of interest"
-      ]
-    }
-  ];
-
-  const SUMMARY_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "summary").headers;
-  const SKILLS_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "skills").headers;
-  const CERT_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "certifications").headers;
-  const LEADERSHIP_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "leadership").headers;
-  const AWARDS_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "achievements").headers;
-
-  const SECTION_HEADERS = {
-    experience: SECTION_DEFINITIONS.find(s => s.key === "experience").headers,
-    education: SECTION_DEFINITIONS.find(s => s.key === "education").headers,
-    projects: SECTION_DEFINITIONS.find(s => s.key === "projects").headers,
-    certifications: CERT_HEADERS,
-    skills: SKILLS_HEADERS,
-    summary: SUMMARY_HEADERS,
-    achievements: AWARDS_HEADERS,
-    leadership: LEADERSHIP_HEADERS,
-    languages: SECTION_DEFINITIONS.find(s => s.key === "languages").headers,
-  };
-
-  const ALL_HEADERS = SECTION_DEFINITIONS.flatMap(s => s.headers);
-
-  // Other common resume section titles that are NOT names, used only to keep
-  // extractName() from mistaking a heading like "Certifications & Badges" or
-  // "Technical Skills" for the candidate's name.
-  const NON_NAME_HEADERS = [
-    ...ALL_HEADERS,
-    "summary", "objective", "career objective", "profile", "about", "about me",
-    "contact", "contact info", "contact information", "personal details",
-    "skills", "technical skills", "key skills", "core competencies",
-    "certifications", "certification", "certifications & badges", "badges",
-    "achievements", "awards", "accomplishments", "languages", "interests",
-    "hobbies", "references", "publications", "declaration", "activities",
-    "volunteer experience", "extracurricular activities", "curriculum vitae", "resume", "cv",
-  ];
-
-  const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-  const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?(\(?\d{2,4}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{3,4}/;
-  const LINKEDIN_RE = /(https?:\/\/)?(www\.)?linkedin\.com\/[a-zA-Z0-9_/-]+/;
-  const GITHUB_RE = /(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9_/-]+/;
-
-  // Bullet-line prefix characters used to find bullet points across
-  // resume templates (hyphen, asterisk, and the common bullet glyphs).
-  const BULLET_PREFIX_RE = /^[\s]*[-*•·▪●○‣o]\s+/;
-
-  // Weak / passive openers that read like a job description rather than
-  // an achievement. Checked against the start of each bullet line.
-  const WEAK_VERB_PHRASES = [
-    "responsible for", "in charge of", "duties included", "duties include",
-    "worked on", "worked with", "helped with", "helped to", "assisted with",
-    "assisted in", "participated in", "involved in", "tasked with",
-    "was responsible", "handled", "dealt with", "took part in",
-  ];
-
-  // Small stopword list used only to filter noise out of job-description
-  // keyword extraction (not a full NLP stopword list, just common filler).
-  const JD_STOPWORDS = new Set([
-    "the","and","for","with","that","this","from","are","you","your","will",
-    "have","has","our","we","a","an","to","of","in","on","or","as","is","be",
-    "at","by","it","who","their","they","them","he","she","his","her","its",
-    "into","about","across","within","using","use","work","working","team",
-    "role","job","years","year","experience","strong","ability","skills",
-    "including","etc","looking","candidate","candidates","required","preferred",
-    "must","should","can","also","all","any","new","other","such","more",
-    "most","company","us","one","two","per","plus","up","out","if","so",
-  ]);
-
-  // Common job-title words used only to keep extractName() from mistaking a
-  // professional headline (e.g. "Senior Software Engineer") for the name.
-  const JOB_TITLE_WORDS = [
-    "engineer", "developer", "manager", "analyst", "specialist", "consultant",
-    "designer", "director", "intern", "internship", "coordinator", "executive",
-    "officer", "administrator", "architect", "scientist", "technician",
-    "associate", "assistant", "supervisor", "strategist", "marketer",
-    "recruiter", "accountant", "programmer", "freelancer", "founder",
-    "representative", "lead", "head", "president",
-  ];
-
-  // Checks a single line/segment of resume text and returns it if it looks
-  // like a plausible candidate name, or null otherwise. Used both for
-  // whole lines and for individual pieces of a combined contact-info line
-  // (e.g. "John Doe | john@doe.com | (555) 123-4567").
-  function looksLikeCandidateName(segment){
-    const seg = (segment || "").trim();
-    if (!seg || seg.length > 45) return null;
-    if (EMAIL_RE.test(seg) || PHONE_RE.test(seg)) return null;
-    if (LINKEDIN_RE.test(seg) || GITHUB_RE.test(seg)) return null;
-    if (/\d/.test(seg)) return null;
-    if (/@|https?:\/\/|www\./i.test(seg)) return null;
-    if (/[&:;/]/.test(seg)) return null; // headings like "Skills:" or "Certifications & Badges"
-
-    const words = seg.split(/\s+/).filter(Boolean);
-    if (words.length < 1 || words.length > 4) return null;
-
-    // Reject segments containing common English non-name verbs/nouns from resume body text
-    if (/\b(criteria|relevant|compatible|developed|analyzed|analyzes|application|requirements|summary|education|experience|projects|skills|certifications|university|school|college|responsibilities|achievements|activities|strengthened|completed|learning|designed|created|applied|provided|provides|identifies|improves|badges|certification)\b/i.test(seg)) return null;
-
-    // Every word must be shaped like part of a proper name — letters only,
-    // optionally with an apostrophe, hyphen, or trailing initial period.
-    if (!words.every(w => /^[A-Za-z][A-Za-z'.-]*$/.test(w))) return null;
-
-    const lower = seg.toLowerCase().replace(/[.,]+$/, "").trim();
-    if (NON_NAME_HEADERS.some(h => lower === h || lower.startsWith(h + " "))) return null;
-    if (JOB_TITLE_WORDS.some(w => lower.split(/\s+/).includes(w))) return null;
-
-    return seg;
+  if (customRoleToggleBtn && customRoleInputWrap) {
+    customRoleToggleBtn.addEventListener("click", () => {
+      const isHidden = customRoleInputWrap.style.display === "none";
+      customRoleInputWrap.style.display = isHidden ? "block" : "none";
+      if (isHidden && customJobInput) customJobInput.focus();
+    });
   }
 
-  function formatName(seg){
-    return seg === seg.toUpperCase()
-      ? seg.replace(/\w\S*/g, t => t[0].toUpperCase() + t.slice(1).toLowerCase())
-      : seg;
+  if (customJobInput) {
+    customJobInput.addEventListener("input", (e) => {
+      customJobRoleText = e.target.value;
+      if (customJobRoleText.trim()) {
+        selectedTargetJobRole = "";
+        document.querySelectorAll(".job-role-chip").forEach(c => {
+          c.classList.remove("active", "selected");
+        });
+        const errBanner = document.getElementById("jobSelectError");
+        if (errBanner) errBanner.style.display = "none";
+      }
+    });
   }
 
-  function extractName(text){
-    const rawLines = text.split("\n").map(l => l.trim()).filter(Boolean).slice(0, 25);
-
-    for (const rawLine of rawLines){
-      // 1. Strip contacts and unicode symbol icons (✉, ☎, 🔗, etc.)
-      const strippedLine = rawLine
-        .replace(EMAIL_RE, " ")
-        .replace(PHONE_RE, " ")
-        .replace(LINKEDIN_RE, " ")
-        .replace(GITHUB_RE, " ")
-        .replace(/[✉☎🔗\u2700-\u27BF\uE000-\uF8FF\uD83C-\uDBFF\uDC00-\uDFFF|•·▪●○]+/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      if (strippedLine) {
-        const candidate = looksLikeCandidateName(strippedLine);
-        if (candidate) return formatName(candidate);
+  // Step 1 Next button
+  const step1NextBtn = document.getElementById("jobStep1NextBtn");
+  if (step1NextBtn) {
+    step1NextBtn.addEventListener("click", () => {
+      const finalRole = customJobRoleText.trim() || selectedTargetJobRole;
+      if (!finalRole) {
+        selectedTargetJobRole = "Software Developer";
       }
-
-      // 2. Also split on common separators including icons and test individual parts
-      const segments = rawLine
-        .split(/[|•·▪●○✉☎🔗\u2700-\u27BF\uE000-\uF8FF\uD83C-\uDBFF\uDC00-\uDFFF]+/u)
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      for (const seg of segments){
-        const candidate = looksLikeCandidateName(seg);
-        if (candidate) return formatName(candidate);
-      }
-    }
-    return "Not found";
+      const errBanner = document.getElementById("jobSelectError");
+      if (errBanner) errBanner.style.display = "none";
+      goToJobModalStep(2);
+    });
   }
 
-  function extractSkills(text, skillsSectionText){
-    const lower = (text || "").toLowerCase();
-    const found = [];
-    const seenNames = new Set();
+  // Step 2 Decision Buttons (Yes / No)
+  const jdChoiceYesBtn = document.getElementById("jdChoiceYesBtn");
+  const jdChoiceNoBtn = document.getElementById("jdChoiceNoBtn");
+  const modalJdTextareaWrap = document.getElementById("modalJdTextareaWrap");
 
-    // 1. Search for curated skills from SKILL_KEYWORDS
-    for (const skill of SKILL_KEYWORDS){
-      const sName = skill.name.toLowerCase();
-      if (seenNames.has(sName)) continue;
-
-      let matched = false;
-      if (sName === "c++") {
-        matched = /\bc\+\+|\bcplusplus\b/i.test(lower);
-      } else if (sName === "c#") {
-        matched = /\bc#|\bcsharp\b/i.test(lower);
-      } else if (sName === ".net" || sName === "asp.net") {
-        matched = /\.net\b|asp\.net\b/i.test(lower);
-      } else if (sName === "node.js" || sName === "node") {
-        matched = /\bnode\.?js\b|\bnodejs\b|\bnode\b/i.test(lower);
-      } else if (sName === "react.js" || sName === "react") {
-        matched = /\breact\.?js\b|\breactjs\b|\breact\b/i.test(lower);
-      } else if (sName === "vue.js" || sName === "vue") {
-        matched = /\bvue\.?js\b|\bvuejs\b|\bvue\b/i.test(lower);
-      } else if (sName === "next.js" || sName === "next") {
-        matched = /\bnext\.?js\b|\bnextjs\b/i.test(lower);
-      } else if (sName === "express.js" || sName === "express") {
-        matched = /\bexpress\.?js\b|\bexpressjs\b|\bexpress\b/i.test(lower);
-      } else {
-        const escaped = sName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const re = new RegExp("(?:^|[^a-zA-Z0-9_#+.-])" + escaped + "(?:$|[^a-zA-Z0-9_#+.-])", "i");
-        matched = re.test(lower);
-      }
-
-      if (matched){
-        found.push(skill);
-        seenNames.add(sName);
-      }
-    }
-
-    // 2. Also extract skills directly listed in the resume's Skills section
-    if (skillsSectionText && skillsSectionText.trim()) {
-      const skillLines = skillsSectionText.split("\n");
-      for (const line of skillLines) {
-        // Strip common category prefixes like "Programming Languages:", "Web Technologies:", "Backend & Database:"
-        const contentPart = line.replace(/^[A-Za-z\s&/\\()-]{2,35}:/, "").trim();
-        if (!contentPart) continue;
-
-        const parts = contentPart.split(/[,|•·▪●○*]|\s{2,}|\t+/);
-        for (let p of parts) {
-          p = p.trim().replace(/^[-*•\s]+/, "").replace(/[:;]+$/, "").trim();
-          if (!p || p.length < 2 || p.length > 35) continue;
-          if (/^(etc|and|or|including|proficient|experienced|basics?|advanced)$/i.test(p)) continue;
-
-          const cleanName = p.replace(/\s*\([^)]*\)/g, "").trim();
-          const lowerClean = cleanName.toLowerCase();
-          if (!seenNames.has(lowerClean) && !seenNames.has(p.toLowerCase())) {
-            let type = "tool";
-            if (/python|javascript|typescript|java|c\+\+|c#|ruby|golang|rust|php|swift|kotlin|html|css|sql|r\b|scala|dart/i.test(lowerClean)) {
-              type = "lang";
-            } else if (/communication|teamwork|leadership|problem solving|critical thinking|time management|adaptability|creativeness|creative|situational/i.test(lowerClean)) {
-              type = "soft";
-            }
-            found.push({ name: cleanName, type });
-            seenNames.add(lowerClean);
-          }
-        }
-      }
-    }
-
-    return found;
+  if (jdChoiceYesBtn && modalJdTextareaWrap) {
+    jdChoiceYesBtn.addEventListener("click", () => {
+      modalJdTextareaWrap.style.display = "block";
+      jdChoiceYesBtn.classList.add("active", "selected");
+      if (jdChoiceNoBtn) jdChoiceNoBtn.classList.remove("active", "selected");
+      const area = document.getElementById("modalJdInputText");
+      if (area) area.focus();
+    });
   }
 
-  function cleanHeaderCandidate(line) {
-    if (!line) return "";
-    return line
-      .trim()
-      .toLowerCase()
-      .replace(/^[\s#*•\-\–—|>●▪\[\]()]+/, "") // remove leading bullets/markdown
-      .replace(/[:\-–—|>●▪\[\]()]+$/, "")       // remove trailing punctuation
-      .replace(/^\d+[\.\)]\s*/, "")              // remove leading numbers like '1. ' or '01) '
+  if (jdChoiceNoBtn && modalJdTextareaWrap) {
+    jdChoiceNoBtn.addEventListener("click", () => {
+      modalJdTextareaWrap.style.display = "none";
+      jdChoiceNoBtn.classList.add("active", "selected");
+      if (jdChoiceYesBtn) jdChoiceYesBtn.classList.remove("active", "selected");
+      const area = document.getElementById("modalJdInputText");
+      if (area) area.value = "";
+      userJobDescriptionText = "";
+      hasUserJobDescription = false;
+    });
+  }
+
+  // Step 2 Back & Next buttons
+  const step2BackBtn = document.getElementById("jobStep2BackBtn");
+  if (step2BackBtn) step2BackBtn.addEventListener("click", () => goToJobModalStep(1));
+
+  const step2NextBtn = document.getElementById("jobStep2NextBtn");
+  if (step2NextBtn) {
+    step2NextBtn.addEventListener("click", () => {
+      const modalJdArea = document.getElementById("modalJdInputText");
+      const mainJdInput = document.getElementById("jdInput");
+
+      if (modalJdArea) {
+        userJobDescriptionText = modalJdArea.value.trim();
+        hasUserJobDescription = userJobDescriptionText.length > 20;
+        if (mainJdInput) mainJdInput.value = userJobDescriptionText;
+      }
+
+      goToJobModalStep(3);
+    });
+  }
+
+  // Step 3 Back & Start Analysis buttons
+  const step3BackBtn = document.getElementById("jobStep3BackBtn");
+  if (step3BackBtn) step3BackBtn.addEventListener("click", () => goToJobModalStep(2));
+
+  const startAnalysisBtn = document.getElementById("startAnalysisBtn");
+  if (startAnalysisBtn) {
+    startAnalysisBtn.addEventListener("click", () => {
+      closeTargetJobModal();
+      selectAnalysisMode(currentAnalysisType);
+    });
+  }
+}
+
+// ---------------------------------------------------------------
+// Comprehensive Industry Skill Dictionary & Precision Extractor
+// ---------------------------------------------------------------
+const SKILL_KEYWORDS = [
+  // Programming languages (lang)
+  { name: "python", type: "lang" },
+  { name: "java", type: "lang" },
+  { name: "javascript", type: "lang" },
+  { name: "typescript", type: "lang" },
+  { name: "c++", type: "lang" },
+  { name: "c#", type: "lang" },
+  { name: "c", type: "lang" },
+  { name: "php", type: "lang" },
+  { name: "ruby", type: "lang" },
+  { name: "go", type: "lang" },
+  { name: "rust", type: "lang" },
+  { name: "swift", type: "lang" },
+  { name: "kotlin", type: "lang" },
+  { name: "sql", type: "lang" },
+  { name: "html", type: "lang" },
+  { name: "html5", type: "lang" },
+  { name: "css", type: "lang" },
+  { name: "css3", type: "lang" },
+  { name: "bash", type: "lang" },
+  { name: "shell", type: "lang" },
+  { name: "r", type: "lang" },
+  { name: "dart", type: "lang" },
+  { name: "scala", type: "lang" },
+
+  // Frameworks & Libraries (tool)
+  { name: "react", type: "tool" },
+  { name: "react.js", type: "tool" },
+  { name: "react native", type: "tool" },
+  { name: "angular", type: "tool" },
+  { name: "vue", type: "tool" },
+  { name: "vue.js", type: "tool" },
+  { name: "next.js", type: "tool" },
+  { name: "node.js", type: "tool" },
+  { name: "express", type: "tool" },
+  { name: "express.js", type: "tool" },
+  { name: "django", type: "tool" },
+  { name: "flask", type: "tool" },
+  { name: "fastapi", type: "tool" },
+  { name: "spring", type: "tool" },
+  { name: "spring boot", type: "tool" },
+  { name: ".net", type: "tool" },
+  { name: "asp.net", type: "tool" },
+  { name: "laravel", type: "tool" },
+  { name: "bootstrap", type: "tool" },
+  { name: "tailwind", type: "tool" },
+  { name: "tailwind css", type: "tool" },
+  { name: "redux", type: "tool" },
+  { name: "flutter", type: "tool" },
+  { name: "jquery", type: "tool" },
+
+  // Data / AI / ML
+  { name: "machine learning", type: "tool" },
+  { name: "deep learning", type: "tool" },
+  { name: "nlp", type: "tool" },
+  { name: "artificial intelligence", type: "tool" },
+  { name: "tensorflow", type: "tool" },
+  { name: "pytorch", type: "tool" },
+  { name: "keras", type: "tool" },
+  { name: "scikit-learn", type: "tool" },
+  { name: "opencv", type: "tool" },
+  { name: "pandas", type: "tool" },
+  { name: "numpy", type: "tool" },
+  { name: "data analysis", type: "tool" },
+  { name: "data science", type: "tool" },
+  { name: "tableau", type: "tool" },
+  { name: "power bi", type: "tool" },
+
+  // Databases & Storage
+  { name: "mysql", type: "tool" },
+  { name: "postgresql", type: "tool" },
+  { name: "mongodb", type: "tool" },
+  { name: "redis", type: "tool" },
+  { name: "sqlite", type: "tool" },
+  { name: "oracle", type: "tool" },
+  { name: "firebase", type: "tool" },
+  { name: "prisma", type: "tool" },
+  { name: "mongoose", type: "tool" },
+
+  // Cloud / DevOps / Tools
+  { name: "aws", type: "tool" },
+  { name: "amazon web services", type: "tool" },
+  { name: "azure", type: "tool" },
+  { name: "gcp", type: "tool" },
+  { name: "google cloud", type: "tool" },
+  { name: "docker", type: "tool" },
+  { name: "kubernetes", type: "tool" },
+  { name: "jenkins", type: "tool" },
+  { name: "ci/cd", type: "tool" },
+  { name: "git", type: "tool" },
+  { name: "github", type: "tool" },
+  { name: "gitlab", type: "tool" },
+  { name: "linux", type: "tool" },
+  { name: "nginx", type: "tool" },
+  { name: "apache", type: "tool" },
+  { name: "rest api", type: "tool" },
+  { name: "graphql", type: "tool" },
+  { name: "microservices", type: "tool" },
+  { name: "system design", type: "tool" },
+
+  // Testing & Tools
+  { name: "jest", type: "tool" },
+  { name: "cypress", type: "tool" },
+  { name: "selenium", type: "tool" },
+  { name: "junit", type: "tool" },
+  { name: "figma", type: "tool" },
+  { name: "jira", type: "tool" },
+
+  // Soft / Management / Core
+  { name: "project management", type: "soft" },
+  { name: "communication", type: "soft" },
+  { name: "leadership", type: "soft" },
+  { name: "teamwork", type: "soft" },
+  { name: "problem solving", type: "soft" },
+  { name: "agile", type: "soft" },
+  { name: "scrum", type: "soft" },
+  { name: "excel", type: "soft" },
+  { name: "analytical skills", type: "soft" },
+  { name: "time management", type: "soft" }
+];
+
+// Comprehensive canonical section definitions and aliases
+const SECTION_DEFINITIONS = [
+  {
+    key: "personal",
+    label: "Contact Information",
+    icon: "🧑",
+    isCore: true,
+    headers: [
+      "personal information", "personal details", "personal info", "contact",
+      "contact information", "contact info", "contact details", "about me", "about", "bio"
+    ]
+  },
+  {
+    key: "summary",
+    label: "Professional Summary",
+    icon: "📝",
+    isCore: false,
+    headers: [
+      "summary", "professional summary", "career summary", "summary of qualifications",
+      "executive summary", "profile", "professional profile", "personal profile",
+      "career objective", "objective", "professional statement", "statement", "overview",
+      "synopsis", "brief profile"
+    ]
+  },
+  {
+    key: "skills",
+    label: "Skills & Proficiencies",
+    icon: "🛠️",
+    isCore: true,
+    headers: [
+      "skills", "technical skills", "key skills", "core skills", "core competencies",
+      "key competencies", "skills & tools", "skills & expertise", "skills & proficiencies",
+      "skills and abilities", "technical proficiencies", "technologies", "skillset",
+      "skill set", "technical stack", "tech stack", "toolset", "programming skills",
+      "programming languages", "tools & platforms", "tools & technologies", "database skills",
+      "web technologies", "core concepts", "software skills", "computer skills", "it skills",
+      "areas of expertise", "domain expertise", "professional skills", "hard skills", "soft skills"
+    ]
+  },
+  {
+    key: "experience",
+    label: "Experience & Internships",
+    icon: "💼",
+    isCore: true,
+    headers: [
+      "experience", "work experience", "employment history", "professional experience",
+      "career history", "work history", "employment", "relevant experience",
+      "practical experience", "professional background", "job history", "past experience",
+      "corporate experience", "industry experience", "internships", "internship",
+      "internship experience", "virtual internship", "industrial training", "training",
+      "trainings", "experience / training", "experience/training", "experience & training",
+      "internships & training", "internship / training", "experience and training"
+    ]
+  },
+  {
+    key: "education",
+    label: "Education & Academics",
+    icon: "🎓",
+    isCore: true,
+    headers: [
+      "education", "academics", "academic background", "academic details",
+      "academic qualifications", "academic qualification", "educational qualifications",
+      "educational qualification", "educational background", "educational details",
+      "academic profile", "academic history", "academic record", "academic credentials",
+      "educational history", "qualifications", "education & qualifications", "education & training",
+      "degrees", "degrees & certifications", "studies", "college", "university",
+      "higher education", "schooling", "education details", "formal education"
+    ]
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    icon: "🚀",
+    isCore: true,
+    headers: [
+      "projects", "personal projects", "academic projects", "technical projects",
+      "key projects", "selected projects", "major projects", "mini projects",
+      "project work", "project experience", "featured projects", "recent projects",
+      "notable projects", "portfolio projects", "client projects", "freelance projects",
+      "project", "personal project", "academic project", "technical project",
+      "hands-on projects", "software projects", "web projects", "web development projects",
+      "course projects", "capstone projects", "independent projects", "side projects",
+      "my projects", "projects & applications", "projects & work", "projects / work",
+      "projects details", "project details"
+    ]
+  },
+  {
+    key: "certifications",
+    label: "Certifications & Credentials",
+    icon: "📜",
+    isCore: true,
+    headers: [
+      "certifications", "certification", "certificates", "certifications & badges",
+      "certification badges", "licenses & certifications", "certifications & achievements",
+      "professional certifications", "courses & certifications", "licenses",
+      "accreditations", "credentials", "online courses", "training certificates"
+    ]
+  },
+  {
+    key: "achievements",
+    label: "Achievements & Awards",
+    icon: "🏆",
+    isCore: false,
+    headers: [
+      "achievements", "accomplishments", "awards", "honors", "awards & honors",
+      "honors & awards", "awards & achievements", "hackathons & achievements",
+      "hackathons", "competitions", "key achievements", "recognitions", "honours"
+    ]
+  },
+  {
+    key: "leadership",
+    label: "Leadership & Activities",
+    icon: "🤝",
+    isCore: false,
+    headers: [
+      "leadership", "activities", "leadership & activities", "leadership/activities",
+      "extracurricular activities", "extra-curricular activities", "extracurriculars",
+      "co-curricular activities", "volunteer experience", "volunteering", "volunteer work",
+      "community service", "campus ambassador", "positions of responsibility"
+    ]
+  },
+  {
+    key: "publications",
+    label: "Publications & Research",
+    icon: "📚",
+    isCore: false,
+    headers: [
+      "publications", "research papers", "published papers", "scientific publications",
+      "conference publications", "patents", "journal articles"
+    ]
+  },
+  {
+    key: "languages",
+    label: "Languages",
+    icon: "🌐",
+    isCore: false,
+    headers: [
+      "languages", "languages known", "language proficiency", "linguistic skills", "languages spoken"
+    ]
+  },
+  {
+    key: "interests",
+    label: "Interests & Hobbies",
+    icon: "🎯",
+    isCore: false,
+    headers: [
+      "interests", "hobbies", "personal interests", "hobbies & interests", "areas of interest"
+    ]
+  }
+];
+
+const SUMMARY_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "summary").headers;
+const SKILLS_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "skills").headers;
+const CERT_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "certifications").headers;
+const LEADERSHIP_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "leadership").headers;
+const AWARDS_HEADERS = SECTION_DEFINITIONS.find(s => s.key === "achievements").headers;
+
+const SECTION_HEADERS = {
+  experience: SECTION_DEFINITIONS.find(s => s.key === "experience").headers,
+  education: SECTION_DEFINITIONS.find(s => s.key === "education").headers,
+  projects: SECTION_DEFINITIONS.find(s => s.key === "projects").headers,
+  certifications: CERT_HEADERS,
+  skills: SKILLS_HEADERS,
+  summary: SUMMARY_HEADERS,
+  achievements: AWARDS_HEADERS,
+  leadership: LEADERSHIP_HEADERS,
+  languages: SECTION_DEFINITIONS.find(s => s.key === "languages").headers,
+};
+
+const ALL_HEADERS = SECTION_DEFINITIONS.flatMap(s => s.headers);
+
+// Other common resume section titles that are NOT names, used only to keep
+// extractName() from mistaking a heading like "Certifications & Badges" or
+// "Technical Skills" for the candidate's name.
+const NON_NAME_HEADERS = [
+  ...ALL_HEADERS,
+  "summary", "objective", "career objective", "profile", "about", "about me",
+  "contact", "contact info", "contact information", "personal details",
+  "skills", "technical skills", "key skills", "core competencies",
+  "certifications", "certification", "certifications & badges", "badges",
+  "achievements", "awards", "accomplishments", "languages", "interests",
+  "hobbies", "references", "publications", "declaration", "activities",
+  "volunteer experience", "extracurricular activities", "curriculum vitae", "resume", "cv",
+];
+
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?(\(?\d{2,4}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{3,4}/;
+const LINKEDIN_RE = /(https?:\/\/)?(www\.)?linkedin\.com\/[a-zA-Z0-9_/-]+/;
+const GITHUB_RE = /(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9_/-]+/;
+
+// Bullet-line prefix characters used to find bullet points across
+// resume templates (hyphen, asterisk, and the common bullet glyphs).
+const BULLET_PREFIX_RE = /^[\s]*[-*•·▪●○‣o]\s+/;
+
+// Weak / passive openers that read like a job description rather than
+// an achievement. Checked against the start of each bullet line.
+const WEAK_VERB_PHRASES = [
+  "responsible for", "in charge of", "duties included", "duties include",
+  "worked on", "worked with", "helped with", "helped to", "assisted with",
+  "assisted in", "participated in", "involved in", "tasked with",
+  "was responsible", "handled", "dealt with", "took part in",
+];
+
+// Small stopword list used only to filter noise out of job-description
+// keyword extraction (not a full NLP stopword list, just common filler).
+const JD_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "are", "you", "your", "will",
+  "have", "has", "our", "we", "a", "an", "to", "of", "in", "on", "or", "as", "is", "be",
+  "at", "by", "it", "who", "their", "they", "them", "he", "she", "his", "her", "its",
+  "into", "about", "across", "within", "using", "use", "work", "working", "team",
+  "role", "job", "years", "year", "experience", "strong", "ability", "skills",
+  "including", "etc", "looking", "candidate", "candidates", "required", "preferred",
+  "must", "should", "can", "also", "all", "any", "new", "other", "such", "more",
+  "most", "company", "us", "one", "two", "per", "plus", "up", "out", "if", "so",
+]);
+
+// Common job-title words used only to keep extractName() from mistaking a
+// professional headline (e.g. "Senior Software Engineer") for the name.
+const JOB_TITLE_WORDS = [
+  "engineer", "developer", "manager", "analyst", "specialist", "consultant",
+  "designer", "director", "intern", "internship", "coordinator", "executive",
+  "officer", "administrator", "architect", "scientist", "technician",
+  "associate", "assistant", "supervisor", "strategist", "marketer",
+  "recruiter", "accountant", "programmer", "freelancer", "founder",
+  "representative", "lead", "head", "president",
+];
+
+// Checks a single line/segment of resume text and returns it if it looks
+// like a plausible candidate name, or null otherwise. Used both for
+// whole lines and for individual pieces of a combined contact-info line
+// (e.g. "John Doe | john@doe.com | (555) 123-4567").
+function looksLikeCandidateName(segment) {
+  const seg = (segment || "").trim();
+  if (!seg || seg.length > 45) return null;
+  if (EMAIL_RE.test(seg) || PHONE_RE.test(seg)) return null;
+  if (LINKEDIN_RE.test(seg) || GITHUB_RE.test(seg)) return null;
+  if (/\d/.test(seg)) return null;
+  if (/@|https?:\/\/|www\./i.test(seg)) return null;
+  if (/[&:;/]/.test(seg)) return null; // headings like "Skills:" or "Certifications & Badges"
+
+  const words = seg.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 4) return null;
+
+  // Reject segments containing common English non-name verbs/nouns from resume body text
+  if (/\b(criteria|relevant|compatible|developed|analyzed|analyzes|application|requirements|summary|education|experience|projects|skills|certifications|university|school|college|responsibilities|achievements|activities|strengthened|completed|learning|designed|created|applied|provided|provides|identifies|improves|badges|certification)\b/i.test(seg)) return null;
+
+  // Every word must be shaped like part of a proper name — letters only,
+  // optionally with an apostrophe, hyphen, or trailing initial period.
+  if (!words.every(w => /^[A-Za-z][A-Za-z'.-]*$/.test(w))) return null;
+
+  const lower = seg.toLowerCase().replace(/[.,]+$/, "").trim();
+  if (NON_NAME_HEADERS.some(h => lower === h || lower.startsWith(h + " "))) return null;
+  if (JOB_TITLE_WORDS.some(w => lower.split(/\s+/).includes(w))) return null;
+
+  return seg;
+}
+
+function formatName(seg) {
+  return seg === seg.toUpperCase()
+    ? seg.replace(/\w\S*/g, t => t[0].toUpperCase() + t.slice(1).toLowerCase())
+    : seg;
+}
+
+function extractName(text) {
+  const rawLines = text.split("\n").map(l => l.trim()).filter(Boolean).slice(0, 25);
+
+  for (const rawLine of rawLines) {
+    // 1. Strip contacts and unicode symbol icons (✉, ☎, 🔗, etc.)
+    const strippedLine = rawLine
+      .replace(EMAIL_RE, " ")
+      .replace(PHONE_RE, " ")
+      .replace(LINKEDIN_RE, " ")
+      .replace(GITHUB_RE, " ")
+      .replace(/[✉☎🔗\u2700-\u27BF\uE000-\uF8FF\uD83C-\uDBFF\uDC00-\uDFFF|•·▪●○]+/gu, " ")
       .replace(/\s+/g, " ")
       .trim();
+
+    if (strippedLine) {
+      const candidate = looksLikeCandidateName(strippedLine);
+      if (candidate) return formatName(candidate);
+    }
+
+    // 2. Also split on common separators including icons and test individual parts
+    const segments = rawLine
+      .split(/[|•·▪●○✉☎🔗\u2700-\u27BF\uE000-\uF8FF\uD83C-\uDBFF\uDC00-\uDFFF]+/u)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    for (const seg of segments) {
+      const candidate = looksLikeCandidateName(seg);
+      if (candidate) return formatName(candidate);
+    }
+  }
+  return "Not found";
+}
+
+function extractSkills(text, skillsSectionText) {
+  const lower = (text || "").toLowerCase();
+  const found = [];
+  const seenNames = new Set();
+
+  // 1. Search for curated skills from SKILL_KEYWORDS
+  for (const skill of SKILL_KEYWORDS) {
+    const sName = skill.name.toLowerCase();
+    if (seenNames.has(sName)) continue;
+
+    let matched = false;
+    if (sName === "c++") {
+      matched = /\bc\+\+|\bcplusplus\b/i.test(lower);
+    } else if (sName === "c#") {
+      matched = /\bc#|\bcsharp\b/i.test(lower);
+    } else if (sName === ".net" || sName === "asp.net") {
+      matched = /\.net\b|asp\.net\b/i.test(lower);
+    } else if (sName === "node.js" || sName === "node") {
+      matched = /\bnode\.?js\b|\bnodejs\b|\bnode\b/i.test(lower);
+    } else if (sName === "react.js" || sName === "react") {
+      matched = /\breact\.?js\b|\breactjs\b|\breact\b/i.test(lower);
+    } else if (sName === "vue.js" || sName === "vue") {
+      matched = /\bvue\.?js\b|\bvuejs\b|\bvue\b/i.test(lower);
+    } else if (sName === "next.js" || sName === "next") {
+      matched = /\bnext\.?js\b|\bnextjs\b/i.test(lower);
+    } else if (sName === "express.js" || sName === "express") {
+      matched = /\bexpress\.?js\b|\bexpressjs\b|\bexpress\b/i.test(lower);
+    } else {
+      const escaped = sName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp("(?:^|[^a-zA-Z0-9_#+.-])" + escaped + "(?:$|[^a-zA-Z0-9_#+.-])", "i");
+      matched = re.test(lower);
+    }
+
+    if (matched) {
+      found.push(skill);
+      seenNames.add(sName);
+    }
   }
 
-  function matchHeaderLine(cleanLine, headers, rawLine) {
-    if (!cleanLine || cleanLine.length > 55) return false;
-    // Don't match if line begins with a bullet character (content item, not section heading)
-    if (rawLine && /^[\s*•\-–—●▪▫◦\u2022\u25cf]/.test(rawLine)) return false;
-    // Don't match if line contains email, phone, links
-    if (rawLine && (/@|linkedin\.com|github\.com|(\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/i.test(rawLine))) {
-      return false;
-    }
-    if (headers.includes(cleanLine)) return true;
-    for (const h of headers) {
-      if (cleanLine === h) return true;
-      if (cleanLine.startsWith(h + " ") || cleanLine.startsWith(h + ":") || cleanLine.startsWith(h + " -")) {
-        const remainder = cleanLine.slice(h.length).trim();
-        if (remainder.length < 30 && !remainder.includes("because") && !remainder.includes("with") && !remainder.includes("using") && !remainder.includes("through") && !remainder.includes("aligned")) {
-          return true;
+  // 2. Also extract skills directly listed in the resume's Skills section
+  if (skillsSectionText && skillsSectionText.trim()) {
+    const skillLines = skillsSectionText.split("\n");
+    for (const line of skillLines) {
+      // Strip common category prefixes like "Programming Languages:", "Web Technologies:", "Backend & Database:"
+      const contentPart = line.replace(/^[A-Za-z\s&/\\()-]{2,35}:/, "").trim();
+      if (!contentPart) continue;
+
+      const parts = contentPart.split(/[,|•·▪●○*]|\s{2,}|\t+/);
+      for (let p of parts) {
+        p = p.trim().replace(/^[-*•\s]+/, "").replace(/[:;]+$/, "").trim();
+        if (!p || p.length < 2 || p.length > 35) continue;
+        if (/^(etc|and|or|including|proficient|experienced|basics?|advanced)$/i.test(p)) continue;
+
+        const cleanName = p.replace(/\s*\([^)]*\)/g, "").trim();
+        const lowerClean = cleanName.toLowerCase();
+        if (!seenNames.has(lowerClean) && !seenNames.has(p.toLowerCase())) {
+          let type = "tool";
+          if (/python|javascript|typescript|java|c\+\+|c#|ruby|golang|rust|php|swift|kotlin|html|css|sql|r\b|scala|dart/i.test(lowerClean)) {
+            type = "lang";
+          } else if (/communication|teamwork|leadership|problem solving|critical thinking|time management|adaptability|creativeness|creative|situational/i.test(lowerClean)) {
+            type = "soft";
+          }
+          found.push({ name: cleanName, type });
+          seenNames.add(lowerClean);
         }
       }
     }
-    return false;
   }
 
-  function parseAllResumeSections(text) {
-    if (!text || typeof text !== "string") {
-      const res = {};
-      SECTION_DEFINITIONS.forEach(s => {
-        res[s.key] = { key: s.key, label: s.label, icon: s.icon, found: false, rawText: "", lines: [] };
-      });
-      return res;
-    }
+  return found;
+}
 
-    const rawLines = text.split("\n");
-    const lines = [];
-    const allHeaderStrings = SECTION_DEFINITIONS.flatMap(s => s.headers);
+function cleanHeaderCandidate(line) {
+  if (!line) return "";
+  return line
+    .trim()
+    .toLowerCase()
+    .replace(/^[\s#*•\-\–—|>●▪\[\]()]+/, "") // remove leading bullets/markdown
+    .replace(/[:\-–—|>●▪\[\]()]+$/, "")       // remove trailing punctuation
+    .replace(/^\d+[\.\)]\s*/, "")              // remove leading numbers like '1. ' or '01) '
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-    for (const rawLine of rawLines) {
-      const trimmed = rawLine.trim();
-      if (!trimmed) {
-        lines.push("");
-        continue;
+function matchHeaderLine(cleanLine, headers, rawLine) {
+  if (!cleanLine || cleanLine.length > 55) return false;
+  // Don't match if line begins with a bullet character (content item, not section heading)
+  if (rawLine && /^[\s*•\-–—●▪▫◦\u2022\u25cf]/.test(rawLine)) return false;
+  // Don't match if line contains email, phone, links
+  if (rawLine && (/@|linkedin\.com|github\.com|(\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/i.test(rawLine))) {
+    return false;
+  }
+  if (headers.includes(cleanLine)) return true;
+  for (const h of headers) {
+    if (cleanLine === h) return true;
+    if (cleanLine.startsWith(h + " ") || cleanLine.startsWith(h + ":") || cleanLine.startsWith(h + " -")) {
+      const remainder = cleanLine.slice(h.length).trim();
+      if (remainder.length < 30 && !remainder.includes("because") && !remainder.includes("with") && !remainder.includes("using") && !remainder.includes("through") && !remainder.includes("aligned")) {
+        return true;
       }
-      // Check if line contains two headers glued together horizontally (e.g., "ACADEMICS PROJECTS", "EDUCATION   PROJECTS")
-      let splitDone = false;
-      let parts = trimmed.split(/\s{2,}|\t+|(?<=[a-z0-9])\s+(?=[A-Z]{3,})/);
-      if (parts.length !== 2) {
-        // Also check if any combination of two known headers is separated by a single space or punctuation
-        const lowerTrimmed = trimmed.toLowerCase();
-        for (const h1 of allHeaderStrings) {
-          if (lowerTrimmed.startsWith(h1 + " ") || lowerTrimmed.startsWith(h1 + "\t") || lowerTrimmed.startsWith(h1 + " - ") || lowerTrimmed.startsWith(h1 + " | ")) {
-            const separatorLen = lowerTrimmed.startsWith(h1 + " - ") ? 3 : (lowerTrimmed.startsWith(h1 + " | ") ? 3 : 1);
-            const rem = trimmed.slice(h1.length + separatorLen).trim();
-            const cRem = cleanHeaderCandidate(rem);
-            if (allHeaderStrings.some(h2 => cRem === h2 || cRem.startsWith(h2 + " "))) {
-              parts = [trimmed.slice(0, h1.length), rem];
-              break;
-            }
+    }
+  }
+  return false;
+}
+
+function parseAllResumeSections(text) {
+  if (!text || typeof text !== "string") {
+    const res = {};
+    SECTION_DEFINITIONS.forEach(s => {
+      res[s.key] = { key: s.key, label: s.label, icon: s.icon, found: false, rawText: "", lines: [] };
+    });
+    return res;
+  }
+
+  const rawLines = text.split("\n");
+  const lines = [];
+  const allHeaderStrings = SECTION_DEFINITIONS.flatMap(s => s.headers);
+
+  for (const rawLine of rawLines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      lines.push("");
+      continue;
+    }
+    // Check if line contains two headers glued together horizontally (e.g., "ACADEMICS PROJECTS", "EDUCATION   PROJECTS")
+    let splitDone = false;
+    let parts = trimmed.split(/\s{2,}|\t+|(?<=[a-z0-9])\s+(?=[A-Z]{3,})/);
+    if (parts.length !== 2) {
+      // Also check if any combination of two known headers is separated by a single space or punctuation
+      const lowerTrimmed = trimmed.toLowerCase();
+      for (const h1 of allHeaderStrings) {
+        if (lowerTrimmed.startsWith(h1 + " ") || lowerTrimmed.startsWith(h1 + "\t") || lowerTrimmed.startsWith(h1 + " - ") || lowerTrimmed.startsWith(h1 + " | ")) {
+          const separatorLen = lowerTrimmed.startsWith(h1 + " - ") ? 3 : (lowerTrimmed.startsWith(h1 + " | ") ? 3 : 1);
+          const rem = trimmed.slice(h1.length + separatorLen).trim();
+          const cRem = cleanHeaderCandidate(rem);
+          if (allHeaderStrings.some(h2 => cRem === h2 || cRem.startsWith(h2 + " "))) {
+            parts = [trimmed.slice(0, h1.length), rem];
+            break;
           }
         }
       }
-      if (parts && parts.length === 2) {
-        const c1 = cleanHeaderCandidate(parts[0]);
-        const c2 = cleanHeaderCandidate(parts[1]);
-        if (allHeaderStrings.some(h => c1 === h) && allHeaderStrings.some(h => c2 === h || c2.startsWith(h + " "))) {
-          lines.push(parts[0]);
-          lines.push(parts[1]);
-          splitDone = true;
-        }
-      }
-      if (!splitDone) {
-        lines.push(trimmed);
+    }
+    if (parts && parts.length === 2) {
+      const c1 = cleanHeaderCandidate(parts[0]);
+      const c2 = cleanHeaderCandidate(parts[1]);
+      if (allHeaderStrings.some(h => c1 === h) && allHeaderStrings.some(h => c2 === h || c2.startsWith(h + " "))) {
+        lines.push(parts[0]);
+        lines.push(parts[1]);
+        splitDone = true;
       }
     }
-
-    const sectionIndices = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const clean = cleanHeaderCandidate(line);
-      if (!clean) continue;
-
-      for (const secDef of SECTION_DEFINITIONS) {
-        if (matchHeaderLine(clean, secDef.headers, line)) {
-          sectionIndices.push({
-            index: i,
-            key: secDef.key,
-            label: secDef.label,
-            icon: secDef.icon,
-            line: line
-          });
-          break;
-        }
-      }
+    if (!splitDone) {
+      lines.push(trimmed);
     }
-
-    const extracted = {};
-    SECTION_DEFINITIONS.forEach(s => {
-      extracted[s.key] = {
-        key: s.key,
-        label: s.label,
-        icon: s.icon,
-        found: false,
-        rawText: "",
-        lines: []
-      };
-    });
-
-    if (sectionIndices.length > 0) {
-      for (let sIdx = 0; sIdx < sectionIndices.length; sIdx++) {
-        const curr = sectionIndices[sIdx];
-        const next = sectionIndices[sIdx + 1];
-        const startLine = curr.index + 1;
-        const endLine = next ? next.index : lines.length;
-
-        const secLines = [];
-        for (let l = startLine; l < endLine; l++) {
-          secLines.push(lines[l]);
-        }
-
-        const secText = secLines.join("\n").trim();
-        const target = extracted[curr.key];
-        if (target) {
-          target.found = true;
-          target.rawText = target.rawText ? (target.rawText + "\n" + secText) : secText;
-          target.lines = target.lines.concat(secLines.filter(l => l.trim().length > 0));
-        }
-      }
-    }
-
-    // Fallbacks if not found by explicit headers:
-    // Education fallback: degree / university / school / GPA keywords
-    if (!extracted.education.found || !extracted.education.rawText.trim()) {
-      const eduRegex = /\b(b\.?sc|b\.?tech|b\.?e|m\.?sc|m\.?tech|bachelor|master|phd|diploma|higher secondary|secondary school|high school|university|college|cgpa|gpa|\bdegree\b)\b/i;
-      const eduLines = lines.filter(l => eduRegex.test(l) && !/developed|engineered|client|responsible for/i.test(l));
-      if (eduLines.length >= 1) {
-        extracted.education.found = true;
-        extracted.education.rawText = eduLines.join("\n");
-        extracted.education.lines = eduLines;
-      }
-    }
-
-    // Skills fallback: technical categories or skill lists
-    if (!extracted.skills.found || !extracted.skills.rawText.trim()) {
-      const skillHeaderRegex = /\b(programming languages|web technologies|backend & database|tools & platforms|databases|core concepts|technical stack)\b/i;
-      const skillLines = lines.filter(l => skillHeaderRegex.test(l));
-      if (skillLines.length > 0) {
-        extracted.skills.found = true;
-        extracted.skills.rawText = skillLines.join("\n");
-        extracted.skills.lines = skillLines;
-      }
-    }
-
-    // Experience fallback: internship / developer / analyst / dates
-    if (!extracted.experience.found || !extracted.experience.rawText.trim()) {
-      const expRegex = /\b(intern|internship|developer|engineer|specialist|manager|analyst|associate)\b.*?\b(20\d{2}|present|month|year|duration)\b/i;
-      const expLines = lines.filter(l => expRegex.test(l));
-      if (expLines.length > 0) {
-        extracted.experience.found = true;
-        extracted.experience.rawText = expLines.join("\n");
-        extracted.experience.lines = expLines;
-      }
-    }
-
-    // Projects fallback: lines mentioning projects, app development, or repository/portfolio projects
-    if (!extracted.projects.found || !extracted.projects.rawText.trim()) {
-      const projRegex = /\b(ai resume analyzer|portfolio website|developed an? (?:ai|web|mobile|full|cloud|app)|built (?:a|an|and deployed)|created (?:a|an)|designed and implemented|personal project|technical project|github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+)\b/i;
-      const projLines = lines.filter(l => projRegex.test(l) && !/Takshashila|University|High School|College|B\.Sc|CGPA/i.test(l));
-      if (projLines.length > 0) {
-        extracted.projects.found = true;
-        extracted.projects.rawText = projLines.join("\n");
-        extracted.projects.lines = projLines;
-      }
-    }
-
-    return extracted;
   }
 
-  function extractSection(lines, key){
-    const text = Array.isArray(lines) ? lines.join("\n") : (lines || "");
-    const parsed = parseAllResumeSections(text);
-    if (parsed && parsed[key]) {
-      return parsed[key].rawText || "";
-    }
-    return "";
-  }
+  const sectionIndices = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const clean = cleanHeaderCandidate(line);
+    if (!clean) continue;
 
-  function estimateExperienceYears(text){
-    const matches = [...text.toLowerCase().matchAll(/(\d+)\+?\s*(?:years|yrs)/g)];
-    const years = matches.map(m => parseInt(m[1], 10)).filter(y => y < 50);
-    return years.length ? Math.max(...years) : null;
-  }
-
-  // Pulls out lines that look like bullet points (resume achievement lines),
-  // whether they start with a bullet glyph or just read like a short
-  // sentence inside the Experience/Projects sections.
-  function getBulletLines(text){
-    return text.split("\n")
-      .map(l => l.trim())
-      .filter(l => l.length > 0 && BULLET_PREFIX_RE.test(l))
-      .map(l => l.replace(BULLET_PREFIX_RE, "").trim());
-  }
-
-  // Flags bullets that open with weak/passive phrasing instead of a strong
-  // action verb (e.g. "Responsible for managing..." vs "Managed...").
-  function findWeakVerbBullets(bullets){
-    const found = [];
-    bullets.forEach(line => {
-      const lower = line.toLowerCase();
-      for (const phrase of WEAK_VERB_PHRASES){
-        if (lower.startsWith(phrase) || lower.includes(" " + phrase)){
-          found.push({ phrase, line });
-          break;
-        }
-      }
-    });
-    return found;
-  }
-
-  // Counts how many bullets contain a quantified result (a number, percent,
-  // or currency amount) vs how many don't.
-  function analyzeQuantifiedAchievements(bullets){
-    const QUANT_RE = /\d|%|\$|₹|€|£/;
-    const quantified = bullets.filter(b => QUANT_RE.test(b)).length;
-    return { quantified, total: bullets.length };
-  }
-
-  // Flags bullets that are near-duplicates of each other (same core wording
-  // reused across roles), using simple word-overlap similarity.
-  function findDuplicateBullets(bullets){
-    const norm = b => new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean));
-    const seen = [];
-    const duplicates = [];
-    for (const bullet of bullets){
-      if (bullet.split(/\s+/).length < 4) continue; // skip very short lines
-      const words = norm(bullet);
-      for (const prior of seen){
-        const overlap = [...words].filter(w => prior.words.has(w)).length;
-        const similarity = overlap / Math.max(words.size, prior.words.size);
-        if (similarity >= 0.75){
-          duplicates.push(bullet);
-          break;
-        }
-      }
-      seen.push({ text: bullet, words });
-    }
-    return duplicates;
-  }
-
-  // Extracts candidate keywords from a pasted job description: known skill
-  // keywords get priority, then the most frequent non-stopword terms fill
-  // in the rest, up to a reasonable cap for display.
-  function extractJDKeywords(jdText, maxKeywords){
-    const lower = jdText.toLowerCase();
-    const keywords = [];
-
-    SKILL_KEYWORDS.forEach(skill => {
-      const escaped = skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp("\\b" + escaped + "\\b", "i");
-      if (re.test(lower)) keywords.push(skill.name);
-    });
-
-    const wordCounts = {};
-    (lower.match(/[a-z][a-z+.#-]{2,}/g) || []).forEach(w => {
-      if (JD_STOPWORDS.has(w) || keywords.includes(w)) return;
-      wordCounts[w] = (wordCounts[w] || 0) + 1;
-    });
-    const frequent = Object.entries(wordCounts)
-      .filter(([, count]) => count >= 2)
-      .sort((a, b) => b[1] - a[1])
-      .map(([w]) => w);
-
-    for (const w of frequent){
-      if (keywords.length >= maxKeywords) break;
-      keywords.push(w);
-    }
-    return keywords.slice(0, maxKeywords);
-  }
-
-  // Compares resume text against job-description keywords and returns
-  // which ones the resume already has vs which are missing.
-  function matchAgainstJD(resumeText, jdText){
-    const keywords = extractJDKeywords(jdText, 20);
-    const resumeLower = resumeText.toLowerCase();
-    const matched = [], missing = [];
-    keywords.forEach(kw => {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp("\\b" + escaped + "\\b", "i");
-      (re.test(resumeLower) ? matched : missing).push(kw);
-    });
-    const ratio = keywords.length ? matched.length / keywords.length : null;
-    return { matched, missing, ratio };
-  }
-
-  // Checks whether any line in the resume matches one of the given section
-  // headers (used for the Sections Found / Missing Sections check).
-  function hasSectionHeader(lines, headers){
-    return lines.some(l => {
-      const clean = l.trim().toLowerCase().replace(/[:\-–—]+$/, "").trim();
-      return headers.some(h => clean === h || clean.startsWith(h + " ") || clean.startsWith(h + ":") || clean.startsWith(h + "-"));
-    });
-  }
-
-  // Common "expected" keywords for tech/AI-leaning roles, used for the
-  // "Missing Common Keywords" panel and folded into Keyword Coverage.
-  const COMMON_TARGET_KEYWORDS = [
-    "SQL", "Git", "API", "Agile", "Project Management",
-    "Data Structures", "Algorithms", "Python", "JavaScript", "Problem Solving",
-    "Communication", "Documentation", "Testing", "CI/CD", "Optimization",
-    "Leadership", "Analysis", "Design"
-  ];
-
-  function findMissingCommonKeywords(text){
-    const lower = text.toLowerCase();
-    return COMMON_TARGET_KEYWORDS.filter(kw => {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp("\\b" + escaped + "\\b", "i");
-      return !re.test(lower);
-    });
-  }
-
-  // =========================================================================
-  // AI vs. Man Made Content Detection (OpenAI / ChatGPT / LLM pattern analyzer)
-  // =========================================================================
-  const AI_PATTERNS = [
-    // Direct AI leakage / prompt residuals
-    { re: /\bas an ai\b/i, label: "as an ai", weight: 45, isExplicit: true },
-    { re: /\bchatgpt\b/i, label: "ChatGPT mention", weight: 45, isExplicit: true },
-    { re: /\bopenai\b/i, label: "OpenAI mention", weight: 45, isExplicit: true },
-    { re: /\blanguage model\b/i, label: "language model", weight: 45, isExplicit: true },
-    { re: /\bhere is (a|the|your) resume\b/i, label: "here is a resume prompt", weight: 45, isExplicit: true },
-    { re: /\bcertainly,?\s+(here|below)\b/i, label: "certainly, here is...", weight: 45, isExplicit: true },
-    { re: /\[insert\s+[a-z_\s]+\]/i, label: "[insert placeholder]", weight: 35, isExplicit: true },
-
-    // Signature OpenAI / LLM vocabulary & clichés
-    { re: /\bdelve(d|s)?\s+into\b/i, label: "delve into", weight: 22 },
-    { re: /\btestament to\b/i, label: "testament to", weight: 22 },
-    { re: /\btapestry of\b/i, label: "tapestry of", weight: 22 },
-    { re: /\bbeacon of\b/i, label: "beacon of", weight: 20 },
-    { re: /\bunwavering commitment\b/i, label: "unwavering commitment", weight: 20 },
-    { re: /\bharness(ed|ing)?\s+the power\b/i, label: "harnessing the power", weight: 18 },
-    { re: /\bleverag(ed|ing)\s+cutting[- ]edge\b/i, label: "leveraging cutting-edge", weight: 18 },
-    { re: /\bspearhead(ed|ing)?\b/i, label: "spearheaded", weight: 12 },
-    { re: /\bproven track record\b/i, label: "proven track record", weight: 15 },
-    { re: /\bseamlessly integrat(e|ed|ing)\b/i, label: "seamlessly integrate", weight: 16 },
-    { re: /\bpivotal role\b/i, label: "pivotal role", weight: 15 },
-    { re: /\bdriv(e|ing|en)\s+impactful results\b/i, label: "driving impactful results", weight: 16 },
-    { re: /\borchestrat(ed|ing)\s+cross[- ]functional\b/i, label: "orchestrated cross-functional", weight: 16 },
-    { re: /\badept (at|in)\b/i, label: "adept at", weight: 14 },
-    { re: /\bfoster(ed|ing)?\s+a culture\b/i, label: "fostering a culture", weight: 15 },
-    { re: /\bpassionate and (results[- ]driven|detail[- ]oriented)\b/i, label: "passionate & results-driven", weight: 15 },
-    { re: /\bdynamic and forward[- ]thinking\b/i, label: "dynamic and forward-thinking", weight: 15 },
-    { re: /\bholistic approach\b/i, label: "holistic approach", weight: 14 },
-    { re: /\bin today('s)?\s+fast[- ]paced\b/i, label: "in today's fast-paced", weight: 15 },
-    { re: /\bin an ever[- ]evolving\b/i, label: "in an ever-evolving", weight: 15 },
-    { re: /\bmeticulously (crafted|designed|executed)\b/i, label: "meticulously crafted", weight: 15 },
-    { re: /\bcatalyst for (change|growth|success)\b/i, label: "catalyst for change", weight: 15 },
-    { re: /\bnavigating complex\b/i, label: "navigating complex", weight: 14 },
-    { re: /\bsynergistic\b/i, label: "synergistic", weight: 14 },
-    { re: /\bthrives in fast[- ]paced\b/i, label: "thrives in fast-paced", weight: 14 },
-    { re: /\belevate organizational performance\b/i, label: "elevate performance", weight: 15 },
-    { re: /\bkeen eye for detail\b/i, label: "keen eye for detail", weight: 12 },
-    { re: /\bresults[- ]driven professional\b/i, label: "results-driven professional", weight: 14 },
-    { re: /\bcommitted to excellence\b/i, label: "committed to excellence", weight: 12 },
-    { re: /\bdeep dive\b/i, label: "deep dive", weight: 10 },
-    { re: /\bthink outside the box\b/i, label: "think outside the box", weight: 12 }
-  ];
-
-  function detectAiOrHuman(text){
-    if (!text || typeof text !== "string") {
-      return { isAi: false, aiScore: 4, humanScore: 96, detectedPhrases: [], explicitLeak: false };
-    }
-
-    const detected = [];
-    let rawScore = 0;
-    let explicitLeak = false;
-
-    AI_PATTERNS.forEach(pat => {
-      if (pat.re.test(text)){
-        detected.push(pat.label);
-        rawScore += pat.weight;
-        if (pat.isExplicit) explicitLeak = true;
-      }
-    });
-
-    // Check sentence length burstiness (AI typically produces uniform bullet cadence)
-    const sentences = text.split(/[.\n;•]+/).map(s => s.trim()).filter(s => s.split(/\s+/).length >= 5);
-    let uniformPenalty = 0;
-    if (sentences.length >= 6) {
-      const lengths = sentences.map(s => s.split(/\s+/).length);
-      const avg = lengths.reduce((a, b) => a + b, 0) / lengths.length;
-      const variance = lengths.reduce((acc, len) => acc + Math.pow(len - avg, 2), 0) / lengths.length;
-      const stdDev = Math.sqrt(variance);
-      if (stdDev < 3.2 && avg >= 12 && avg <= 25) {
-        uniformPenalty = 15;
+    for (const secDef of SECTION_DEFINITIONS) {
+      if (matchHeaderLine(clean, secDef.headers, line)) {
+        sectionIndices.push({
+          index: i,
+          key: secDef.key,
+          label: secDef.label,
+          icon: secDef.icon,
+          line: line
+        });
+        break;
       }
     }
+  }
 
-    let calculatedAiScore = Math.min(96, Math.round(rawScore + uniformPenalty));
-    if (explicitLeak) {
-      calculatedAiScore = Math.max(94, calculatedAiScore);
-    }
-
-    // Classification threshold
-    const isAi = explicitLeak || calculatedAiScore >= 35 || detected.length >= 3;
-    const finalAiScore = isAi ? Math.max(54, calculatedAiScore) : Math.min(24, Math.max(3, calculatedAiScore));
-    const humanScore = 100 - finalAiScore;
-
-    return {
-      isAi,
-      aiScore: finalAiScore,
-      humanScore,
-      detectedPhrases: detected,
-      explicitLeak
+  const extracted = {};
+  SECTION_DEFINITIONS.forEach(s => {
+    extracted[s.key] = {
+      key: s.key,
+      label: s.label,
+      icon: s.icon,
+      found: false,
+      rawText: "",
+      lines: []
     };
-  }
+  });
 
-  function findBuzzwords(text){
-    const res = detectAiOrHuman(text);
-    return res.detectedPhrases;
-  }
+  if (sectionIndices.length > 0) {
+    for (let sIdx = 0; sIdx < sectionIndices.length; sIdx++) {
+      const curr = sectionIndices[sIdx];
+      const next = sectionIndices[sIdx + 1];
+      const startLine = curr.index + 1;
+      const endLine = next ? next.index : lines.length;
 
-  // Counts total occurrences (not just presence) of every SKILL_KEYWORDS
-  // entry, split into the four Keywords Analysis columns.
-  function analyzeKeywordCategories(text){
-    const lower = text.toLowerCase();
-    const cols = { lang: [], tool: [], soft: [] };
-    SKILL_KEYWORDS.forEach(skill => {
-      const escaped = skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp("\\b" + escaped + "\\b", "gi");
-      const count = (lower.match(re) || []).length;
-      if (count > 0) cols[skill.type].push({ name: skill.name, count });
-    });
-    Object.keys(cols).forEach(k => cols[k].sort((a, b) => b.count - a.count));
-    return cols;
-  }
+      const secLines = [];
+      for (let l = startLine; l < endLine; l++) {
+        secLines.push(lines[l]);
+      }
 
-  // Extracts likely "domain terms" — acronyms and repeated Title Case
-  // phrases — that aren't already part of the fixed skill dictionary.
-  function extractDomainTerms(text, skipLines){
-    const skillNamesLower = new Set(SKILL_KEYWORDS.map(s => s.name.toLowerCase()));
-    const scanText = text.split("\n").slice(skipLines || 0).join("\n");
-
-    const counts = {};
-    (scanText.match(/\b[A-Z]{2,6}\b/g) || []).forEach(a => {
-      if (skillNamesLower.has(a.toLowerCase())) return;
-      counts[a] = (counts[a] || 0) + 1;
-    });
-
-    const phraseRe = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})\b/g;
-    let m;
-    while ((m = phraseRe.exec(scanText))){
-      const phrase = m[1];
-      if (skillNamesLower.has(phrase.toLowerCase())) continue;
-      counts[phrase] = (counts[phrase] || 0) + 1;
+      const secText = secLines.join("\n").trim();
+      const target = extracted[curr.key];
+      if (target) {
+        target.found = true;
+        target.rawText = target.rawText ? (target.rawText + "\n" + secText) : secText;
+        target.lines = target.lines.concat(secLines.filter(l => l.trim().length > 0));
+      }
     }
-
-    const seen = new Map();
-    Object.entries(counts).forEach(([name, count]) => {
-      const key = name.toLowerCase();
-      if (!seen.has(key) || seen.get(key).count < count) seen.set(key, { name, count });
-    });
-    return [...seen.values()].sort((a, b) => b.count - a.count).slice(0, 10);
   }
 
-  function countSyllables(word){
-    word = word.toLowerCase().replace(/[^a-z]/g, "");
-    if (!word) return 0;
-    if (word.length <= 3) return 1;
-    word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, "").replace(/^y/, "");
-    const matches = word.match(/[aeiouy]{1,2}/g);
-    return matches ? matches.length : 1;
+  // Fallbacks if not found by explicit headers:
+  // Education fallback: degree / university / school / GPA keywords
+  if (!extracted.education.found || !extracted.education.rawText.trim()) {
+    const eduRegex = /\b(b\.?sc|b\.?tech|b\.?e|m\.?sc|m\.?tech|bachelor|master|phd|diploma|higher secondary|secondary school|high school|university|college|cgpa|gpa|\bdegree\b)\b/i;
+    const eduLines = lines.filter(l => eduRegex.test(l) && !/developed|engineered|client|responsible for/i.test(l));
+    if (eduLines.length >= 1) {
+      extracted.education.found = true;
+      extracted.education.rawText = eduLines.join("\n");
+      extracted.education.lines = eduLines;
+    }
   }
 
-  function computeReadability(text){
-    const sentences = text.split(/[.!?\n]+/).map(s => s.trim()).filter(s => s.split(/\s+/).filter(Boolean).length > 2);
-    const words = text.split(/\s+/).filter(Boolean);
-    const sentenceCount = Math.max(sentences.length, 1);
-    const wordCount = Math.max(words.length, 1);
-    const avgSentenceLength = Math.round((wordCount / sentenceCount) * 10) / 10;
-    const syllableCount = words.reduce((sum, w) => sum + countSyllables(w), 0);
-    const gradeLevel = Math.max(0, Math.round((0.39 * (wordCount / sentenceCount) + 11.8 * (syllableCount / wordCount) - 15.59) * 10) / 10);
-    return { avgSentenceLength, gradeLevel };
+  // Skills fallback: technical categories or skill lists
+  if (!extracted.skills.found || !extracted.skills.rawText.trim()) {
+    const skillHeaderRegex = /\b(programming languages|web technologies|backend & database|tools & platforms|databases|core concepts|technical stack)\b/i;
+    const skillLines = lines.filter(l => skillHeaderRegex.test(l));
+    if (skillLines.length > 0) {
+      extracted.skills.found = true;
+      extracted.skills.rawText = skillLines.join("\n");
+      extracted.skills.lines = skillLines;
+    }
   }
 
-  // Classifies a metric value against a target [min,max] range into
-  // On Track / Could Improve / Needs Work, with a symmetric tolerance band.
-  function classifyMetric(value, min, max){
-    const range = max - min;
-    const margin = range || 1;
-    if (value >= min && value <= max) return { label: "On Track", cls: "ok" };
-    if ((value >= min - margin && value < min) || (value > max && value <= max + margin)) return { label: "Could Improve", cls: "warn" };
-    return { label: "Needs Work", cls: "bad" };
+  // Experience fallback: internship / developer / analyst / dates
+  if (!extracted.experience.found || !extracted.experience.rawText.trim()) {
+    const expRegex = /\b(intern|internship|developer|engineer|specialist|manager|analyst|associate)\b.*?\b(20\d{2}|present|month|year|duration)\b/i;
+    const expLines = lines.filter(l => expRegex.test(l));
+    if (expLines.length > 0) {
+      extracted.experience.found = true;
+      extracted.experience.rawText = expLines.join("\n");
+      extracted.experience.lines = expLines;
+    }
   }
 
-  function renderMetricBox(container, label, value, displayValue, min, max, scaleMax, caption){
-    const badge = classifyMetric(value, min, max);
-    const bandLeft = Math.max(0, Math.min(100, (min / scaleMax) * 100));
-    const bandWidth = Math.max(0, Math.min(100 - bandLeft, ((max - min) / scaleMax) * 100));
-    const markerPos = Math.max(1, Math.min(99, (value / scaleMax) * 100));
-    const box = document.createElement("div");
-    box.className = "metric-box";
-    box.innerHTML = `
+  // Projects fallback: lines mentioning projects, app development, or repository/portfolio projects
+  if (!extracted.projects.found || !extracted.projects.rawText.trim()) {
+    const projRegex = /\b(ai resume analyzer|portfolio website|developed an? (?:ai|web|mobile|full|cloud|app)|built (?:a|an|and deployed)|created (?:a|an)|designed and implemented|personal project|technical project|github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+)\b/i;
+    const projLines = lines.filter(l => projRegex.test(l) && !/Takshashila|University|High School|College|B\.Sc|CGPA/i.test(l));
+    if (projLines.length > 0) {
+      extracted.projects.found = true;
+      extracted.projects.rawText = projLines.join("\n");
+      extracted.projects.lines = projLines;
+    }
+  }
+
+  return extracted;
+}
+
+function extractSection(lines, key) {
+  const text = Array.isArray(lines) ? lines.join("\n") : (lines || "");
+  const parsed = parseAllResumeSections(text);
+  if (parsed && parsed[key]) {
+    return parsed[key].rawText || "";
+  }
+  return "";
+}
+
+function estimateExperienceYears(text) {
+  const matches = [...text.toLowerCase().matchAll(/(\d+)\+?\s*(?:years|yrs)/g)];
+  const years = matches.map(m => parseInt(m[1], 10)).filter(y => y < 50);
+  return years.length ? Math.max(...years) : null;
+}
+
+// Pulls out lines that look like bullet points (resume achievement lines),
+// whether they start with a bullet glyph or just read like a short
+// sentence inside the Experience/Projects sections.
+function getBulletLines(text) {
+  return text.split("\n")
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && BULLET_PREFIX_RE.test(l))
+    .map(l => l.replace(BULLET_PREFIX_RE, "").trim());
+}
+
+// Flags bullets that open with weak/passive phrasing instead of a strong
+// action verb (e.g. "Responsible for managing..." vs "Managed...").
+function findWeakVerbBullets(bullets) {
+  const found = [];
+  bullets.forEach(line => {
+    const lower = line.toLowerCase();
+    for (const phrase of WEAK_VERB_PHRASES) {
+      if (lower.startsWith(phrase) || lower.includes(" " + phrase)) {
+        found.push({ phrase, line });
+        break;
+      }
+    }
+  });
+  return found;
+}
+
+// Counts how many bullets contain a quantified result (a number, percent,
+// or currency amount) vs how many don't.
+function analyzeQuantifiedAchievements(bullets) {
+  const QUANT_RE = /\d|%|\$|₹|€|£/;
+  const quantified = bullets.filter(b => QUANT_RE.test(b)).length;
+  return { quantified, total: bullets.length };
+}
+
+// Flags bullets that are near-duplicates of each other (same core wording
+// reused across roles), using simple word-overlap similarity.
+function findDuplicateBullets(bullets) {
+  const norm = b => new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean));
+  const seen = [];
+  const duplicates = [];
+  for (const bullet of bullets) {
+    if (bullet.split(/\s+/).length < 4) continue; // skip very short lines
+    const words = norm(bullet);
+    for (const prior of seen) {
+      const overlap = [...words].filter(w => prior.words.has(w)).length;
+      const similarity = overlap / Math.max(words.size, prior.words.size);
+      if (similarity >= 0.75) {
+        duplicates.push(bullet);
+        break;
+      }
+    }
+    seen.push({ text: bullet, words });
+  }
+  return duplicates;
+}
+
+// Extracts candidate keywords from a pasted job description: known skill
+// keywords get priority, then the most frequent non-stopword terms fill
+// in the rest, up to a reasonable cap for display.
+function extractJDKeywords(jdText, maxKeywords) {
+  const lower = jdText.toLowerCase();
+  const keywords = [];
+
+  SKILL_KEYWORDS.forEach(skill => {
+    const escaped = skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("\\b" + escaped + "\\b", "i");
+    if (re.test(lower)) keywords.push(skill.name);
+  });
+
+  const wordCounts = {};
+  (lower.match(/[a-z][a-z+.#-]{2,}/g) || []).forEach(w => {
+    if (JD_STOPWORDS.has(w) || keywords.includes(w)) return;
+    wordCounts[w] = (wordCounts[w] || 0) + 1;
+  });
+  const frequent = Object.entries(wordCounts)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([w]) => w);
+
+  for (const w of frequent) {
+    if (keywords.length >= maxKeywords) break;
+    keywords.push(w);
+  }
+  return keywords.slice(0, maxKeywords);
+}
+
+// Compares resume text against job-description keywords and returns
+// which ones the resume already has vs which are missing.
+function matchAgainstJD(resumeText, jdText) {
+  const keywords = extractJDKeywords(jdText, 20);
+  const resumeLower = resumeText.toLowerCase();
+  const matched = [], missing = [];
+  keywords.forEach(kw => {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("\\b" + escaped + "\\b", "i");
+    (re.test(resumeLower) ? matched : missing).push(kw);
+  });
+  const ratio = keywords.length ? matched.length / keywords.length : null;
+  return { matched, missing, ratio };
+}
+
+// Checks whether any line in the resume matches one of the given section
+// headers (used for the Sections Found / Missing Sections check).
+function hasSectionHeader(lines, headers) {
+  return lines.some(l => {
+    const clean = l.trim().toLowerCase().replace(/[:\-–—]+$/, "").trim();
+    return headers.some(h => clean === h || clean.startsWith(h + " ") || clean.startsWith(h + ":") || clean.startsWith(h + "-"));
+  });
+}
+
+// Common "expected" keywords for tech/AI-leaning roles, used for the
+// "Missing Common Keywords" panel and folded into Keyword Coverage.
+const COMMON_TARGET_KEYWORDS = [
+  "SQL", "Git", "API", "Agile", "Project Management",
+  "Data Structures", "Algorithms", "Python", "JavaScript", "Problem Solving",
+  "Communication", "Documentation", "Testing", "CI/CD", "Optimization",
+  "Leadership", "Analysis", "Design"
+];
+
+function findMissingCommonKeywords(text) {
+  const lower = text.toLowerCase();
+  return COMMON_TARGET_KEYWORDS.filter(kw => {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("\\b" + escaped + "\\b", "i");
+    return !re.test(lower);
+  });
+}
+
+// =========================================================================
+// AI vs. Man Made Content Detection (OpenAI / ChatGPT / LLM pattern analyzer)
+// =========================================================================
+const AI_PATTERNS = [
+  // Direct AI leakage / prompt residuals
+  { re: /\bas an ai\b/i, label: "as an ai", weight: 45, isExplicit: true },
+  { re: /\bchatgpt\b/i, label: "ChatGPT mention", weight: 45, isExplicit: true },
+  { re: /\bopenai\b/i, label: "OpenAI mention", weight: 45, isExplicit: true },
+  { re: /\blanguage model\b/i, label: "language model", weight: 45, isExplicit: true },
+  { re: /\bhere is (a|the|your) resume\b/i, label: "here is a resume prompt", weight: 45, isExplicit: true },
+  { re: /\bcertainly,?\s+(here|below)\b/i, label: "certainly, here is...", weight: 45, isExplicit: true },
+  { re: /\[insert\s+[a-z_\s]+\]/i, label: "[insert placeholder]", weight: 35, isExplicit: true },
+
+  // Signature OpenAI / LLM vocabulary & clichés
+  { re: /\bdelve(d|s)?\s+into\b/i, label: "delve into", weight: 22 },
+  { re: /\btestament to\b/i, label: "testament to", weight: 22 },
+  { re: /\btapestry of\b/i, label: "tapestry of", weight: 22 },
+  { re: /\bbeacon of\b/i, label: "beacon of", weight: 20 },
+  { re: /\bunwavering commitment\b/i, label: "unwavering commitment", weight: 20 },
+  { re: /\bharness(ed|ing)?\s+the power\b/i, label: "harnessing the power", weight: 18 },
+  { re: /\bleverag(ed|ing)\s+cutting[- ]edge\b/i, label: "leveraging cutting-edge", weight: 18 },
+  { re: /\bspearhead(ed|ing)?\b/i, label: "spearheaded", weight: 12 },
+  { re: /\bproven track record\b/i, label: "proven track record", weight: 15 },
+  { re: /\bseamlessly integrat(e|ed|ing)\b/i, label: "seamlessly integrate", weight: 16 },
+  { re: /\bpivotal role\b/i, label: "pivotal role", weight: 15 },
+  { re: /\bdriv(e|ing|en)\s+impactful results\b/i, label: "driving impactful results", weight: 16 },
+  { re: /\borchestrat(ed|ing)\s+cross[- ]functional\b/i, label: "orchestrated cross-functional", weight: 16 },
+  { re: /\badept (at|in)\b/i, label: "adept at", weight: 14 },
+  { re: /\bfoster(ed|ing)?\s+a culture\b/i, label: "fostering a culture", weight: 15 },
+  { re: /\bpassionate and (results[- ]driven|detail[- ]oriented)\b/i, label: "passionate & results-driven", weight: 15 },
+  { re: /\bdynamic and forward[- ]thinking\b/i, label: "dynamic and forward-thinking", weight: 15 },
+  { re: /\bholistic approach\b/i, label: "holistic approach", weight: 14 },
+  { re: /\bin today('s)?\s+fast[- ]paced\b/i, label: "in today's fast-paced", weight: 15 },
+  { re: /\bin an ever[- ]evolving\b/i, label: "in an ever-evolving", weight: 15 },
+  { re: /\bmeticulously (crafted|designed|executed)\b/i, label: "meticulously crafted", weight: 15 },
+  { re: /\bcatalyst for (change|growth|success)\b/i, label: "catalyst for change", weight: 15 },
+  { re: /\bnavigating complex\b/i, label: "navigating complex", weight: 14 },
+  { re: /\bsynergistic\b/i, label: "synergistic", weight: 14 },
+  { re: /\bthrives in fast[- ]paced\b/i, label: "thrives in fast-paced", weight: 14 },
+  { re: /\belevate organizational performance\b/i, label: "elevate performance", weight: 15 },
+  { re: /\bkeen eye for detail\b/i, label: "keen eye for detail", weight: 12 },
+  { re: /\bresults[- ]driven professional\b/i, label: "results-driven professional", weight: 14 },
+  { re: /\bcommitted to excellence\b/i, label: "committed to excellence", weight: 12 },
+  { re: /\bdeep dive\b/i, label: "deep dive", weight: 10 },
+  { re: /\bthink outside the box\b/i, label: "think outside the box", weight: 12 }
+];
+
+function detectAiOrHuman(text) {
+  if (!text || typeof text !== "string") {
+    return { isAi: false, aiScore: 4, humanScore: 96, detectedPhrases: [], explicitLeak: false };
+  }
+
+  const detected = [];
+  let rawScore = 0;
+  let explicitLeak = false;
+
+  AI_PATTERNS.forEach(pat => {
+    if (pat.re.test(text)) {
+      detected.push(pat.label);
+      rawScore += pat.weight;
+      if (pat.isExplicit) explicitLeak = true;
+    }
+  });
+
+  // Check sentence length burstiness (AI typically produces uniform bullet cadence)
+  const sentences = text.split(/[.\n;•]+/).map(s => s.trim()).filter(s => s.split(/\s+/).length >= 5);
+  let uniformPenalty = 0;
+  if (sentences.length >= 6) {
+    const lengths = sentences.map(s => s.split(/\s+/).length);
+    const avg = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+    const variance = lengths.reduce((acc, len) => acc + Math.pow(len - avg, 2), 0) / lengths.length;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev < 3.2 && avg >= 12 && avg <= 25) {
+      uniformPenalty = 15;
+    }
+  }
+
+  let calculatedAiScore = Math.min(96, Math.round(rawScore + uniformPenalty));
+  if (explicitLeak) {
+    calculatedAiScore = Math.max(94, calculatedAiScore);
+  }
+
+  // Classification threshold
+  const isAi = explicitLeak || calculatedAiScore >= 35 || detected.length >= 3;
+  const finalAiScore = isAi ? Math.max(54, calculatedAiScore) : Math.min(24, Math.max(3, calculatedAiScore));
+  const humanScore = 100 - finalAiScore;
+
+  return {
+    isAi,
+    aiScore: finalAiScore,
+    humanScore,
+    detectedPhrases: detected,
+    explicitLeak
+  };
+}
+
+function findBuzzwords(text) {
+  const res = detectAiOrHuman(text);
+  return res.detectedPhrases;
+}
+
+// Counts total occurrences (not just presence) of every SKILL_KEYWORDS
+// entry, split into the four Keywords Analysis columns.
+function analyzeKeywordCategories(text) {
+  const lower = text.toLowerCase();
+  const cols = { lang: [], tool: [], soft: [] };
+  SKILL_KEYWORDS.forEach(skill => {
+    const escaped = skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("\\b" + escaped + "\\b", "gi");
+    const count = (lower.match(re) || []).length;
+    if (count > 0) cols[skill.type].push({ name: skill.name, count });
+  });
+  Object.keys(cols).forEach(k => cols[k].sort((a, b) => b.count - a.count));
+  return cols;
+}
+
+// Extracts likely "domain terms" — acronyms and repeated Title Case
+// phrases — that aren't already part of the fixed skill dictionary.
+function extractDomainTerms(text, skipLines) {
+  const skillNamesLower = new Set(SKILL_KEYWORDS.map(s => s.name.toLowerCase()));
+  const scanText = text.split("\n").slice(skipLines || 0).join("\n");
+
+  const counts = {};
+  (scanText.match(/\b[A-Z]{2,6}\b/g) || []).forEach(a => {
+    if (skillNamesLower.has(a.toLowerCase())) return;
+    counts[a] = (counts[a] || 0) + 1;
+  });
+
+  const phraseRe = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})\b/g;
+  let m;
+  while ((m = phraseRe.exec(scanText))) {
+    const phrase = m[1];
+    if (skillNamesLower.has(phrase.toLowerCase())) continue;
+    counts[phrase] = (counts[phrase] || 0) + 1;
+  }
+
+  const seen = new Map();
+  Object.entries(counts).forEach(([name, count]) => {
+    const key = name.toLowerCase();
+    if (!seen.has(key) || seen.get(key).count < count) seen.set(key, { name, count });
+  });
+  return [...seen.values()].sort((a, b) => b.count - a.count).slice(0, 10);
+}
+
+function countSyllables(word) {
+  word = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (!word) return 0;
+  if (word.length <= 3) return 1;
+  word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, "").replace(/^y/, "");
+  const matches = word.match(/[aeiouy]{1,2}/g);
+  return matches ? matches.length : 1;
+}
+
+function computeReadability(text) {
+  const sentences = text.split(/[.!?\n]+/).map(s => s.trim()).filter(s => s.split(/\s+/).filter(Boolean).length > 2);
+  const words = text.split(/\s+/).filter(Boolean);
+  const sentenceCount = Math.max(sentences.length, 1);
+  const wordCount = Math.max(words.length, 1);
+  const avgSentenceLength = Math.round((wordCount / sentenceCount) * 10) / 10;
+  const syllableCount = words.reduce((sum, w) => sum + countSyllables(w), 0);
+  const gradeLevel = Math.max(0, Math.round((0.39 * (wordCount / sentenceCount) + 11.8 * (syllableCount / wordCount) - 15.59) * 10) / 10);
+  return { avgSentenceLength, gradeLevel };
+}
+
+// Classifies a metric value against a target [min,max] range into
+// On Track / Could Improve / Needs Work, with a symmetric tolerance band.
+function classifyMetric(value, min, max) {
+  const range = max - min;
+  const margin = range || 1;
+  if (value >= min && value <= max) return { label: "On Track", cls: "ok" };
+  if ((value >= min - margin && value < min) || (value > max && value <= max + margin)) return { label: "Could Improve", cls: "warn" };
+  return { label: "Needs Work", cls: "bad" };
+}
+
+function renderMetricBox(container, label, value, displayValue, min, max, scaleMax, caption) {
+  const badge = classifyMetric(value, min, max);
+  const bandLeft = Math.max(0, Math.min(100, (min / scaleMax) * 100));
+  const bandWidth = Math.max(0, Math.min(100 - bandLeft, ((max - min) / scaleMax) * 100));
+  const markerPos = Math.max(1, Math.min(99, (value / scaleMax) * 100));
+  const box = document.createElement("div");
+  box.className = "metric-box";
+  box.innerHTML = `
       <div class="metric-box-label">${label}</div>
       <div class="metric-box-value">${displayValue}</div>
       <div class="metric-track">
@@ -1550,943 +1550,943 @@
       <div class="metric-badge ${badge.cls}">${badge.label}</div>
       <div class="metric-caption">${caption}</div>
     `;
-    container.appendChild(box);
-  }
+  container.appendChild(box);
+}
 
-  function renderScoreItem(container, label, pct){
-    pct = Math.max(0, Math.min(100, Math.round(pct)));
-    const item = document.createElement("div");
-    item.innerHTML = `
+function renderScoreItem(container, label, pct) {
+  pct = Math.max(0, Math.min(100, Math.round(pct)));
+  const item = document.createElement("div");
+  item.innerHTML = `
       <div class="score-item-head"><span class="score-label">${label}</span><span class="score-pct">${pct}%</span></div>
       <div class="score-bar-track"><div class="score-bar-fill" style="width:${pct}%;"></div></div>
     `;
-    container.appendChild(item);
+  container.appendChild(item);
+}
+
+function renderSectionPill(container, label, found) {
+  const pill = document.createElement("span");
+  pill.className = "section-pill " + (found ? "found" : "missing");
+  pill.innerHTML = (found ? "✓" : "!") + " " + label;
+  container.appendChild(pill);
+}
+
+function renderKwColumn(container, items) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!items || !items.length) {
+    container.innerHTML = "<div class='kw-empty'>None detected.</div>";
+    return;
+  }
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "kw-row";
+    row.innerHTML = `<span class="kw-name">${item.name}</span><span class="kw-count">${item.count}</span>`;
+    container.appendChild(row);
+  });
+}
+
+// =========================================================================
+// AI-POWERED RECOMMENDATIONS ENGINE (OpenRouter Free AI Models)
+// Upgrades Target Role & Skill Recommendations and ATS Improvement Recommendations
+// =========================================================================
+
+function updateAIRecsBadge(state, details) {
+  const badge = document.getElementById("aiRecsBadge");
+  if (!badge) return;
+  badge.className = "ai-mode-badge";
+  if (state === "loading") {
+    badge.classList.add("ai-active");
+    badge.textContent = "⏳ Analyzing with AI...";
+  } else if (state === "ai") {
+    badge.classList.add("ai-active");
+    const rawModel = details && details.model ? details.model : "Free AI";
+    const shortName = rawModel.split("/").pop().replace(":free", "") || "Free AI";
+    badge.textContent = `✨ AI-Powered (${shortName})`;
+  } else if (state === "fallback") {
+    badge.classList.add("fallback-active");
+    badge.textContent = "⚡ Rule-Based Fallback";
+  } else {
+    badge.classList.add("fallback-active");
+    badge.textContent = "⚡ Rule-Based";
+  }
+}
+
+function renderRuleBasedRecs(recs, mode) {
+  updateAIRecsBadge("normal");
+  const loadingEl = document.getElementById("aiRecsLoading");
+  if (loadingEl) loadingEl.style.display = "none";
+  const bannerEl = document.getElementById("aiSummaryBanner");
+  if (bannerEl) bannerEl.style.display = "none";
+  const fallbackBanner = document.getElementById("aiFallbackBanner");
+  if (fallbackBanner) fallbackBanner.style.display = "none";
+  const expContainer = document.getElementById("aiExpandedContainer");
+  if (expContainer) {
+    expContainer.style.display = "none";
+    expContainer.innerHTML = "";
   }
 
-  function renderSectionPill(container, label, found){
-    const pill = document.createElement("span");
-    pill.className = "section-pill " + (found ? "found" : "missing");
-    pill.innerHTML = (found ? "✓" : "!") + " " + label;
-    container.appendChild(pill);
-  }
+  const execIssuesEl = document.getElementById("execIssuesList");
+  const execFixesEl = document.getElementById("execFixesList");
+  if (!execIssuesEl || !execFixesEl) return;
+  execIssuesEl.innerHTML = "";
+  execFixesEl.innerHTML = "";
 
-  function renderKwColumn(container, items){
-    if (!container) return;
-    container.innerHTML = "";
-    if (!items || !items.length){
-      container.innerHTML = "<div class='kw-empty'>None detected.</div>";
-      return;
+  if (Array.isArray(recs) && recs.length > 0) {
+    recs.slice(0, 8).forEach((r, idx) => {
+      const prioTag = `Priority ${idx + 1}`;
+      const liIssue = document.createElement("li");
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "exec-icon";
+      iconSpan.textContent = "✕";
+      const divWrap = document.createElement("div");
+      const badgeSpan = document.createElement("span");
+      badgeSpan.className = `exec-badge ${r.type || "format"}`;
+      badgeSpan.textContent = `${prioTag}: ${r.badge || "Issue"}`;
+      const textSpan = document.createElement("span");
+      textSpan.textContent = r.issue || "";
+      divWrap.appendChild(badgeSpan);
+      divWrap.appendChild(document.createTextNode(" "));
+      divWrap.appendChild(textSpan);
+      liIssue.appendChild(iconSpan);
+      liIssue.appendChild(divWrap);
+      execIssuesEl.appendChild(liIssue);
+
+      const liFix = document.createElement("li");
+      const iconFixSpan = document.createElement("span");
+      iconFixSpan.className = "exec-icon";
+      iconFixSpan.textContent = "✓";
+      const divFixWrap = document.createElement("div");
+      const badgeFixSpan = document.createElement("span");
+      badgeFixSpan.className = `exec-badge fix-${r.type || "format"}`;
+      badgeFixSpan.textContent = `${prioTag}: ${r.badge || "Fix"}`;
+      const textFixSpan = document.createElement("span");
+      textFixSpan.textContent = r.fix || "";
+      divFixWrap.appendChild(badgeFixSpan);
+      divFixWrap.appendChild(document.createTextNode(" "));
+      divFixWrap.appendChild(textFixSpan);
+      liFix.appendChild(iconFixSpan);
+      liFix.appendChild(divFixWrap);
+      execFixesEl.appendChild(liFix);
+    });
+  } else {
+    const emptyIssue = document.createElement("li");
+    emptyIssue.className = "exec-empty";
+    emptyIssue.textContent = "No major issues detected — excellent resume structure!";
+    execIssuesEl.appendChild(emptyIssue);
+
+    const emptyFix = document.createElement("li");
+    emptyFix.className = "exec-empty";
+    emptyFix.textContent = "Keep tailoring your resume keywords for each target job position.";
+    execFixesEl.appendChild(emptyFix);
+  }
+}
+
+function applyAIRecommendations(data, context) {
+  const loadingEl = document.getElementById("aiRecsLoading");
+  if (loadingEl) loadingEl.style.display = "none";
+  const fallbackBanner = document.getElementById("aiFallbackBanner");
+  if (fallbackBanner) fallbackBanner.style.display = "none";
+
+  updateAIRecsBadge("ai", { model: data.model });
+
+  // Summary banner
+  const bannerEl = document.getElementById("aiSummaryBanner");
+  const summaryPill = document.getElementById("aiSummaryPill");
+  const summaryModel = document.getElementById("aiSummaryModel");
+  const summaryText = document.getElementById("aiSummaryText");
+  if (bannerEl && summaryText) {
+    bannerEl.style.display = "block";
+    if (summaryPill) {
+      summaryPill.textContent = context.mode === "ats" ? "✨ AI ATS Assessment" : "✨ AI Role Assessment";
     }
-    items.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "kw-row";
-      row.innerHTML = `<span class="kw-name">${item.name}</span><span class="kw-count">${item.count}</span>`;
-      container.appendChild(row);
+    if (summaryModel) {
+      const rawModel = data.model || "Free AI Model";
+      summaryModel.textContent = rawModel.split("/").pop().replace(":free", "") || "Free AI";
+    }
+    summaryText.textContent = data.summaryAssessment || (context.mode === "ats"
+      ? "AI evaluation of ATS readability, keyword distribution, and impact strength."
+      : "AI evaluation of target role competencies, skill gaps, and project roadmaps.");
+  }
+
+  const execIssuesEl = document.getElementById("execIssuesList");
+  const execFixesEl = document.getElementById("execFixesList");
+  if (!execIssuesEl || !execFixesEl) return;
+  execIssuesEl.innerHTML = "";
+  execFixesEl.innerHTML = "";
+
+  const recs = Array.isArray(data.recommendations) ? data.recommendations : [];
+
+  if (context.mode === "normal") {
+    // Role & Skill recommendations
+    recs.slice(0, 8).forEach((r, idx) => {
+      const prioTag = `Prio ${idx + 1}`;
+      const liIssue = document.createElement("li");
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "exec-icon";
+      iconSpan.textContent = "✕";
+      const divWrap = document.createElement("div");
+      const badgeSpan = document.createElement("span");
+      badgeSpan.className = "exec-badge " + ((r.priority || "").toLowerCase() === "high" ? "critical" : "keyword");
+      badgeSpan.textContent = `${prioTag} • ${r.priority || "High"}: ${r.skill || "Skill"}`;
+      const textSpan = document.createElement("span");
+      textSpan.textContent = r.whyMatters || "Important competency for this target role.";
+      divWrap.appendChild(badgeSpan);
+      divWrap.appendChild(document.createTextNode(" "));
+      divWrap.appendChild(textSpan);
+      liIssue.appendChild(iconSpan);
+      liIssue.appendChild(divWrap);
+      execIssuesEl.appendChild(liIssue);
+
+      const liFix = document.createElement("li");
+      const iconFixSpan = document.createElement("span");
+      iconFixSpan.className = "exec-icon";
+      iconFixSpan.textContent = "✓";
+      const divFixWrap = document.createElement("div");
+      const badgeFixSpan = document.createElement("span");
+      badgeFixSpan.className = "exec-badge fix-impact";
+      badgeFixSpan.textContent = `Action: ${r.category || "Skill"}`;
+      const textFixSpan = document.createElement("span");
+      textFixSpan.textContent = r.howToImprove || r.suggestedProject || "Develop hands-on experience and feature in resume.";
+      divFixWrap.appendChild(badgeFixSpan);
+      divFixWrap.appendChild(document.createTextNode(" "));
+      divFixWrap.appendChild(textFixSpan);
+      liFix.appendChild(iconFixSpan);
+      liFix.appendChild(divFixWrap);
+      execFixesEl.appendChild(liFix);
+    });
+  } else {
+    // ATS Improvement recommendations
+    recs.slice(0, 8).forEach((r, idx) => {
+      const prioTag = `Prio ${idx + 1}`;
+      const liIssue = document.createElement("li");
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "exec-icon";
+      iconSpan.textContent = "✕";
+      const divWrap = document.createElement("div");
+      const badgeSpan = document.createElement("span");
+      const sev = (r.severity || "Medium").toLowerCase();
+      badgeSpan.className = "exec-badge " + (sev === "critical" || sev === "high" ? "critical" : "format");
+      badgeSpan.textContent = `${prioTag} • ${r.severity || "Medium"}: ${r.issueTitle || "Issue"}`;
+      const textSpan = document.createElement("span");
+      textSpan.textContent = r.whyItMatters || r.description || "Identified ATS parsing or readability improvement.";
+      divWrap.appendChild(badgeSpan);
+      divWrap.appendChild(document.createTextNode(" "));
+      divWrap.appendChild(textSpan);
+      liIssue.appendChild(iconSpan);
+      liIssue.appendChild(divWrap);
+      execIssuesEl.appendChild(liIssue);
+
+      const liFix = document.createElement("li");
+      const iconFixSpan = document.createElement("span");
+      iconFixSpan.className = "exec-icon";
+      iconFixSpan.textContent = "✓";
+      const divFixWrap = document.createElement("div");
+      const badgeFixSpan = document.createElement("span");
+      badgeFixSpan.className = "exec-badge fix-format";
+      badgeFixSpan.textContent = `Fix: ${r.severity || "Medium"}`;
+      const textFixSpan = document.createElement("span");
+      textFixSpan.textContent = r.improvementInstructions || r.expectedBenefit || "Implement the recommended fix.";
+      divFixWrap.appendChild(badgeFixSpan);
+      divFixWrap.appendChild(document.createTextNode(" "));
+      divFixWrap.appendChild(textFixSpan);
+      liFix.appendChild(iconFixSpan);
+      liFix.appendChild(divFixWrap);
+      execFixesEl.appendChild(liFix);
     });
   }
 
-  // =========================================================================
-  // AI-POWERED RECOMMENDATIONS ENGINE (OpenRouter Free AI Models)
-  // Upgrades Target Role & Skill Recommendations and ATS Improvement Recommendations
-  // =========================================================================
-
-  function updateAIRecsBadge(state, details) {
-    const badge = document.getElementById("aiRecsBadge");
-    if (!badge) return;
-    badge.className = "ai-mode-badge";
-    if (state === "loading") {
-      badge.classList.add("ai-active");
-      badge.textContent = "⏳ Analyzing with AI...";
-    } else if (state === "ai") {
-      badge.classList.add("ai-active");
-      const rawModel = details && details.model ? details.model : "Free AI";
-      const shortName = rawModel.split("/").pop().replace(":free", "") || "Free AI";
-      badge.textContent = `✨ AI-Powered (${shortName})`;
-    } else if (state === "fallback") {
-      badge.classList.add("fallback-active");
-      badge.textContent = "⚡ Rule-Based Fallback";
-    } else {
-      badge.classList.add("fallback-active");
-      badge.textContent = "⚡ Rule-Based";
-    }
-  }
-
-  function renderRuleBasedRecs(recs, mode) {
-    updateAIRecsBadge("normal");
-    const loadingEl = document.getElementById("aiRecsLoading");
-    if (loadingEl) loadingEl.style.display = "none";
-    const bannerEl = document.getElementById("aiSummaryBanner");
-    if (bannerEl) bannerEl.style.display = "none";
-    const fallbackBanner = document.getElementById("aiFallbackBanner");
-    if (fallbackBanner) fallbackBanner.style.display = "none";
-    const expContainer = document.getElementById("aiExpandedContainer");
-    if (expContainer) {
-      expContainer.style.display = "none";
-      expContainer.innerHTML = "";
-    }
-
-    const execIssuesEl = document.getElementById("execIssuesList");
-    const execFixesEl = document.getElementById("execFixesList");
-    if (!execIssuesEl || !execFixesEl) return;
-    execIssuesEl.innerHTML = "";
-    execFixesEl.innerHTML = "";
-
-    if (Array.isArray(recs) && recs.length > 0) {
-      recs.slice(0, 8).forEach((r, idx) => {
-        const prioTag = `Priority ${idx + 1}`;
-        const liIssue = document.createElement("li");
-        const iconSpan = document.createElement("span");
-        iconSpan.className = "exec-icon";
-        iconSpan.textContent = "✕";
-        const divWrap = document.createElement("div");
-        const badgeSpan = document.createElement("span");
-        badgeSpan.className = `exec-badge ${r.type || "format"}`;
-        badgeSpan.textContent = `${prioTag}: ${r.badge || "Issue"}`;
-        const textSpan = document.createElement("span");
-        textSpan.textContent = r.issue || "";
-        divWrap.appendChild(badgeSpan);
-        divWrap.appendChild(document.createTextNode(" "));
-        divWrap.appendChild(textSpan);
-        liIssue.appendChild(iconSpan);
-        liIssue.appendChild(divWrap);
-        execIssuesEl.appendChild(liIssue);
-
-        const liFix = document.createElement("li");
-        const iconFixSpan = document.createElement("span");
-        iconFixSpan.className = "exec-icon";
-        iconFixSpan.textContent = "✓";
-        const divFixWrap = document.createElement("div");
-        const badgeFixSpan = document.createElement("span");
-        badgeFixSpan.className = `exec-badge fix-${r.type || "format"}`;
-        badgeFixSpan.textContent = `${prioTag}: ${r.badge || "Fix"}`;
-        const textFixSpan = document.createElement("span");
-        textFixSpan.textContent = r.fix || "";
-        divFixWrap.appendChild(badgeFixSpan);
-        divFixWrap.appendChild(document.createTextNode(" "));
-        divFixWrap.appendChild(textFixSpan);
-        liFix.appendChild(iconFixSpan);
-        liFix.appendChild(divFixWrap);
-        execFixesEl.appendChild(liFix);
-      });
-    } else {
-      const emptyIssue = document.createElement("li");
-      emptyIssue.className = "exec-empty";
-      emptyIssue.textContent = "No major issues detected — excellent resume structure!";
-      execIssuesEl.appendChild(emptyIssue);
-
-      const emptyFix = document.createElement("li");
-      emptyFix.className = "exec-empty";
-      emptyFix.textContent = "Keep tailoring your resume keywords for each target job position.";
-      execFixesEl.appendChild(emptyFix);
-    }
-  }
-
-  function applyAIRecommendations(data, context) {
-    const loadingEl = document.getElementById("aiRecsLoading");
-    if (loadingEl) loadingEl.style.display = "none";
-    const fallbackBanner = document.getElementById("aiFallbackBanner");
-    if (fallbackBanner) fallbackBanner.style.display = "none";
-
-    updateAIRecsBadge("ai", { model: data.model });
-
-    // Summary banner
-    const bannerEl = document.getElementById("aiSummaryBanner");
-    const summaryPill = document.getElementById("aiSummaryPill");
-    const summaryModel = document.getElementById("aiSummaryModel");
-    const summaryText = document.getElementById("aiSummaryText");
-    if (bannerEl && summaryText) {
-      bannerEl.style.display = "block";
-      if (summaryPill) {
-        summaryPill.textContent = context.mode === "ats" ? "✨ AI ATS Assessment" : "✨ AI Role Assessment";
-      }
-      if (summaryModel) {
-        const rawModel = data.model || "Free AI Model";
-        summaryModel.textContent = rawModel.split("/").pop().replace(":free", "") || "Free AI";
-      }
-      summaryText.textContent = data.summaryAssessment || (context.mode === "ats"
-        ? "AI evaluation of ATS readability, keyword distribution, and impact strength."
-        : "AI evaluation of target role competencies, skill gaps, and project roadmaps.");
-    }
-
-    const execIssuesEl = document.getElementById("execIssuesList");
-    const execFixesEl = document.getElementById("execFixesList");
-    if (!execIssuesEl || !execFixesEl) return;
-    execIssuesEl.innerHTML = "";
-    execFixesEl.innerHTML = "";
-
-    const recs = Array.isArray(data.recommendations) ? data.recommendations : [];
+  // Expanded Cards Container
+  const expContainer = document.getElementById("aiExpandedContainer");
+  if (expContainer) {
+    expContainer.innerHTML = "";
+    expContainer.style.display = "grid";
 
     if (context.mode === "normal") {
-      // Role & Skill recommendations
-      recs.slice(0, 8).forEach((r, idx) => {
-        const prioTag = `Prio ${idx + 1}`;
-        const liIssue = document.createElement("li");
-        const iconSpan = document.createElement("span");
-        iconSpan.className = "exec-icon";
-        iconSpan.textContent = "✕";
-        const divWrap = document.createElement("div");
-        const badgeSpan = document.createElement("span");
-        badgeSpan.className = "exec-badge " + ((r.priority || "").toLowerCase() === "high" ? "critical" : "keyword");
-        badgeSpan.textContent = `${prioTag} • ${r.priority || "High"}: ${r.skill || "Skill"}`;
-        const textSpan = document.createElement("span");
-        textSpan.textContent = r.whyMatters || "Important competency for this target role.";
-        divWrap.appendChild(badgeSpan);
-        divWrap.appendChild(document.createTextNode(" "));
-        divWrap.appendChild(textSpan);
-        liIssue.appendChild(iconSpan);
-        liIssue.appendChild(divWrap);
-        execIssuesEl.appendChild(liIssue);
+      recs.forEach(r => {
+        const card = document.createElement("div");
+        card.className = "ai-rec-card";
 
-        const liFix = document.createElement("li");
-        const iconFixSpan = document.createElement("span");
-        iconFixSpan.className = "exec-icon";
-        iconFixSpan.textContent = "✓";
-        const divFixWrap = document.createElement("div");
-        const badgeFixSpan = document.createElement("span");
-        badgeFixSpan.className = "exec-badge fix-impact";
-        badgeFixSpan.textContent = `Action: ${r.category || "Skill"}`;
-        const textFixSpan = document.createElement("span");
-        textFixSpan.textContent = r.howToImprove || r.suggestedProject || "Develop hands-on experience and feature in resume.";
-        divFixWrap.appendChild(badgeFixSpan);
-        divFixWrap.appendChild(document.createTextNode(" "));
-        divFixWrap.appendChild(textFixSpan);
-        liFix.appendChild(iconFixSpan);
-        liFix.appendChild(divFixWrap);
-        execFixesEl.appendChild(liFix);
+        const head = document.createElement("div");
+        head.className = "ai-rec-card-head";
+
+        const title = document.createElement("h4");
+        title.className = "ai-rec-card-title";
+        title.textContent = r.skill || "Target Skill";
+
+        const badgeGroup = document.createElement("div");
+        badgeGroup.className = "ai-rec-badge-group";
+
+        const prioBadge = document.createElement("span");
+        const prioLower = (r.priority || "Medium").toLowerCase();
+        prioBadge.className = `ai-prio-badge ${prioLower}`;
+        prioBadge.textContent = `${r.priority || "Medium"} Priority`;
+
+        const catBadge = document.createElement("span");
+        catBadge.className = "exec-badge format";
+        catBadge.textContent = r.category || "Skill";
+
+        badgeGroup.appendChild(prioBadge);
+        badgeGroup.appendChild(catBadge);
+        head.appendChild(title);
+        head.appendChild(badgeGroup);
+        card.appendChild(head);
+
+        if (r.whyMatters) {
+          const whyP = document.createElement("p");
+          whyP.className = "ai-rec-desc";
+          const whyLbl = document.createElement("strong");
+          whyLbl.textContent = "Why it matters: ";
+          whyP.appendChild(whyLbl);
+          whyP.appendChild(document.createTextNode(r.whyMatters));
+          card.appendChild(whyP);
+        }
+
+        if (r.howToImprove) {
+          const howP = document.createElement("p");
+          howP.className = "ai-rec-desc";
+          const howLbl = document.createElement("strong");
+          howLbl.textContent = "How to develop: ";
+          howP.appendChild(howLbl);
+          howP.appendChild(document.createTextNode(r.howToImprove));
+          card.appendChild(howP);
+        }
+
+        if (r.suggestedProject) {
+          const projBox = document.createElement("div");
+          projBox.className = "ai-project-box";
+          const projLbl = document.createElement("strong");
+          projLbl.textContent = "Suggested Project: ";
+          projBox.appendChild(projLbl);
+          projBox.appendChild(document.createTextNode(r.suggestedProject));
+          card.appendChild(projBox);
+        }
+
+        if (r.learningRoadmap) {
+          const roadBox = document.createElement("div");
+          roadBox.className = "ai-roadmap-box";
+          const roadLbl = document.createElement("strong");
+          roadLbl.textContent = "Learning Roadmap: ";
+          roadBox.appendChild(roadLbl);
+          roadBox.appendChild(document.createTextNode(r.learningRoadmap));
+          card.appendChild(roadBox);
+        }
+
+        expContainer.appendChild(card);
       });
     } else {
-      // ATS Improvement recommendations
-      recs.slice(0, 8).forEach((r, idx) => {
-        const prioTag = `Prio ${idx + 1}`;
-        const liIssue = document.createElement("li");
-        const iconSpan = document.createElement("span");
-        iconSpan.className = "exec-icon";
-        iconSpan.textContent = "✕";
-        const divWrap = document.createElement("div");
-        const badgeSpan = document.createElement("span");
-        const sev = (r.severity || "Medium").toLowerCase();
-        badgeSpan.className = "exec-badge " + (sev === "critical" || sev === "high" ? "critical" : "format");
-        badgeSpan.textContent = `${prioTag} • ${r.severity || "Medium"}: ${r.issueTitle || "Issue"}`;
-        const textSpan = document.createElement("span");
-        textSpan.textContent = r.whyItMatters || r.description || "Identified ATS parsing or readability improvement.";
-        divWrap.appendChild(badgeSpan);
-        divWrap.appendChild(document.createTextNode(" "));
-        divWrap.appendChild(textSpan);
-        liIssue.appendChild(iconSpan);
-        liIssue.appendChild(divWrap);
-        execIssuesEl.appendChild(liIssue);
+      recs.forEach(r => {
+        const card = document.createElement("div");
+        card.className = "ai-rec-card";
 
-        const liFix = document.createElement("li");
-        const iconFixSpan = document.createElement("span");
-        iconFixSpan.className = "exec-icon";
-        iconFixSpan.textContent = "✓";
-        const divFixWrap = document.createElement("div");
-        const badgeFixSpan = document.createElement("span");
-        badgeFixSpan.className = "exec-badge fix-format";
-        badgeFixSpan.textContent = `Fix: ${r.severity || "Medium"}`;
-        const textFixSpan = document.createElement("span");
-        textFixSpan.textContent = r.improvementInstructions || r.expectedBenefit || "Implement the recommended fix.";
-        divFixWrap.appendChild(badgeFixSpan);
-        divFixWrap.appendChild(document.createTextNode(" "));
-        divFixWrap.appendChild(textFixSpan);
-        liFix.appendChild(iconFixSpan);
-        liFix.appendChild(divFixWrap);
-        execFixesEl.appendChild(liFix);
+        const head = document.createElement("div");
+        head.className = "ai-rec-card-head";
+
+        const title = document.createElement("h4");
+        title.className = "ai-rec-card-title";
+        title.textContent = r.issueTitle || "ATS Improvement Item";
+
+        const prioBadge = document.createElement("span");
+        const sevLower = (r.severity || "Medium").toLowerCase();
+        prioBadge.className = `ai-prio-badge ${sevLower}`;
+        prioBadge.textContent = `${r.severity || "Medium"} Severity`;
+
+        head.appendChild(title);
+        head.appendChild(prioBadge);
+        card.appendChild(head);
+
+        if (r.description) {
+          const descP = document.createElement("p");
+          descP.className = "ai-rec-desc";
+          descP.appendChild(document.createTextNode(r.description));
+          card.appendChild(descP);
+        }
+
+        if (r.whyItMatters) {
+          const whyP = document.createElement("p");
+          whyP.className = "ai-rec-desc";
+          const whyLbl = document.createElement("strong");
+          whyLbl.textContent = "Why it matters: ";
+          whyP.appendChild(whyLbl);
+          whyP.appendChild(document.createTextNode(r.whyItMatters));
+          card.appendChild(whyP);
+        }
+
+        if (r.improvementInstructions) {
+          const instP = document.createElement("p");
+          instP.className = "ai-rec-desc";
+          const instLbl = document.createElement("strong");
+          instLbl.textContent = "Exact improvement instruction: ";
+          instP.appendChild(instLbl);
+          instP.appendChild(document.createTextNode(r.improvementInstructions));
+          card.appendChild(instP);
+        }
+
+        if (r.beforeExample && r.afterExample) {
+          const grid = document.createElement("div");
+          grid.className = "ai-before-after-grid";
+
+          const beforeBox = document.createElement("div");
+          beforeBox.className = "ai-ba-box before";
+          const bLabel = document.createElement("span");
+          bLabel.className = "ai-ba-label";
+          bLabel.textContent = "Before (Current Bullet / Text)";
+          beforeBox.appendChild(bLabel);
+          beforeBox.appendChild(document.createTextNode(r.beforeExample));
+
+          const afterBox = document.createElement("div");
+          afterBox.className = "ai-ba-box after";
+          const aLabel = document.createElement("span");
+          aLabel.className = "ai-ba-label";
+          aLabel.textContent = "After (AI Optimized Example)";
+          afterBox.appendChild(aLabel);
+          afterBox.appendChild(document.createTextNode(r.afterExample));
+
+          grid.appendChild(beforeBox);
+          grid.appendChild(afterBox);
+          card.appendChild(grid);
+        }
+
+        if (r.expectedBenefit) {
+          const benBox = document.createElement("div");
+          benBox.className = "ai-roadmap-box";
+          const benLbl = document.createElement("strong");
+          benLbl.textContent = "Expected Benefit: ";
+          benBox.appendChild(benLbl);
+          benBox.appendChild(document.createTextNode(r.expectedBenefit));
+          card.appendChild(benBox);
+        }
+
+        expContainer.appendChild(card);
       });
-    }
-
-    // Expanded Cards Container
-    const expContainer = document.getElementById("aiExpandedContainer");
-    if (expContainer) {
-      expContainer.innerHTML = "";
-      expContainer.style.display = "grid";
-
-      if (context.mode === "normal") {
-        recs.forEach(r => {
-          const card = document.createElement("div");
-          card.className = "ai-rec-card";
-
-          const head = document.createElement("div");
-          head.className = "ai-rec-card-head";
-
-          const title = document.createElement("h4");
-          title.className = "ai-rec-card-title";
-          title.textContent = r.skill || "Target Skill";
-
-          const badgeGroup = document.createElement("div");
-          badgeGroup.className = "ai-rec-badge-group";
-
-          const prioBadge = document.createElement("span");
-          const prioLower = (r.priority || "Medium").toLowerCase();
-          prioBadge.className = `ai-prio-badge ${prioLower}`;
-          prioBadge.textContent = `${r.priority || "Medium"} Priority`;
-
-          const catBadge = document.createElement("span");
-          catBadge.className = "exec-badge format";
-          catBadge.textContent = r.category || "Skill";
-
-          badgeGroup.appendChild(prioBadge);
-          badgeGroup.appendChild(catBadge);
-          head.appendChild(title);
-          head.appendChild(badgeGroup);
-          card.appendChild(head);
-
-          if (r.whyMatters) {
-            const whyP = document.createElement("p");
-            whyP.className = "ai-rec-desc";
-            const whyLbl = document.createElement("strong");
-            whyLbl.textContent = "Why it matters: ";
-            whyP.appendChild(whyLbl);
-            whyP.appendChild(document.createTextNode(r.whyMatters));
-            card.appendChild(whyP);
-          }
-
-          if (r.howToImprove) {
-            const howP = document.createElement("p");
-            howP.className = "ai-rec-desc";
-            const howLbl = document.createElement("strong");
-            howLbl.textContent = "How to develop: ";
-            howP.appendChild(howLbl);
-            howP.appendChild(document.createTextNode(r.howToImprove));
-            card.appendChild(howP);
-          }
-
-          if (r.suggestedProject) {
-            const projBox = document.createElement("div");
-            projBox.className = "ai-project-box";
-            const projLbl = document.createElement("strong");
-            projLbl.textContent = "Suggested Project: ";
-            projBox.appendChild(projLbl);
-            projBox.appendChild(document.createTextNode(r.suggestedProject));
-            card.appendChild(projBox);
-          }
-
-          if (r.learningRoadmap) {
-            const roadBox = document.createElement("div");
-            roadBox.className = "ai-roadmap-box";
-            const roadLbl = document.createElement("strong");
-            roadLbl.textContent = "Learning Roadmap: ";
-            roadBox.appendChild(roadLbl);
-            roadBox.appendChild(document.createTextNode(r.learningRoadmap));
-            card.appendChild(roadBox);
-          }
-
-          expContainer.appendChild(card);
-        });
-      } else {
-        recs.forEach(r => {
-          const card = document.createElement("div");
-          card.className = "ai-rec-card";
-
-          const head = document.createElement("div");
-          head.className = "ai-rec-card-head";
-
-          const title = document.createElement("h4");
-          title.className = "ai-rec-card-title";
-          title.textContent = r.issueTitle || "ATS Improvement Item";
-
-          const prioBadge = document.createElement("span");
-          const sevLower = (r.severity || "Medium").toLowerCase();
-          prioBadge.className = `ai-prio-badge ${sevLower}`;
-          prioBadge.textContent = `${r.severity || "Medium"} Severity`;
-
-          head.appendChild(title);
-          head.appendChild(prioBadge);
-          card.appendChild(head);
-
-          if (r.description) {
-            const descP = document.createElement("p");
-            descP.className = "ai-rec-desc";
-            descP.appendChild(document.createTextNode(r.description));
-            card.appendChild(descP);
-          }
-
-          if (r.whyItMatters) {
-            const whyP = document.createElement("p");
-            whyP.className = "ai-rec-desc";
-            const whyLbl = document.createElement("strong");
-            whyLbl.textContent = "Why it matters: ";
-            whyP.appendChild(whyLbl);
-            whyP.appendChild(document.createTextNode(r.whyItMatters));
-            card.appendChild(whyP);
-          }
-
-          if (r.improvementInstructions) {
-            const instP = document.createElement("p");
-            instP.className = "ai-rec-desc";
-            const instLbl = document.createElement("strong");
-            instLbl.textContent = "Exact improvement instruction: ";
-            instP.appendChild(instLbl);
-            instP.appendChild(document.createTextNode(r.improvementInstructions));
-            card.appendChild(instP);
-          }
-
-          if (r.beforeExample && r.afterExample) {
-            const grid = document.createElement("div");
-            grid.className = "ai-before-after-grid";
-
-            const beforeBox = document.createElement("div");
-            beforeBox.className = "ai-ba-box before";
-            const bLabel = document.createElement("span");
-            bLabel.className = "ai-ba-label";
-            bLabel.textContent = "Before (Current Bullet / Text)";
-            beforeBox.appendChild(bLabel);
-            beforeBox.appendChild(document.createTextNode(r.beforeExample));
-
-            const afterBox = document.createElement("div");
-            afterBox.className = "ai-ba-box after";
-            const aLabel = document.createElement("span");
-            aLabel.className = "ai-ba-label";
-            aLabel.textContent = "After (AI Optimized Example)";
-            afterBox.appendChild(aLabel);
-            afterBox.appendChild(document.createTextNode(r.afterExample));
-
-            grid.appendChild(beforeBox);
-            grid.appendChild(afterBox);
-            card.appendChild(grid);
-          }
-
-          if (r.expectedBenefit) {
-            const benBox = document.createElement("div");
-            benBox.className = "ai-roadmap-box";
-            const benLbl = document.createElement("strong");
-            benLbl.textContent = "Expected Benefit: ";
-            benBox.appendChild(benLbl);
-            benBox.appendChild(document.createTextNode(r.expectedBenefit));
-            card.appendChild(benBox);
-          }
-
-          expContainer.appendChild(card);
-        });
-      }
     }
   }
+}
 
-  async function triggerAIRecommendations(context) {
-    if (!context || !context.resumeText) return;
+async function triggerAIRecommendations(context) {
+  if (!context || !context.resumeText) return;
 
-    const toggle = document.getElementById("aiRecsToggle");
-    const isAiEnabled = toggle ? toggle.checked : true;
-    if (!isAiEnabled) {
-      updateAIRecsBadge("normal");
-      const fallbackBanner = document.getElementById("aiFallbackBanner");
-      if (fallbackBanner) {
-        fallbackBanner.style.display = "flex";
-        const fbText = document.getElementById("aiFallbackText");
-        if (fbText) fbText.textContent = "AI Insights are disabled. Displaying high-precision rule-based recommendations.";
-      }
-      return;
-    }
-
-    const cacheKey = `${context.mode}_${context.targetRole || ""}_${context.resumeText.length}_${context.resumeText.slice(0, 100)}`;
-    if (aiRecsCache.has(cacheKey)) {
-      applyAIRecommendations(aiRecsCache.get(cacheKey), context);
-      return;
-    }
-
-    if (currentAIAbortController) {
-      currentAIAbortController.abort();
-    }
-    currentAIAbortController = new AbortController();
-
-    updateAIRecsBadge("loading");
-    const loadingEl = document.getElementById("aiRecsLoading");
-    const loadingTitle = document.getElementById("aiLoadingTitle");
-    const loadingSub = document.getElementById("aiLoadingSubtitle");
-    if (loadingEl) loadingEl.style.display = "flex";
-    if (loadingTitle) {
-      loadingTitle.textContent = context.mode === "ats"
-        ? "Analyzing ATS formatting & keywords with Free AI..."
-        : "Analyzing role skills & career roadmap with Free AI...";
-    }
-    if (loadingSub) {
-      loadingSub.textContent = "Querying OpenRouter Free AI model for structured, personalized recommendations...";
-    }
-
+  const toggle = document.getElementById("aiRecsToggle");
+  const isAiEnabled = toggle ? toggle.checked : true;
+  if (!isAiEnabled) {
+    updateAIRecsBadge("normal");
     const fallbackBanner = document.getElementById("aiFallbackBanner");
-    if (fallbackBanner) fallbackBanner.style.display = "none";
+    if (fallbackBanner) {
+      fallbackBanner.style.display = "flex";
+      const fbText = document.getElementById("aiFallbackText");
+      if (fbText) fbText.textContent = "AI Insights are disabled. Displaying high-precision rule-based recommendations.";
+    }
+    return;
+  }
 
-    const endpoint = context.mode === "ats"
-      ? "/api/ai/ats-improvement-recommendations"
-      : "/api/ai/target-role-recommendations";
+  const cacheKey = `${context.mode}_${context.targetRole || ""}_${context.resumeText.length}_${context.resumeText.slice(0, 100)}`;
+  if (aiRecsCache.has(cacheKey)) {
+    applyAIRecommendations(aiRecsCache.get(cacheKey), context);
+    return;
+  }
 
-    const payload = context.mode === "ats"
-      ? {
-          resumeText: context.resumeText,
-          overallScore: context.overallScore,
-          scoreBreakdown: context.scoreBreakdown,
-          missingSections: context.missingSections,
-          missingKeywords: context.missingKeywords,
-          weakPhrases: context.weakPhrases,
-          quantifiedStats: context.quantifiedStats,
-          formattingIssues: context.formattingIssues,
-          ruleBasedRecs: context.ruleBasedRecs
-        }
-      : {
-          resumeText: context.resumeText,
-          targetRole: context.targetRole,
-          customRole: context.customRole,
-          jobDescription: context.jobDescription,
-          matchedSkills: context.matchedSkills,
-          missingSkills: context.missingSkills,
-          jdAnalysis: context.jdAnalysis,
-          experience: lastAnalysisData ? lastAnalysisData.experience : "",
-          projects: lastAnalysisData ? lastAnalysisData.projects : ""
-        };
+  if (currentAIAbortController) {
+    currentAIAbortController.abort();
+  }
+  currentAIAbortController = new AbortController();
 
-    try {
-      const resp = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: currentAIAbortController.signal
-      });
+  updateAIRecsBadge("loading");
+  const loadingEl = document.getElementById("aiRecsLoading");
+  const loadingTitle = document.getElementById("aiLoadingTitle");
+  const loadingSub = document.getElementById("aiLoadingSubtitle");
+  if (loadingEl) loadingEl.style.display = "flex";
+  if (loadingTitle) {
+    loadingTitle.textContent = context.mode === "ats"
+      ? "Analyzing ATS formatting & keywords with Free AI..."
+      : "Analyzing role skills & career roadmap with Free AI...";
+  }
+  if (loadingSub) {
+    loadingSub.textContent = "Querying OpenRouter Free AI model for structured, personalized recommendations...";
+  }
 
-      const resData = await resp.json().catch(() => ({}));
+  const fallbackBanner = document.getElementById("aiFallbackBanner");
+  if (fallbackBanner) fallbackBanner.style.display = "none";
 
-      if (resp.ok && resData.success && resData.aiPowered && Array.isArray(resData.recommendations) && resData.recommendations.length > 0) {
-        aiRecsCache.set(cacheKey, resData);
-        applyAIRecommendations(resData, context);
-      } else {
-        // Fallback gracefully
-        if (loadingEl) loadingEl.style.display = "none";
-        updateAIRecsBadge("fallback");
-        if (fallbackBanner) {
-          fallbackBanner.style.display = "flex";
-          const fbText = document.getElementById("aiFallbackText");
-          if (fbText) {
-            fbText.textContent = resData.message || "Free AI model temporarily unavailable or key not configured. Displaying high-precision rule-based recommendations.";
-          }
-        }
-      }
-    } catch (err) {
-      if (err.name === "AbortError") return;
+  const endpoint = context.mode === "ats"
+    ? "/api/ai/ats-improvement-recommendations"
+    : "/api/ai/target-role-recommendations";
+
+  const payload = context.mode === "ats"
+    ? {
+      resumeText: context.resumeText,
+      overallScore: context.overallScore,
+      scoreBreakdown: context.scoreBreakdown,
+      missingSections: context.missingSections,
+      missingKeywords: context.missingKeywords,
+      weakPhrases: context.weakPhrases,
+      quantifiedStats: context.quantifiedStats,
+      formattingIssues: context.formattingIssues,
+      ruleBasedRecs: context.ruleBasedRecs
+    }
+    : {
+      resumeText: context.resumeText,
+      targetRole: context.targetRole,
+      customRole: context.customRole,
+      jobDescription: context.jobDescription,
+      matchedSkills: context.matchedSkills,
+      missingSkills: context.missingSkills,
+      jdAnalysis: context.jdAnalysis,
+      experience: lastAnalysisData ? lastAnalysisData.experience : "",
+      projects: lastAnalysisData ? lastAnalysisData.projects : ""
+    };
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: currentAIAbortController.signal
+    });
+
+    const resData = await resp.json().catch(() => ({}));
+
+    if (resp.ok && resData.success && resData.aiPowered && Array.isArray(resData.recommendations) && resData.recommendations.length > 0) {
+      aiRecsCache.set(cacheKey, resData);
+      applyAIRecommendations(resData, context);
+    } else {
+      // Fallback gracefully
       if (loadingEl) loadingEl.style.display = "none";
       updateAIRecsBadge("fallback");
       if (fallbackBanner) {
         fallbackBanner.style.display = "flex";
         const fbText = document.getElementById("aiFallbackText");
         if (fbText) {
-          fbText.textContent = "Network issue contacting AI provider. Displaying high-precision rule-based recommendations.";
+          fbText.textContent = resData.message || "Free AI model temporarily unavailable or key not configured. Displaying high-precision rule-based recommendations.";
         }
+      }
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    if (loadingEl) loadingEl.style.display = "none";
+    updateAIRecsBadge("fallback");
+    if (fallbackBanner) {
+      fallbackBanner.style.display = "flex";
+      const fbText = document.getElementById("aiFallbackText");
+      if (fbText) {
+        fbText.textContent = "Network issue contacting AI provider. Displaying high-precision rule-based recommendations.";
+      }
+    }
+  }
+}
+
+function analyzeText(text, filename) {
+  const targetRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "Target Job Role";
+  const roleProfile = getRoleProfile(selectedTargetJobRole, customJobRoleText);
+
+  // Update target role badge in results header
+  const roleBadgeEl = document.getElementById("targetRoleHeaderBadge");
+  const targetRoleChipBar = document.getElementById("targetRoleChipBar");
+  const targetRoleDisplayVal = document.getElementById("targetRoleDisplayVal");
+  const effectiveRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "";
+
+  if (roleBadgeEl) {
+    if (analysisMode === "ats") {
+      roleBadgeEl.style.display = "none";
+    } else {
+      roleBadgeEl.style.display = "inline-flex";
+      roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(effectiveRoleTitle || "Software Developer")}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
+    }
+  }
+
+  if (targetRoleChipBar) {
+    if (analysisMode === "ats") {
+      targetRoleChipBar.style.display = "none";
+    } else {
+      targetRoleChipBar.style.display = "inline-flex";
+      if (targetRoleDisplayVal) {
+        targetRoleDisplayVal.textContent = effectiveRoleTitle || "Software Developer";
       }
     }
   }
 
-  function analyzeText(text, filename){
-    const targetRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "Target Job Role";
-    const roleProfile = getRoleProfile(selectedTargetJobRole, customJobRoleText);
+  const parsedSections = parseAllResumeSections(text);
+  const lines = text.split("\n");
+  const name = extractName(text);
+  const emailMatch = text.match(EMAIL_RE);
+  const phoneMatch = text.match(PHONE_RE);
+  const linkedinMatch = text.match(LINKEDIN_RE);
+  const githubMatch = text.match(GITHUB_RE);
 
-    // Update target role badge in results header
-    const roleBadgeEl = document.getElementById("targetRoleHeaderBadge");
-    const targetRoleChipBar = document.getElementById("targetRoleChipBar");
-    const targetRoleDisplayVal = document.getElementById("targetRoleDisplayVal");
-    const effectiveRoleTitle = customJobRoleText.trim() || selectedTargetJobRole || "";
+  let locationStr = "";
+  const locMatch = text.match(/\b([A-Za-z\s]{3,25},\s*[A-Za-z\s]{3,25}(?:\s*,\s*[A-Za-z\s]{2,20})?)\b/);
+  if (locMatch && !/resume|developer|engineer|specialist|manager|analyst|software|university|college|school/i.test(locMatch[0])) {
+    locationStr = locMatch[0].trim();
+  }
 
-    if (roleBadgeEl) {
-      if (analysisMode === "ats") {
-        roleBadgeEl.style.display = "none";
-      } else {
-        roleBadgeEl.style.display = "inline-flex";
-        roleBadgeEl.innerHTML = `<span>Target Role: <strong>${escapeHtml(effectiveRoleTitle || "Software Developer")}</strong>${hasUserJobDescription ? " (With Custom JD)" : ""}</span>`;
-      }
+  const experience = parsedSections.experience.rawText;
+  const education = parsedSections.education.rawText;
+  const projects = parsedSections.projects.rawText;
+  const certifications = parsedSections.certifications.rawText;
+  const summary = parsedSections.summary.rawText;
+  const achievements = parsedSections.achievements.rawText;
+  const languages = parsedSections.languages.rawText;
+  const leadership = parsedSections.leadership.rawText;
+  const skills = extractSkills(text, parsedSections.skills.rawText);
+
+  const years = estimateExperienceYears(text);
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+
+  // Calculate target role skill match ratio
+  const extractedSkillNames = skills.map(s => s.name.toLowerCase());
+  const profileSkills = roleProfile.skills.map(s => s.toLowerCase());
+  const matchedRoleSkills = profileSkills.filter(ps => extractedSkillNames.includes(ps));
+  const missingRoleSkills = profileSkills.filter(ps => !extractedSkillNames.includes(ps));
+  const roleSkillMatchRatio = profileSkills.length > 0 ? (matchedRoleSkills.length / profileSkills.length) : 1.0;
+
+  document.getElementById("fileTag").textContent = "Source file: " + filename;
+  const fNameEl = document.getElementById("fName"); if (fNameEl) fNameEl.textContent = name;
+  const fEmailEl = document.getElementById("fEmail"); if (fEmailEl) fEmailEl.textContent = emailMatch ? emailMatch[0] : "Not found";
+  const fPhoneEl = document.getElementById("fPhone"); if (fPhoneEl) fPhoneEl.textContent = (phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7) ? phoneMatch[0] : "Not found";
+
+  const linkedinEl = document.getElementById("fLinkedin");
+  if (linkedinEl) {
+    if (linkedinMatch) { linkedinEl.innerHTML = `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//, '')}" target="_blank">${linkedinMatch[0]}</a>`; }
+    else { linkedinEl.textContent = "Not found"; }
+  }
+
+  const githubEl = document.getElementById("fGithub");
+  if (githubEl) {
+    if (githubMatch) { githubEl.innerHTML = `<a href="https://${githubMatch[0].replace(/^https?:\/\//, '')}" target="_blank">${githubMatch[0]}</a>`; }
+    else { githubEl.textContent = "Not found"; }
+  }
+
+  const sSkillsEl = document.getElementById("sSkills"); if (sSkillsEl) sSkillsEl.textContent = skills.length;
+  const sExpEl = document.getElementById("sExp"); if (sExpEl) sExpEl.textContent = years ? years + "+" : "—";
+  const sWordsEl = document.getElementById("sWords"); if (sWordsEl) sWordsEl.textContent = wordCount;
+
+  const tagWrap = document.getElementById("skillTags");
+  tagWrap.innerHTML = "";
+  if (skills.length) {
+    skills.forEach(s => {
+      const span = document.createElement("span");
+      span.className = "tag " + s.type; // lang | tool | soft — each has its own color
+      span.textContent = s.name;
+      tagWrap.appendChild(span);
+    });
+  } else {
+    tagWrap.innerHTML = "<span style='font-family:var(--mono);font-size:13px;color:#888;'>No matching skills found.</span>";
+  }
+
+  // ---- Resume Content Overview: a clean, human-readable summary of ----
+  // ---- everything we were able to detect in the uploaded resume.   ----
+
+  const coPersonalEl = document.getElementById("coPersonal");
+  const personalRows = [
+    ["Name", name !== "Not found" ? name : null],
+    ["Email", emailMatch ? emailMatch[0] : null],
+    ["Phone", (phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7) ? phoneMatch[0] : null],
+    ["Location", locationStr ? locationStr : null],
+    ["LinkedIn", linkedinMatch ? `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//, '')}" target="_blank" style="color:var(--accent);font-weight:600;">${linkedinMatch[0]}</a>` : null],
+    ["GitHub", githubMatch ? `<a href="https://${githubMatch[0].replace(/^https?:\/\//, '')}" target="_blank" style="color:var(--accent);font-weight:600;">${githubMatch[0]}</a>` : null],
+  ];
+  coPersonalEl.innerHTML = personalRows.map(([label, value]) =>
+    `<div class="co-personal-row"><span class="co-k">${label}</span><span class="co-v">${value ? value : '<span class="co-empty">✕ Not found</span>'}</span></div>`
+  ).join("");
+
+  const coSkillsEl = document.getElementById("coSkills");
+  if (skills.length) {
+    const langs = skills.filter(s => s.type === "lang");
+    const tools = skills.filter(s => s.type === "tool");
+    const soft = skills.filter(s => s.type === "soft");
+
+    let html = '<div class="co-skills-grouped">';
+    if (langs.length) {
+      html += `<div class="co-skill-group"><span class="co-sg-title">Languages & Core:</span> <div class="tags">${langs.map(s => `<span class="tag lang">${s.name}</span>`).join("")}</div></div>`;
     }
-
-    if (targetRoleChipBar) {
-      if (analysisMode === "ats") {
-        targetRoleChipBar.style.display = "none";
-      } else {
-        targetRoleChipBar.style.display = "inline-flex";
-        if (targetRoleDisplayVal) {
-          targetRoleDisplayVal.textContent = effectiveRoleTitle || "Software Developer";
-        }
-      }
+    if (tools.length) {
+      html += `<div class="co-skill-group"><span class="co-sg-title">Frameworks & Tools:</span> <div class="tags">${tools.map(s => `<span class="tag tool">${s.name}</span>`).join("")}</div></div>`;
     }
-
-    const parsedSections = parseAllResumeSections(text);
-    const lines = text.split("\n");
-    const name = extractName(text);
-    const emailMatch = text.match(EMAIL_RE);
-    const phoneMatch = text.match(PHONE_RE);
-    const linkedinMatch = text.match(LINKEDIN_RE);
-    const githubMatch = text.match(GITHUB_RE);
-
-    let locationStr = "";
-    const locMatch = text.match(/\b([A-Za-z\s]{3,25},\s*[A-Za-z\s]{3,25}(?:\s*,\s*[A-Za-z\s]{2,20})?)\b/);
-    if (locMatch && !/resume|developer|engineer|specialist|manager|analyst|software|university|college|school/i.test(locMatch[0])) {
-      locationStr = locMatch[0].trim();
+    if (soft.length) {
+      html += `<div class="co-skill-group"><span class="co-sg-title">Soft Skills & Domain:</span> <div class="tags">${soft.map(s => `<span class="tag soft">${s.name}</span>`).join("")}</div></div>`;
     }
-
-    const experience = parsedSections.experience.rawText;
-    const education = parsedSections.education.rawText;
-    const projects = parsedSections.projects.rawText;
-    const certifications = parsedSections.certifications.rawText;
-    const summary = parsedSections.summary.rawText;
-    const achievements = parsedSections.achievements.rawText;
-    const languages = parsedSections.languages.rawText;
-    const leadership = parsedSections.leadership.rawText;
-    const skills = extractSkills(text, parsedSections.skills.rawText);
-
-    const years = estimateExperienceYears(text);
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-
-    // Calculate target role skill match ratio
-    const extractedSkillNames = skills.map(s => s.name.toLowerCase());
-    const profileSkills = roleProfile.skills.map(s => s.toLowerCase());
-    const matchedRoleSkills = profileSkills.filter(ps => extractedSkillNames.includes(ps));
-    const missingRoleSkills = profileSkills.filter(ps => !extractedSkillNames.includes(ps));
-    const roleSkillMatchRatio = profileSkills.length > 0 ? (matchedRoleSkills.length / profileSkills.length) : 1.0;
-
-    document.getElementById("fileTag").textContent = "Source file: " + filename;
-    const fNameEl = document.getElementById("fName"); if (fNameEl) fNameEl.textContent = name;
-    const fEmailEl = document.getElementById("fEmail"); if (fEmailEl) fEmailEl.textContent = emailMatch ? emailMatch[0] : "Not found";
-    const fPhoneEl = document.getElementById("fPhone"); if (fPhoneEl) fPhoneEl.textContent = (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : "Not found";
-
-    const linkedinEl = document.getElementById("fLinkedin");
-    if (linkedinEl) {
-      if (linkedinMatch){ linkedinEl.innerHTML = `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${linkedinMatch[0]}</a>`; }
-      else { linkedinEl.textContent = "Not found"; }
-    }
-
-    const githubEl = document.getElementById("fGithub");
-    if (githubEl) {
-      if (githubMatch){ githubEl.innerHTML = `<a href="https://${githubMatch[0].replace(/^https?:\/\//,'')}" target="_blank">${githubMatch[0]}</a>`; }
-      else { githubEl.textContent = "Not found"; }
-    }
-
-    const sSkillsEl = document.getElementById("sSkills"); if (sSkillsEl) sSkillsEl.textContent = skills.length;
-    const sExpEl = document.getElementById("sExp"); if (sExpEl) sExpEl.textContent = years ? years + "+" : "—";
-    const sWordsEl = document.getElementById("sWords"); if (sWordsEl) sWordsEl.textContent = wordCount;
-
-    const tagWrap = document.getElementById("skillTags");
-    tagWrap.innerHTML = "";
-    if (skills.length){
-      skills.forEach(s => {
-        const span = document.createElement("span");
-        span.className = "tag " + s.type; // lang | tool | soft — each has its own color
-        span.textContent = s.name;
-        tagWrap.appendChild(span);
-      });
-    } else {
-      tagWrap.innerHTML = "<span style='font-family:var(--mono);font-size:13px;color:#888;'>No matching skills found.</span>";
-    }
-
-    // ---- Resume Content Overview: a clean, human-readable summary of ----
-    // ---- everything we were able to detect in the uploaded resume.   ----
-
-    const coPersonalEl = document.getElementById("coPersonal");
-    const personalRows = [
-      ["Name", name !== "Not found" ? name : null],
-      ["Email", emailMatch ? emailMatch[0] : null],
-      ["Phone", (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : null],
-      ["Location", locationStr ? locationStr : null],
-      ["LinkedIn", linkedinMatch ? `<a href="https://${linkedinMatch[0].replace(/^https?:\/\//,'')}" target="_blank" style="color:var(--accent);font-weight:600;">${linkedinMatch[0]}</a>` : null],
-      ["GitHub", githubMatch ? `<a href="https://${githubMatch[0].replace(/^https?:\/\//,'')}" target="_blank" style="color:var(--accent);font-weight:600;">${githubMatch[0]}</a>` : null],
-    ];
-    coPersonalEl.innerHTML = personalRows.map(([label, value]) =>
-      `<div class="co-personal-row"><span class="co-k">${label}</span><span class="co-v">${value ? value : '<span class="co-empty">✕ Not found</span>'}</span></div>`
-    ).join("");
-
-    const coSkillsEl = document.getElementById("coSkills");
-    if (skills.length) {
-      const langs = skills.filter(s => s.type === "lang");
-      const tools = skills.filter(s => s.type === "tool");
-      const soft = skills.filter(s => s.type === "soft");
-
-      let html = '<div class="co-skills-grouped">';
-      if (langs.length) {
-        html += `<div class="co-skill-group"><span class="co-sg-title">Languages & Core:</span> <div class="tags">${langs.map(s => `<span class="tag lang">${s.name}</span>`).join("")}</div></div>`;
-      }
-      if (tools.length) {
-        html += `<div class="co-skill-group"><span class="co-sg-title">Frameworks & Tools:</span> <div class="tags">${tools.map(s => `<span class="tag tool">${s.name}</span>`).join("")}</div></div>`;
-      }
-      if (soft.length) {
-        html += `<div class="co-skill-group"><span class="co-sg-title">Soft Skills & Domain:</span> <div class="tags">${soft.map(s => `<span class="tag soft">${s.name}</span>`).join("")}</div></div>`;
-      }
-      html += '</div>';
-      coSkillsEl.innerHTML = html;
-    } else {
-      coSkillsEl.innerHTML = `
+    html += '</div>';
+    coSkillsEl.innerHTML = html;
+  } else {
+    coSkillsEl.innerHTML = `
         <div class="co-empty-box">
           <div class="co-empty-msg">✕ No Skills Section Clearly Detected</div>
           <div class="co-guidance-title">💡 What to include in this section:</div>
           <div class="co-guidance-text">List relevant technical skills (Languages, Frameworks, Tools, Databases) and soft skills matching your target job role.</div>
         </div>
       `;
-    }
+  }
 
-    function renderStructuredCoSection(elId, content, guidanceMsg) {
-      const el = document.getElementById(elId);
-      if (!el) return;
+  function renderStructuredCoSection(elId, content, guidanceMsg) {
+    const el = document.getElementById(elId);
+    if (!el) return;
 
-      if (content && content.trim()) {
-        const rawLines = content.split("\n").map(l => l.trim()).filter(Boolean);
-        let html = '<div class="co-structured-list">';
-        rawLines.forEach(line => {
-          const isBullet = BULLET_PREFIX_RE.test(line) || line.startsWith("-") || line.startsWith("*") || line.startsWith("•");
-          const cleanLine = line.replace(BULLET_PREFIX_RE, "").replace(/^[\-*•]\s*/, "").trim();
+    if (content && content.trim()) {
+      const rawLines = content.split("\n").map(l => l.trim()).filter(Boolean);
+      let html = '<div class="co-structured-list">';
+      rawLines.forEach(line => {
+        const isBullet = BULLET_PREFIX_RE.test(line) || line.startsWith("-") || line.startsWith("*") || line.startsWith("•");
+        const cleanLine = line.replace(BULLET_PREFIX_RE, "").replace(/^[\-*•]\s*/, "").trim();
 
-          if (isBullet) {
-            html += `<div class="co-bullet-item"><span class="co-bullet-dot">•</span><span>${escapeHtml(cleanLine)}</span></div>`;
-          } else if (cleanLine.length < 75 && (/\b(20|19)\d{2}\b/.test(cleanLine) || /^[A-Z]/.test(cleanLine) || /cgpa|percentage|score|grade|present/i.test(cleanLine))) {
-            html += `<div class="co-title-item">${escapeHtml(cleanLine)}</div>`;
-          } else {
-            html += `<div class="co-text-item">${escapeHtml(cleanLine)}</div>`;
-          }
-        });
-        html += '</div>';
-        el.innerHTML = html;
-      } else {
-        el.innerHTML = `
+        if (isBullet) {
+          html += `<div class="co-bullet-item"><span class="co-bullet-dot">•</span><span>${escapeHtml(cleanLine)}</span></div>`;
+        } else if (cleanLine.length < 75 && (/\b(20|19)\d{2}\b/.test(cleanLine) || /^[A-Z]/.test(cleanLine) || /cgpa|percentage|score|grade|present/i.test(cleanLine))) {
+          html += `<div class="co-title-item">${escapeHtml(cleanLine)}</div>`;
+        } else {
+          html += `<div class="co-text-item">${escapeHtml(cleanLine)}</div>`;
+        }
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    } else {
+      el.innerHTML = `
           <div class="co-empty-box">
             <div class="co-empty-msg">✕ Section Not Detected</div>
             <div class="co-guidance-title">💡 What to include in this section:</div>
             <div class="co-guidance-text">${guidanceMsg}</div>
           </div>
         `;
-      }
     }
+  }
 
-    renderStructuredCoSection("coExperience", experience, "Include Job Title, Company Name, Employment Dates (Month Year – Present), and 3–5 bullet points starting with strong action verbs and quantified metrics (%, $, numbers).");
-    renderStructuredCoSection("coEducation", education, "Include Degree Name (e.g. B.Tech / B.S. in Computer Science), University Name, Graduation Month & Year, GPA/Percentage (optional), and Relevant Coursework.");
-    renderStructuredCoSection("coCertifications", certifications, "Include Professional Certifications (e.g., AWS Certified Developer, Web Dev Certificate), Issuing Organization (e.g. Coursera, Udemy, Google), and Date.");
-    renderStructuredCoSection("coProjects", projects, "Include 2–3 Key Projects with Title, Tech Stack Used (e.g., React, Node.js, MongoDB), Live Demo / GitHub Links, and 2–3 impact bullet points describing key features.");
+  renderStructuredCoSection("coExperience", experience, "Include Job Title, Company Name, Employment Dates (Month Year – Present), and 3–5 bullet points starting with strong action verbs and quantified metrics (%, $, numbers).");
+  renderStructuredCoSection("coEducation", education, "Include Degree Name (e.g. B.Tech / B.S. in Computer Science), University Name, Graduation Month & Year, GPA/Percentage (optional), and Relevant Coursework.");
+  renderStructuredCoSection("coCertifications", certifications, "Include Professional Certifications (e.g., AWS Certified Developer, Web Dev Certificate), Issuing Organization (e.g. Coursera, Udemy, Google), and Date.");
+  renderStructuredCoSection("coProjects", projects, "Include 2–3 Key Projects with Title, Tech Stack Used (e.g., React, Node.js, MongoDB), Live Demo / GitHub Links, and 2–3 impact bullet points describing key features.");
 
-    const coItemSummary = document.getElementById("coItemSummary");
-    if (coItemSummary) {
-      if (summary && summary.trim()) {
-        coItemSummary.style.display = "block";
-        renderStructuredCoSection("coSummary", summary, "Include a 3-4 sentence professional summary highlighting your core expertise, career highlights, and value proposition.");
-      } else {
-        coItemSummary.style.display = "none";
-      }
-    }
-
-    const coItemAchievements = document.getElementById("coItemAchievements");
-    if (coItemAchievements) {
-      if (achievements && achievements.trim()) {
-        coItemAchievements.style.display = "block";
-        renderStructuredCoSection("coAchievements", achievements, "List competitive programming, hackathons, academic honors, or notable achievements.");
-      } else {
-        coItemAchievements.style.display = "none";
-      }
-    }
-
-    const coItemLanguages = document.getElementById("coItemLanguages");
-    if (coItemLanguages) {
-      if (languages && languages.trim()) {
-        coItemLanguages.style.display = "block";
-        renderStructuredCoSection("coLanguages", languages, "List languages you speak or write along with your proficiency level (e.g. Native, Fluent, Conversational).");
-      } else {
-        coItemLanguages.style.display = "none";
-      }
-    }
-
-    const coItemLeadership = document.getElementById("coItemLeadership");
-    if (coItemLeadership) {
-      if (leadership && leadership.trim()) {
-        coItemLeadership.style.display = "block";
-        renderStructuredCoSection("coLeadership", leadership, "Include leadership roles, student clubs, campus ambassador programs, or volunteer activities.");
-      } else {
-        coItemLeadership.style.display = "none";
-      }
-    }
-
-    // ---- Missing information check ----
-    const missing = [];
-    if (name === "Not found") missing.push("Name");
-    if (!emailMatch) missing.push("Email address");
-    if (!(phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7)) missing.push("Phone number");
-    if (!linkedinMatch) missing.push("LinkedIn profile");
-    if (!githubMatch) missing.push("GitHub profile");
-    if (skills.length === 0 && !parsedSections.skills.found) missing.push("Skills section");
-    if (!experience && !parsedSections.experience.found) missing.push("Experience section");
-    if (!education && !parsedSections.education.found) missing.push("Education section");
-    if (!projects && !parsedSections.projects.found) missing.push("Projects section");
-    if (years === null) missing.push("Years of experience (not explicitly stated)");
-
-    const missingWrap = document.getElementById("missingTags");
-    missingWrap.innerHTML = "";
-    if (missing.length){
-      missing.forEach(m => {
-        const span = document.createElement("span");
-        span.className = "tag missing";
-        span.textContent = m;
-        missingWrap.appendChild(span);
-      });
+  const coItemSummary = document.getElementById("coItemSummary");
+  if (coItemSummary) {
+    if (summary && summary.trim()) {
+      coItemSummary.style.display = "block";
+      renderStructuredCoSection("coSummary", summary, "Include a 3-4 sentence professional summary highlighting your core expertise, career highlights, and value proposition.");
     } else {
+      coItemSummary.style.display = "none";
+    }
+  }
+
+  const coItemAchievements = document.getElementById("coItemAchievements");
+  if (coItemAchievements) {
+    if (achievements && achievements.trim()) {
+      coItemAchievements.style.display = "block";
+      renderStructuredCoSection("coAchievements", achievements, "List competitive programming, hackathons, academic honors, or notable achievements.");
+    } else {
+      coItemAchievements.style.display = "none";
+    }
+  }
+
+  const coItemLanguages = document.getElementById("coItemLanguages");
+  if (coItemLanguages) {
+    if (languages && languages.trim()) {
+      coItemLanguages.style.display = "block";
+      renderStructuredCoSection("coLanguages", languages, "List languages you speak or write along with your proficiency level (e.g. Native, Fluent, Conversational).");
+    } else {
+      coItemLanguages.style.display = "none";
+    }
+  }
+
+  const coItemLeadership = document.getElementById("coItemLeadership");
+  if (coItemLeadership) {
+    if (leadership && leadership.trim()) {
+      coItemLeadership.style.display = "block";
+      renderStructuredCoSection("coLeadership", leadership, "Include leadership roles, student clubs, campus ambassador programs, or volunteer activities.");
+    } else {
+      coItemLeadership.style.display = "none";
+    }
+  }
+
+  // ---- Missing information check ----
+  const missing = [];
+  if (name === "Not found") missing.push("Name");
+  if (!emailMatch) missing.push("Email address");
+  if (!(phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7)) missing.push("Phone number");
+  if (!linkedinMatch) missing.push("LinkedIn profile");
+  if (!githubMatch) missing.push("GitHub profile");
+  if (skills.length === 0 && !parsedSections.skills.found) missing.push("Skills section");
+  if (!experience && !parsedSections.experience.found) missing.push("Experience section");
+  if (!education && !parsedSections.education.found) missing.push("Education section");
+  if (!projects && !parsedSections.projects.found) missing.push("Projects section");
+  if (years === null) missing.push("Years of experience (not explicitly stated)");
+
+  const missingWrap = document.getElementById("missingTags");
+  missingWrap.innerHTML = "";
+  if (missing.length) {
+    missing.forEach(m => {
       const span = document.createElement("span");
-      span.className = "tag all-good";
-      span.textContent = "Nothing missing — resume looks complete!";
+      span.className = "tag missing";
+      span.textContent = m;
       missingWrap.appendChild(span);
-    }
+    });
+  } else {
+    const span = document.createElement("span");
+    span.className = "tag all-good";
+    span.textContent = "Nothing missing — resume looks complete!";
+    missingWrap.appendChild(span);
+  }
 
-    // ---- Writing quality: bullets, weak verbs, quantified achievements, duplicates ----
-    const bullets = getBulletLines(text);
-    const weakBullets = findWeakVerbBullets(bullets);
-    const quant = analyzeQuantifiedAchievements(bullets);
-    const duplicateBullets = findDuplicateBullets(bullets);
+  // ---- Writing quality: bullets, weak verbs, quantified achievements, duplicates ----
+  const bullets = getBulletLines(text);
+  const weakBullets = findWeakVerbBullets(bullets);
+  const quant = analyzeQuantifiedAchievements(bullets);
+  const duplicateBullets = findDuplicateBullets(bullets);
 
-    const quantifiedStatEl = document.getElementById("quantifiedStat");
-    quantifiedStatEl.textContent = quant.total ? `${quant.quantified} / ${quant.total} bullets` : "No bullet points detected";
+  const quantifiedStatEl = document.getElementById("quantifiedStat");
+  quantifiedStatEl.textContent = quant.total ? `${quant.quantified} / ${quant.total} bullets` : "No bullet points detected";
 
-    const weakVerbWrap = document.getElementById("weakVerbWrap");
-    const weakVerbTagsEl = document.getElementById("weakVerbTags");
-    weakVerbTagsEl.innerHTML = "";
-    const uniqueWeakPhrases = [...new Set(weakBullets.map(w => w.phrase))];
-    if (uniqueWeakPhrases.length){
-      weakVerbWrap.style.display = "block";
-      uniqueWeakPhrases.forEach(phrase => {
+  const weakVerbWrap = document.getElementById("weakVerbWrap");
+  const weakVerbTagsEl = document.getElementById("weakVerbTags");
+  weakVerbTagsEl.innerHTML = "";
+  const uniqueWeakPhrases = [...new Set(weakBullets.map(w => w.phrase))];
+  if (uniqueWeakPhrases.length) {
+    weakVerbWrap.style.display = "block";
+    uniqueWeakPhrases.forEach(phrase => {
+      const span = document.createElement("span");
+      span.className = "tag weak";
+      span.textContent = `"${phrase}"`;
+      weakVerbTagsEl.appendChild(span);
+    });
+  } else {
+    weakVerbWrap.style.display = "none";
+  }
+
+  const duplicateWrap = document.getElementById("duplicateWrap");
+  const duplicateTagsEl = document.getElementById("duplicateTags");
+  duplicateTagsEl.innerHTML = "";
+  if (duplicateBullets.length) {
+    duplicateWrap.style.display = "block";
+    duplicateBullets.slice(0, 6).forEach(line => {
+      const span = document.createElement("span");
+      span.className = "tag weak";
+      span.textContent = line.length > 60 ? line.slice(0, 57) + "…" : line;
+      duplicateTagsEl.appendChild(span);
+    });
+  } else {
+    duplicateWrap.style.display = "none";
+  }
+
+  // ---- Job description match (only runs if the user pasted a JD) ----
+  const jdText = (userJobDescriptionText || (document.getElementById("jdInput") ? document.getElementById("jdInput").value : "") || "").trim();
+  const jdCard = document.getElementById("jdCard");
+  let jdResult = null;
+  if (jdText.length > 20) {
+    jdResult = matchAgainstJD(text, jdText);
+    jdCard.style.display = "block";
+    const pct = jdResult.ratio === null ? null : Math.round(jdResult.ratio * 100);
+    document.getElementById("jdMatchPct").textContent = pct === null ? "Not enough keywords found in JD" : pct + "%";
+
+    const matchedEl = document.getElementById("jdMatchedTags");
+    matchedEl.innerHTML = "";
+    if (jdResult.matched.length) {
+      jdResult.matched.forEach(kw => {
         const span = document.createElement("span");
-        span.className = "tag weak";
-        span.textContent = `"${phrase}"`;
-        weakVerbTagsEl.appendChild(span);
+        span.className = "tag match";
+        span.textContent = kw;
+        matchedEl.appendChild(span);
       });
     } else {
-      weakVerbWrap.style.display = "none";
+      matchedEl.innerHTML = "<span style='font-family:var(--mono);font-size:13px;color:#888;'>No overlap found.</span>";
     }
 
-    const duplicateWrap = document.getElementById("duplicateWrap");
-    const duplicateTagsEl = document.getElementById("duplicateTags");
-    duplicateTagsEl.innerHTML = "";
-    if (duplicateBullets.length){
-      duplicateWrap.style.display = "block";
-      duplicateBullets.slice(0, 6).forEach(line => {
-        const span = document.createElement("span");
-        span.className = "tag weak";
-        span.textContent = line.length > 60 ? line.slice(0, 57) + "…" : line;
-        duplicateTagsEl.appendChild(span);
-      });
-    } else {
-      duplicateWrap.style.display = "none";
-    }
-
-    // ---- Job description match (only runs if the user pasted a JD) ----
-    const jdText = (userJobDescriptionText || (document.getElementById("jdInput") ? document.getElementById("jdInput").value : "") || "").trim();
-    const jdCard = document.getElementById("jdCard");
-    let jdResult = null;
-    if (jdText.length > 20){
-      jdResult = matchAgainstJD(text, jdText);
-      jdCard.style.display = "block";
-      const pct = jdResult.ratio === null ? null : Math.round(jdResult.ratio * 100);
-      document.getElementById("jdMatchPct").textContent = pct === null ? "Not enough keywords found in JD" : pct + "%";
-
-      const matchedEl = document.getElementById("jdMatchedTags");
-      matchedEl.innerHTML = "";
-      if (jdResult.matched.length){
-        jdResult.matched.forEach(kw => {
-          const span = document.createElement("span");
-          span.className = "tag match";
-          span.textContent = kw;
-          matchedEl.appendChild(span);
-        });
-      } else {
-        matchedEl.innerHTML = "<span style='font-family:var(--mono);font-size:13px;color:#888;'>No overlap found.</span>";
-      }
-
-      const missingWrapEl = document.getElementById("jdMissingWrap");
-      const missingEl = document.getElementById("jdMissingTags");
-      missingEl.innerHTML = "";
-      if (jdResult.missing.length){
-        missingWrapEl.style.display = "block";
-        jdResult.missing.forEach(kw => {
-          const span = document.createElement("span");
-          span.className = "tag missing";
-          span.textContent = kw;
-          missingEl.appendChild(span);
-        });
-      } else {
-        missingWrapEl.style.display = "none";
-      }
-    } else {
-      jdCard.style.display = "none";
-    }
-
-    // ==================================================================
-    // NEW REPORT SECTIONS: section presence, keyword categories, domain
-    // terms, missing common keywords, buzzwords, readability metrics.
-    // ==================================================================
-    const hasSummary = Boolean(summary);
-    const hasSkillsHeader = parsedSections.skills.found || skills.length > 0;
-    const hasEducation = Boolean(education);
-    const hasExperience = Boolean(experience);
-    const hasProjects = Boolean(projects);
-    const hasCertifications = Boolean(certifications);
-    const hasLeadership = Boolean(leadership);
-    const hasAwards = Boolean(achievements);
-    const hasLanguages = Boolean(languages);
-    const hasContact = Boolean(emailMatch) || Boolean(phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7);
-    const hasFullTimeExperience = hasExperience && (/full[- ]time/i.test(experience) || !/\bintern(ship)?\b/i.test(experience));
-
-    const coreSections = [
-      { label: "Contact Information", found: hasContact },
-      { label: "Education & Academics", found: hasEducation },
-      { label: "Skills & Proficiencies", found: hasSkillsHeader },
-      { label: "Experience & Internships", found: hasExperience },
-      { label: "Projects", found: hasProjects },
-      { label: "Certifications & Credentials", found: hasCertifications },
-    ];
-    const optionalSections = [
-      { label: "Professional Summary", found: hasSummary },
-      { label: "Achievements & Awards", found: hasAwards },
-      { label: "Languages", found: hasLanguages },
-      { label: "Leadership & Activities", found: hasLeadership },
-      { label: "Full-time Work Experience", found: hasFullTimeExperience },
-    ];
-    const allSections = coreSections.concat(optionalSections);
-
-    const sectionsFoundListEl = document.getElementById("sectionsFoundList");
-    const sectionsMissingListEl = document.getElementById("sectionsMissingList");
-    sectionsFoundListEl.innerHTML = "";
-    sectionsMissingListEl.innerHTML = "";
-    allSections.forEach(s => renderSectionPill(s.found ? sectionsFoundListEl : sectionsMissingListEl, s.label, s.found));
-    if (!sectionsFoundListEl.children.length) sectionsFoundListEl.innerHTML = "<span class='kw-empty'>None detected.</span>";
-    if (!sectionsMissingListEl.children.length) sectionsMissingListEl.innerHTML = "<span class='kw-empty'>Nothing missing — great job!</span>";
-
-    // Keyword categories
-    const kwCategories = analyzeKeywordCategories(text);
-    const domainTerms = extractDomainTerms(text, 3);
-    renderKwColumn(document.getElementById("kwHard"), kwCategories.lang);
-    renderKwColumn(document.getElementById("kwSoft"), kwCategories.soft);
-    renderKwColumn(document.getElementById("kwTools"), kwCategories.tool);
-    renderKwColumn(document.getElementById("kwDomain"), domainTerms);
-
-    // Missing common keywords
-    const missingCommonKw = findMissingCommonKeywords(text);
-    const missingCommonEl = document.getElementById("missingCommonKeywords");
-    missingCommonEl.innerHTML = "";
-    if (missingCommonKw.length){
-      missingCommonKw.forEach(kw => {
+    const missingWrapEl = document.getElementById("jdMissingWrap");
+    const missingEl = document.getElementById("jdMissingTags");
+    missingEl.innerHTML = "";
+    if (jdResult.missing.length) {
+      missingWrapEl.style.display = "block";
+      jdResult.missing.forEach(kw => {
         const span = document.createElement("span");
         span.className = "tag missing";
-        span.textContent = "! " + kw;
-        missingCommonEl.appendChild(span);
+        span.textContent = kw;
+        missingEl.appendChild(span);
       });
     } else {
-      missingCommonEl.innerHTML = "<span class='kw-empty'>None — your resume covers all the common keywords we check for.</span>";
+      missingWrapEl.style.display = "none";
     }
+  } else {
+    jdCard.style.display = "none";
+  }
 
-    // Overused buzzwords -> AI vs Man Made Detection
-    const aiAnalysis = detectAiOrHuman(text);
-    const buzzwordsFound = aiAnalysis.detectedPhrases;
-    const buzzwordEl = document.getElementById("buzzwordTags");
-    const aiOriginBadge = document.getElementById("aiOriginBadge");
-    const aiOriginBanner = document.getElementById("aiOriginBanner");
-    const aiOriginDetails = document.getElementById("aiOriginDetails");
+  // ==================================================================
+  // NEW REPORT SECTIONS: section presence, keyword categories, domain
+  // terms, missing common keywords, buzzwords, readability metrics.
+  // ==================================================================
+  const hasSummary = Boolean(summary);
+  const hasSkillsHeader = parsedSections.skills.found || skills.length > 0;
+  const hasEducation = Boolean(education);
+  const hasExperience = Boolean(experience);
+  const hasProjects = Boolean(projects);
+  const hasCertifications = Boolean(certifications);
+  const hasLeadership = Boolean(leadership);
+  const hasAwards = Boolean(achievements);
+  const hasLanguages = Boolean(languages);
+  const hasContact = Boolean(emailMatch) || Boolean(phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7);
+  const hasFullTimeExperience = hasExperience && (/full[- ]time/i.test(experience) || !/\bintern(ship)?\b/i.test(experience));
 
-    if (aiOriginBadge) {
-      if (aiAnalysis.isAi) {
-        aiOriginBadge.className = "ai-origin-badge badge-ai";
-        aiOriginBadge.innerHTML = "🤖 AI Generated";
-      } else {
-        aiOriginBadge.className = "ai-origin-badge badge-human";
-        aiOriginBadge.innerHTML = "✍️ Man Made";
-      }
+  const coreSections = [
+    { label: "Contact Information", found: hasContact },
+    { label: "Education & Academics", found: hasEducation },
+    { label: "Skills & Proficiencies", found: hasSkillsHeader },
+    { label: "Experience & Internships", found: hasExperience },
+    { label: "Projects", found: hasProjects },
+    { label: "Certifications & Credentials", found: hasCertifications },
+  ];
+  const optionalSections = [
+    { label: "Professional Summary", found: hasSummary },
+    { label: "Achievements & Awards", found: hasAwards },
+    { label: "Languages", found: hasLanguages },
+    { label: "Leadership & Activities", found: hasLeadership },
+    { label: "Full-time Work Experience", found: hasFullTimeExperience },
+  ];
+  const allSections = coreSections.concat(optionalSections);
+
+  const sectionsFoundListEl = document.getElementById("sectionsFoundList");
+  const sectionsMissingListEl = document.getElementById("sectionsMissingList");
+  sectionsFoundListEl.innerHTML = "";
+  sectionsMissingListEl.innerHTML = "";
+  allSections.forEach(s => renderSectionPill(s.found ? sectionsFoundListEl : sectionsMissingListEl, s.label, s.found));
+  if (!sectionsFoundListEl.children.length) sectionsFoundListEl.innerHTML = "<span class='kw-empty'>None detected.</span>";
+  if (!sectionsMissingListEl.children.length) sectionsMissingListEl.innerHTML = "<span class='kw-empty'>Nothing missing — great job!</span>";
+
+  // Keyword categories
+  const kwCategories = analyzeKeywordCategories(text);
+  const domainTerms = extractDomainTerms(text, 3);
+  renderKwColumn(document.getElementById("kwHard"), kwCategories.lang);
+  renderKwColumn(document.getElementById("kwSoft"), kwCategories.soft);
+  renderKwColumn(document.getElementById("kwTools"), kwCategories.tool);
+  renderKwColumn(document.getElementById("kwDomain"), domainTerms);
+
+  // Missing common keywords
+  const missingCommonKw = findMissingCommonKeywords(text);
+  const missingCommonEl = document.getElementById("missingCommonKeywords");
+  missingCommonEl.innerHTML = "";
+  if (missingCommonKw.length) {
+    missingCommonKw.forEach(kw => {
+      const span = document.createElement("span");
+      span.className = "tag missing";
+      span.textContent = "! " + kw;
+      missingCommonEl.appendChild(span);
+    });
+  } else {
+    missingCommonEl.innerHTML = "<span class='kw-empty'>None — your resume covers all the common keywords we check for.</span>";
+  }
+
+  // Overused buzzwords -> AI vs Man Made Detection
+  const aiAnalysis = detectAiOrHuman(text);
+  const buzzwordsFound = aiAnalysis.detectedPhrases;
+  const buzzwordEl = document.getElementById("buzzwordTags");
+  const aiOriginBadge = document.getElementById("aiOriginBadge");
+  const aiOriginBanner = document.getElementById("aiOriginBanner");
+  const aiOriginDetails = document.getElementById("aiOriginDetails");
+
+  if (aiOriginBadge) {
+    if (aiAnalysis.isAi) {
+      aiOriginBadge.className = "ai-origin-badge badge-ai";
+      aiOriginBadge.innerHTML = "🤖 AI Generated";
+    } else {
+      aiOriginBadge.className = "ai-origin-badge badge-human";
+      aiOriginBadge.innerHTML = "✍️ Man Made";
     }
+  }
 
-    if (aiOriginBanner) {
-      if (aiAnalysis.isAi) {
-        aiOriginBanner.innerHTML = `
+  if (aiOriginBanner) {
+    if (aiAnalysis.isAi) {
+      aiOriginBanner.innerHTML = `
           <div class="ai-banner-box is-ai">
             <div class="ai-banner-icon">🤖</div>
             <div class="ai-banner-text">
@@ -2495,8 +2495,8 @@
             </div>
           </div>
         `;
-      } else {
-        aiOriginBanner.innerHTML = `
+    } else {
+      aiOriginBanner.innerHTML = `
           <div class="ai-banner-box is-human">
             <div class="ai-banner-icon">✍️</div>
             <div class="ai-banner-text">
@@ -2505,12 +2505,12 @@
             </div>
           </div>
         `;
-      }
     }
+  }
 
-    if (aiOriginDetails) {
-      if (aiAnalysis.isAi) {
-        aiOriginDetails.innerHTML = `
+  if (aiOriginDetails) {
+    if (aiAnalysis.isAi) {
+      aiOriginDetails.innerHTML = `
           <div class="ai-score-bar-wrap">
             <div class="ai-score-label">
               <span>AI Content Probability</span>
@@ -2522,8 +2522,8 @@
           </div>
           <div class="ai-indicators-heading">Detected AI / OpenAI Markers (${aiAnalysis.detectedPhrases.length}):</div>
         `;
-      } else {
-        aiOriginDetails.innerHTML = `
+    } else {
+      aiOriginDetails.innerHTML = `
           <div class="ai-score-bar-wrap">
             <div class="ai-score-label">
               <span>Human Authenticity Score</span>
@@ -2535,2102 +2535,2031 @@
           </div>
           <div class="ai-indicators-heading">Origin Verification Status:</div>
         `;
-      }
     }
+  }
 
-    if (buzzwordEl){
-      buzzwordEl.innerHTML = "";
-      if (aiAnalysis.isAi){
-        if (aiAnalysis.detectedPhrases.length){
-          aiAnalysis.detectedPhrases.forEach(b => {
-            const span = document.createElement("span");
-            span.className = "tag missing";
-            span.textContent = "🤖 " + b;
-            buzzwordEl.appendChild(span);
-          });
-        } else {
-          buzzwordEl.innerHTML = "<span class='kw-empty'>AI sentence cadence detected. Consider varying bullet structures.</span>";
-        }
+  if (buzzwordEl) {
+    buzzwordEl.innerHTML = "";
+    if (aiAnalysis.isAi) {
+      if (aiAnalysis.detectedPhrases.length) {
+        aiAnalysis.detectedPhrases.forEach(b => {
+          const span = document.createElement("span");
+          span.className = "tag missing";
+          span.textContent = "🤖 " + b;
+          buzzwordEl.appendChild(span);
+        });
       } else {
-        buzzwordEl.innerHTML = `
+        buzzwordEl.innerHTML = "<span class='kw-empty'>AI sentence cadence detected. Consider varying bullet structures.</span>";
+      }
+    } else {
+      buzzwordEl.innerHTML = `
           <span class="tag all-good">✓ 100% Man Made</span>
           <span class="tag all-good">✓ Authentic Tone</span>
           <span class="tag all-good">✓ Natural Phrasing</span>
         `;
-      }
     }
+  }
 
-    // Readability & content quality metrics
-    const readability = computeReadability(text);
-    const totalSkillOccurrences = [...kwCategories.lang, ...kwCategories.soft, ...kwCategories.tool].reduce((s, k) => s + k.count, 0);
-    const skillDensity = Math.round((totalSkillOccurrences / wordCount) * 1000) / 10;
-    const quantPct = quant.total ? Math.round((quant.quantified / quant.total) * 100) : 0;
+  // Readability & content quality metrics
+  const readability = computeReadability(text);
+  const totalSkillOccurrences = [...kwCategories.lang, ...kwCategories.soft, ...kwCategories.tool].reduce((s, k) => s + k.count, 0);
+  const skillDensity = Math.round((totalSkillOccurrences / wordCount) * 1000) / 10;
+  const quantPct = quant.total ? Math.round((quant.quantified / quant.total) * 100) : 0;
 
-    const metricGrid = document.getElementById("readabilityMetricGrid");
-    metricGrid.innerHTML = "";
-    renderMetricBox(metricGrid, "Avg Sentence Length", readability.avgSentenceLength, readability.avgSentenceLength, 10, 25, 35, "Target range: 10–25 words");
-    renderMetricBox(metricGrid, "Reading Grade Level", readability.gradeLevel, readability.gradeLevel, 7, 14, 20, "Target range: Grade 7–14 (clear business & technical writing)");
-    renderMetricBox(metricGrid, "Skill Density", skillDensity, skillDensity + "%", 6, 22, 35, "Target range: 6–22% of words are skills");
-    renderMetricBox(metricGrid, "Quantification", quantPct, quantPct + "%", 30, 70, 100, `Target range: 30–70% bullets with numbers (${quant.quantified}/${quant.total})`);
+  const metricGrid = document.getElementById("readabilityMetricGrid");
+  metricGrid.innerHTML = "";
+  renderMetricBox(metricGrid, "Avg Sentence Length", readability.avgSentenceLength, readability.avgSentenceLength, 10, 25, 35, "Target range: 10–25 words");
+  renderMetricBox(metricGrid, "Reading Grade Level", readability.gradeLevel, readability.gradeLevel, 7, 14, 20, "Target range: Grade 7–14 (clear business & technical writing)");
+  renderMetricBox(metricGrid, "Skill Density", skillDensity, skillDensity + "%", 6, 22, 35, "Target range: 6–22% of words are skills");
+  renderMetricBox(metricGrid, "Quantification", quantPct, quantPct + "%", 30, 70, 100, `Target range: 30–70% bullets with numbers (${quant.quantified}/${quant.total})`);
 
-    // Timeline consistency: flag graduation/education years that are in the future
-    const currentYear = new Date().getFullYear();
-    const eduYears = [...(education || "").matchAll(/\b(20\d{2})\b/g)].map(m => parseInt(m[1], 10));
-    const futureGradFlag = eduYears.some(y => y > currentYear);
-    const noDatesFound = eduYears.length === 0 && !/\b(19|20)\d{2}\b/.test(experience || "");
+  // Timeline consistency: flag graduation/education years that are in the future
+  const currentYear = new Date().getFullYear();
+  const eduYears = [...(education || "").matchAll(/\b(20\d{2})\b/g)].map(m => parseInt(m[1], 10));
+  const futureGradFlag = eduYears.some(y => y > currentYear);
+  const noDatesFound = eduYears.length === 0 && !/\b(19|20)\d{2}\b/.test(experience || "");
 
-    // ---- Score Breakdown (6 metrics, 0-100) ----
-    const sectionCoveragePct = Math.min(100, Math.round((allSections.filter(s => s.found).length / allSections.length) * 100));
+  // ---- Score Breakdown (6 metrics, 0-100) ----
+  const sectionCoveragePct = Math.min(100, Math.round((allSections.filter(s => s.found).length / allSections.length) * 100));
 
-    const adjustedJdRatio = (jdResult && jdResult.ratio !== null)
-      ? Math.min(1.0, jdResult.ratio)
-      : null;
+  const adjustedJdRatio = (jdResult && jdResult.ratio !== null)
+    ? Math.min(1.0, jdResult.ratio)
+    : null;
 
-    const keywordCoveragePct = (analysisMode === "ats")
-      ? Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40))
-      : (adjustedJdRatio !== null ? Math.round(adjustedJdRatio * 100) : Math.round(roleSkillMatchRatio * 100));
+  const keywordCoveragePct = (analysisMode === "ats")
+    ? Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40))
+    : (adjustedJdRatio !== null ? Math.round(adjustedJdRatio * 100) : Math.round(roleSkillMatchRatio * 100));
 
-    let contentStrengthPct = 50; // strict baseline for resume content impact
-    if (quant.total > 0) {
-      contentStrengthPct += Math.round((quant.quantified / quant.total) * 40);
-    } else {
-      contentStrengthPct = 40;
-    }
-    contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 5) * 4;
-    contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 4;
-    contentStrengthPct = Math.max(20, Math.min(100, contentStrengthPct));
+  let contentStrengthPct = 50; // strict baseline for resume content impact
+  if (quant.total > 0) {
+    contentStrengthPct += Math.round((quant.quantified / quant.total) * 40);
+  } else {
+    contentStrengthPct = 40;
+  }
+  contentStrengthPct -= Math.min(uniqueWeakPhrases.length, 5) * 4;
+  contentStrengthPct -= Math.min(duplicateBullets.length, 5) * 4;
+  contentStrengthPct = Math.max(20, Math.min(100, contentStrengthPct));
 
-    let timelineConsistencyPct = noDatesFound ? 55 : 100;
-    if (futureGradFlag) timelineConsistencyPct -= 25;
-    timelineConsistencyPct = Math.max(30, Math.min(100, timelineConsistencyPct));
+  let timelineConsistencyPct = noDatesFound ? 55 : 100;
+  if (futureGradFlag) timelineConsistencyPct -= 25;
+  timelineConsistencyPct = Math.max(30, Math.min(100, timelineConsistencyPct));
 
-    const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
-    const readabilityPct = Math.max(45, 100 - gradeDelta * 6);
+  const gradeDelta = readability.gradeLevel < 7 ? 7 - readability.gradeLevel : (readability.gradeLevel > 14 ? readability.gradeLevel - 14 : 0);
+  const readabilityPct = Math.max(45, 100 - gradeDelta * 6);
 
-    let relevanceAlignmentPct;
-    if (analysisMode === "normal" && adjustedJdRatio !== null) {
-      relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
-    } else {
-      const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
-      relevanceAlignmentPct = Math.max(45, Math.min(100, Math.round(100 - densityDelta * 4)));
-    }
+  let relevanceAlignmentPct;
+  if (analysisMode === "normal" && adjustedJdRatio !== null) {
+    relevanceAlignmentPct = Math.round(adjustedJdRatio * 100);
+  } else {
+    const densityDelta = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+    relevanceAlignmentPct = Math.max(45, Math.min(100, Math.round(100 - densityDelta * 4)));
+  }
 
-    let formattingPct = 60; // strict formatting baseline
-    if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
-    else if (wordCount >= 200 && wordCount <= 1400) formattingPct = 75;
-    else if (wordCount > 0) formattingPct = 50;
-    if (quant.total === 0) formattingPct -= 20;
-    formattingPct = Math.max(30, Math.min(100, formattingPct));
+  let formattingPct = 60; // strict formatting baseline
+  if (wordCount >= 300 && wordCount <= 1100) formattingPct = 100;
+  else if (wordCount >= 200 && wordCount <= 1400) formattingPct = 75;
+  else if (wordCount > 0) formattingPct = 50;
+  if (quant.total === 0) formattingPct -= 20;
+  formattingPct = Math.max(30, Math.min(100, formattingPct));
 
-    // Critical fields carry a fixed penalty in the ATS score
-    const criticalMissingFields = ["Name", "Email address", "Phone number", "Experience section", "Education section", "Skills section"];
+  // Critical fields carry a fixed penalty in the ATS score
+  const criticalMissingFields = ["Name", "Email address", "Phone number", "Experience section", "Education section", "Skills section"];
 
-    const scoreBreakdownGrid = document.getElementById("scoreBreakdownGrid");
-    scoreBreakdownGrid.innerHTML = "";
-    renderScoreItem(scoreBreakdownGrid, "Section Coverage", sectionCoveragePct);
-    renderScoreItem(scoreBreakdownGrid, "Keyword Coverage", keywordCoveragePct);
-    renderScoreItem(scoreBreakdownGrid, "Content Strength", contentStrengthPct);
-    renderScoreItem(scoreBreakdownGrid, "Timeline Consistency", timelineConsistencyPct);
-    renderScoreItem(scoreBreakdownGrid, "Readability", readabilityPct);
-    renderScoreItem(scoreBreakdownGrid, "Relevance Alignment", relevanceAlignmentPct);
+  const scoreBreakdownGrid = document.getElementById("scoreBreakdownGrid");
+  scoreBreakdownGrid.innerHTML = "";
+  renderScoreItem(scoreBreakdownGrid, "Section Coverage", sectionCoveragePct);
+  renderScoreItem(scoreBreakdownGrid, "Keyword Coverage", keywordCoveragePct);
+  renderScoreItem(scoreBreakdownGrid, "Content Strength", contentStrengthPct);
+  renderScoreItem(scoreBreakdownGrid, "Timeline Consistency", timelineConsistencyPct);
+  renderScoreItem(scoreBreakdownGrid, "Readability", readabilityPct);
+  renderScoreItem(scoreBreakdownGrid, "Relevance Alignment", relevanceAlignmentPct);
 
-    // ---- Executive Summary / Improvement Recommendations ----
-    const recs = [];
+  // ---- Executive Summary / Improvement Recommendations ----
+  const recs = [];
 
-    if (analysisMode === "normal") {
-      // IN ATS WITH ROLE MODE: Generate role & job description specific recommendations
-      if (missingRoleSkills && missingRoleSkills.length > 0){
-        recs.push({
-          badge: "Target Role Skill Gap",
-          type: "critical",
-          issue: `Missing Core ${targetRoleTitle} Skills: ${missingRoleSkills.slice(0, 5).join(", ")}`,
-          fix: `Standard requirements for a ${targetRoleTitle} include (${missingRoleSkills.slice(0, 5).join(", ")}). Highlight relevant projects, experience, or certifications covering these tools. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
-        });
-      }
-
-      if (jdResult && jdResult.missing && jdResult.missing.length > 0){
-        recs.push({
-          badge: "Job Description Gap",
-          type: "keyword",
-          issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 5).join(", ")}${jdResult.missing.length > 5 ? "..." : ""}`,
-          fix: `The provided job description explicitly requests (${jdResult.missing.slice(0, 5).join(", ")}). Incorporate these exact terms naturally into your Experience bullet points or Skills summary.`
-        });
-      } else if (jdResult && jdResult.matched && jdResult.matched.length > 0){
-        recs.push({
-          badge: "Job Description Match",
-          type: "polish",
-          issue: `Strong Job Description Keyword Alignment (${jdResult.matched.length} terms matched)`,
-          fix: `Your resume covers key terms mentioned in the job description (${jdResult.matched.slice(0, 4).join(", ")}). Maintain this strong keyword presence.`
-        });
-      }
-
-      const resumeTextLowerForRecs = (text || "").toLowerCase();
-      const titleTokensRecs = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-      const titleMatchedCountRecs = titleTokensRecs.filter(t => resumeTextLowerForRecs.includes(t)).length;
-      const titleAlignmentPctRecs = titleTokensRecs.length > 0 ? Math.round((titleMatchedCountRecs / titleTokensRecs.length) * 100) : 70;
-      if (titleAlignmentPctRecs < 60) {
-        recs.push({
-          badge: "Title Alignment",
-          type: "format",
-          issue: `Target Role Title ("${targetRoleTitle}") Not Prominently Stated`,
-          fix: `Add a clear headline or summary title matching "${targetRoleTitle}" at the top of your resume so candidate tracking systems index your application accurately.`
-        });
-      }
-    }
-
-    // IN ATS SCORE CHECK MODE (and general resume quality): Recommend about the resume structure, completeness, and formatting
-    criticalMissingFields.forEach(field => {
-      if (missing.includes(field)){
-        recs.push({
-          badge: "Critical Field",
-          type: "critical",
-          issue: `Missing Essential Field: ${field}`,
-          fix: `Add a clear ${field.replace(/ section$/i, "").toLowerCase()} header — ATS parsers rely on this to map your application data.`
-        });
-      }
-    });
-
-    if (analysisMode === "ats" && missingCommonKw && missingCommonKw.length > 0){
+  if (analysisMode === "normal") {
+    // IN ATS WITH ROLE MODE: Generate role & job description specific recommendations
+    if (missingRoleSkills && missingRoleSkills.length > 0) {
       recs.push({
-        badge: "Core Keywords",
+        badge: "Target Role Skill Gap",
+        type: "critical",
+        issue: `Missing Core ${targetRoleTitle} Skills: ${missingRoleSkills.slice(0, 5).join(", ")}`,
+        fix: `Standard requirements for a ${targetRoleTitle} include (${missingRoleSkills.slice(0, 5).join(", ")}). Highlight relevant projects, experience, or certifications covering these tools. <span style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;">*Please only list skills and experience you actually possess.*</span>`
+      });
+    }
+
+    if (jdResult && jdResult.missing && jdResult.missing.length > 0) {
+      recs.push({
+        badge: "Job Description Gap",
         type: "keyword",
-        issue: `Missing Core Industry Terms: ${missingCommonKw.slice(0, 4).join(", ")}`,
-        fix: `Add relevant industry skills (${missingCommonKw.slice(0, 4).join(", ")}) to improve ATS keyword search ranking.`
+        issue: `Missing Job Description Keywords: ${jdResult.missing.slice(0, 5).join(", ")}${jdResult.missing.length > 5 ? "..." : ""}`,
+        fix: `The provided job description explicitly requests (${jdResult.missing.slice(0, 5).join(", ")}). Incorporate these exact terms naturally into your Experience bullet points or Skills summary.`
       });
-    }
-
-    // Bullet Point Impact & Metrics
-    if (quant.total === 0 || quant.quantified === 0){
+    } else if (jdResult && jdResult.matched && jdResult.matched.length > 0) {
       recs.push({
-        badge: "Impact Metrics",
-        type: "impact",
-        issue: "No Quantified Achievements Found",
-        fix: "Add numbers, percentages, or metrics to your experience bullets (e.g., 'Boosted efficiency by 30%', 'Managed $20k budget')."
-      });
-    }
-
-    // Action Verbs & Weak Phrasing
-    if (uniqueWeakPhrases && uniqueWeakPhrases.length > 0){
-      recs.push({
-        badge: "Verb Strength",
-        type: "impact",
-        issue: `Weak or Passive Verbs Detected: ${uniqueWeakPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")}`,
-        fix: `Replace passive phrasing with strong action verbs like 'Engineered', 'Spearheaded', 'Architected', or 'Optimized'.`
-      });
-    }
-
-    // Formatting & Length
-    if (wordCount < 300 || wordCount > 1100){
-      recs.push({
-        badge: "Formatting",
-        type: "format",
-        issue: `Resume Length (${wordCount} words) Outside Ideal Range`,
-        fix: `Aim for 300–1100 words. ${wordCount < 300 ? "Add more detailed bullet points describing your technical accomplishments." : "Trim redundant details to keep your resume focused."}`
-      });
-    }
-
-    // Section Coverage & Structure
-    const missingSections = allSections.filter(s => !s.found).map(s => s.label);
-    if (missingSections.length > 0){
-      recs.push({
-        badge: "Structure",
-        type: "format",
-        issue: `Missing Recommended Sections: ${missingSections.slice(0, 3).join(", ")}`,
-        fix: `Add standard section headers (${missingSections.slice(0, 3).join(", ")}) to improve standard ATS parsing.`
-      });
-    }
-
-    // Timeline / Dates
-    if (noDatesFound){
-      recs.push({
-        badge: "Timeline",
-        type: "format",
-        issue: "No Clear Dates Found in Experience or Education",
-        fix: "Include month and year ranges (e.g., 'Jan 2022 – Present') so ATS scanners can compute years of experience."
-      });
-    }
-
-    // AI vs Man Made & Summary Polish
-    if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound && buzzwordsFound.length > 0){
-      recs.push({
-        badge: "AI Origin",
+        badge: "Job Description Match",
         type: "polish",
-        issue: `AI-Generated Patterns Detected: ${buzzwordsFound.slice(0, 3).join(", ")}`,
-        fix: "Humanize your resume by replacing robotic AI clichés with personal, quantifiable achievements."
-      });
-    } else if (aiAnalysis && aiAnalysis.isAi){
-      recs.push({
-        badge: "AI Origin",
-        type: "polish",
-        issue: "Robotic / AI sentence cadence detected across bullet points",
-        fix: "Vary your bullet point lengths and lead with specific tools and measurable project impacts."
+        issue: `Strong Job Description Keyword Alignment (${jdResult.matched.length} terms matched)`,
+        fix: `Your resume covers key terms mentioned in the job description (${jdResult.matched.slice(0, 4).join(", ")}). Maintain this strong keyword presence.`
       });
     }
 
-    if (!hasSummary){
+    const resumeTextLowerForRecs = (text || "").toLowerCase();
+    const titleTokensRecs = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    const titleMatchedCountRecs = titleTokensRecs.filter(t => resumeTextLowerForRecs.includes(t)).length;
+    const titleAlignmentPctRecs = titleTokensRecs.length > 0 ? Math.round((titleMatchedCountRecs / titleTokensRecs.length) * 100) : 70;
+    if (titleAlignmentPctRecs < 60) {
       recs.push({
-        badge: "Summary",
-        type: "polish",
-        issue: "No Professional Summary Header Found",
-        fix: "Include a 2–3 sentence Professional Summary at the top highlighting your key tech stack and career focus."
+        badge: "Title Alignment",
+        type: "format",
+        issue: `Target Role Title ("${targetRoleTitle}") Not Prominently Stated`,
+        fix: `Add a clear headline or summary title matching "${targetRoleTitle}" at the top of your resume so candidate tracking systems index your application accurately.`
       });
     }
+  }
 
-    // Render rule-based recommendations immediately as reliable baseline
-    renderRuleBasedRecs(recs, analysisMode);
-
-    // ---- Errors & Issues Found: every detected problem ----
-    const errorItems = [];
-    missing.forEach(m => {
-      let severity = "high";
-      if (["LinkedIn profile", "GitHub profile", "Years of experience (not explicitly stated)"].includes(m)) severity = "low";
-      else if (["Education section", "Projects section"].includes(m)) severity = "medium";
-
-      let detail = "This is a standard resume field or section — recruiters and ATS systems generally expect to see it.";
-      if (severity === "low") detail = "Adding a profile link or explicit timeline helps recruiters, though not strictly required by all ATS parsers.";
-
-      errorItems.push({
-        severity,
-        title: `Missing: ${m}`,
-        detail
+  // IN ATS SCORE CHECK MODE (and general resume quality): Recommend about the resume structure, completeness, and formatting
+  criticalMissingFields.forEach(field => {
+    if (missing.includes(field)) {
+      recs.push({
+        badge: "Critical Field",
+        type: "critical",
+        issue: `Missing Essential Field: ${field}`,
+        fix: `Add a clear ${field.replace(/ section$/i, "").toLowerCase()} header — ATS parsers rely on this to map your application data.`
       });
+    }
+  });
+
+  if (analysisMode === "ats" && missingCommonKw && missingCommonKw.length > 0) {
+    recs.push({
+      badge: "Core Keywords",
+      type: "keyword",
+      issue: `Missing Core Industry Terms: ${missingCommonKw.slice(0, 4).join(", ")}`,
+      fix: `Add relevant industry skills (${missingCommonKw.slice(0, 4).join(", ")}) to improve ATS keyword search ranking.`
     });
-    if (quant.total === 0){
-      errorItems.push({ severity:"medium", title:"No bullet points detected", detail:"Use bullet points (lines starting with -, *, or •) to list your achievements clearly." });
-    } else if (quant.quantified === 0){
-      errorItems.push({ severity:"low", title:"No quantified results in bullet points", detail:"Add numbers, percentages, or dollar amounts where possible to show measurable impact." });
-    }
-    if (uniqueWeakPhrases.length){
-      errorItems.push({
-        severity:"low",
-        title:`Weak or passive phrasing found (${uniqueWeakPhrases.length})`,
-        detail:`Phrases like ${uniqueWeakPhrases.slice(0,3).map(p => `"${p}"`).join(", ")} read passively — replace with strong action verbs.`
-      });
-    }
-    if (duplicateBullets.length){
-      errorItems.push({
-        severity:"low",
-        title:`Repeated bullet phrasing (${duplicateBullets.length})`,
-        detail:"Several bullet points use very similar wording — vary your language across roles and projects."
-      });
-    }
-    if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound.length){
-      errorItems.push({
-        severity:"low",
-        title:`AI / OpenAI generated patterns detected (${buzzwordsFound.length})`,
-        detail:`Phrases like ${buzzwordsFound.slice(0,3).join(", ")} sound generated by ChatGPT/AI — swap them for specific, human-written achievements.`
-      });
-    } else if (buzzwordsFound.length){
-      errorItems.push({
-        severity:"low",
-        title:`Overused buzzwords found (${buzzwordsFound.length})`,
-        detail:`Words like ${buzzwordsFound.slice(0,3).join(", ")} are vague — swap them for specific, concrete language.`
-      });
-    }
-    if (missingCommonKw.length){
-      errorItems.push({
-        severity:"low",
-        title:`Missing common keywords (${missingCommonKw.length})`,
-        detail:`Consider naturally adding: ${missingCommonKw.slice(0,5).join(", ")}${missingCommonKw.length > 5 ? ", etc." : ""}.`
-      });
-    }
-    if (!hasSummary){
-      errorItems.push({ severity:"low", title:"No professional summary", detail:"A 2–3 line summary at the top helps recruiters quickly understand your focus area." });
-    }
-    if (futureGradFlag){
-      errorItems.push({ severity:"medium", title:"Future graduation date detected", detail:"Double-check your education dates — a graduation year in the future can clarify your timeline." });
-    }
-    if (noDatesFound){
-      errorItems.push({ severity:"low", title:"No dates found in education or experience", detail:"Add month/year ranges so recruiters can follow your timeline at a glance." });
-    }
+  }
 
-    const severityRank = { high:0, medium:1, low:2 };
-    errorItems.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+  // Bullet Point Impact & Metrics
+  if (quant.total === 0 || quant.quantified === 0) {
+    recs.push({
+      badge: "Impact Metrics",
+      type: "impact",
+      issue: "No Quantified Achievements Found",
+      fix: "Add numbers, percentages, or metrics to your experience bullets (e.g., 'Boosted efficiency by 30%', 'Managed $20k budget')."
+    });
+  }
 
-    const errorsListEl = document.getElementById("errorsList");
-    errorsListEl.innerHTML = "";
-    if (errorItems.length){
-      const badgeLabel = { high:"Critical", medium:"Moderate", low:"Minor" };
-      errorItems.forEach(err => {
-        const row = document.createElement("div");
-        row.className = "error-item";
-        row.innerHTML = `
+  // Action Verbs & Weak Phrasing
+  if (uniqueWeakPhrases && uniqueWeakPhrases.length > 0) {
+    recs.push({
+      badge: "Verb Strength",
+      type: "impact",
+      issue: `Weak or Passive Verbs Detected: ${uniqueWeakPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")}`,
+      fix: `Replace passive phrasing with strong action verbs like 'Engineered', 'Spearheaded', 'Architected', or 'Optimized'.`
+    });
+  }
+
+  // Formatting & Length
+  if (wordCount < 300 || wordCount > 1100) {
+    recs.push({
+      badge: "Formatting",
+      type: "format",
+      issue: `Resume Length (${wordCount} words) Outside Ideal Range`,
+      fix: `Aim for 300–1100 words. ${wordCount < 300 ? "Add more detailed bullet points describing your technical accomplishments." : "Trim redundant details to keep your resume focused."}`
+    });
+  }
+
+  // Section Coverage & Structure
+  const missingSections = allSections.filter(s => !s.found).map(s => s.label);
+  if (missingSections.length > 0) {
+    recs.push({
+      badge: "Structure",
+      type: "format",
+      issue: `Missing Recommended Sections: ${missingSections.slice(0, 3).join(", ")}`,
+      fix: `Add standard section headers (${missingSections.slice(0, 3).join(", ")}) to improve standard ATS parsing.`
+    });
+  }
+
+  // Timeline / Dates
+  if (noDatesFound) {
+    recs.push({
+      badge: "Timeline",
+      type: "format",
+      issue: "No Clear Dates Found in Experience or Education",
+      fix: "Include month and year ranges (e.g., 'Jan 2022 – Present') so ATS scanners can compute years of experience."
+    });
+  }
+
+  // AI vs Man Made & Summary Polish
+  if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound && buzzwordsFound.length > 0) {
+    recs.push({
+      badge: "AI Origin",
+      type: "polish",
+      issue: `AI-Generated Patterns Detected: ${buzzwordsFound.slice(0, 3).join(", ")}`,
+      fix: "Humanize your resume by replacing robotic AI clichés with personal, quantifiable achievements."
+    });
+  } else if (aiAnalysis && aiAnalysis.isAi) {
+    recs.push({
+      badge: "AI Origin",
+      type: "polish",
+      issue: "Robotic / AI sentence cadence detected across bullet points",
+      fix: "Vary your bullet point lengths and lead with specific tools and measurable project impacts."
+    });
+  }
+
+  if (!hasSummary) {
+    recs.push({
+      badge: "Summary",
+      type: "polish",
+      issue: "No Professional Summary Header Found",
+      fix: "Include a 2–3 sentence Professional Summary at the top highlighting your key tech stack and career focus."
+    });
+  }
+
+  // Render rule-based recommendations immediately as reliable baseline
+  renderRuleBasedRecs(recs, analysisMode);
+
+  // ---- Errors & Issues Found: every detected problem ----
+  const errorItems = [];
+  missing.forEach(m => {
+    let severity = "high";
+    if (["LinkedIn profile", "GitHub profile", "Years of experience (not explicitly stated)"].includes(m)) severity = "low";
+    else if (["Education section", "Projects section"].includes(m)) severity = "medium";
+
+    let detail = "This is a standard resume field or section — recruiters and ATS systems generally expect to see it.";
+    if (severity === "low") detail = "Adding a profile link or explicit timeline helps recruiters, though not strictly required by all ATS parsers.";
+
+    errorItems.push({
+      severity,
+      title: `Missing: ${m}`,
+      detail
+    });
+  });
+  if (quant.total === 0) {
+    errorItems.push({ severity: "medium", title: "No bullet points detected", detail: "Use bullet points (lines starting with -, *, or •) to list your achievements clearly." });
+  } else if (quant.quantified === 0) {
+    errorItems.push({ severity: "low", title: "No quantified results in bullet points", detail: "Add numbers, percentages, or dollar amounts where possible to show measurable impact." });
+  }
+  if (uniqueWeakPhrases.length) {
+    errorItems.push({
+      severity: "low",
+      title: `Weak or passive phrasing found (${uniqueWeakPhrases.length})`,
+      detail: `Phrases like ${uniqueWeakPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")} read passively — replace with strong action verbs.`
+    });
+  }
+  if (duplicateBullets.length) {
+    errorItems.push({
+      severity: "low",
+      title: `Repeated bullet phrasing (${duplicateBullets.length})`,
+      detail: "Several bullet points use very similar wording — vary your language across roles and projects."
+    });
+  }
+  if (aiAnalysis && aiAnalysis.isAi && buzzwordsFound.length) {
+    errorItems.push({
+      severity: "low",
+      title: `AI / OpenAI generated patterns detected (${buzzwordsFound.length})`,
+      detail: `Phrases like ${buzzwordsFound.slice(0, 3).join(", ")} sound generated by ChatGPT/AI — swap them for specific, human-written achievements.`
+    });
+  } else if (buzzwordsFound.length) {
+    errorItems.push({
+      severity: "low",
+      title: `Overused buzzwords found (${buzzwordsFound.length})`,
+      detail: `Words like ${buzzwordsFound.slice(0, 3).join(", ")} are vague — swap them for specific, concrete language.`
+    });
+  }
+  if (missingCommonKw.length) {
+    errorItems.push({
+      severity: "low",
+      title: `Missing common keywords (${missingCommonKw.length})`,
+      detail: `Consider naturally adding: ${missingCommonKw.slice(0, 5).join(", ")}${missingCommonKw.length > 5 ? ", etc." : ""}.`
+    });
+  }
+  if (!hasSummary) {
+    errorItems.push({ severity: "low", title: "No professional summary", detail: "A 2–3 line summary at the top helps recruiters quickly understand your focus area." });
+  }
+  if (futureGradFlag) {
+    errorItems.push({ severity: "medium", title: "Future graduation date detected", detail: "Double-check your education dates — a graduation year in the future can clarify your timeline." });
+  }
+  if (noDatesFound) {
+    errorItems.push({ severity: "low", title: "No dates found in education or experience", detail: "Add month/year ranges so recruiters can follow your timeline at a glance." });
+  }
+
+  const severityRank = { high: 0, medium: 1, low: 2 };
+  errorItems.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+
+  const errorsListEl = document.getElementById("errorsList");
+  errorsListEl.innerHTML = "";
+  if (errorItems.length) {
+    const badgeLabel = { high: "Critical", medium: "Moderate", low: "Minor" };
+    errorItems.forEach(err => {
+      const row = document.createElement("div");
+      row.className = "error-item";
+      row.innerHTML = `
           <span class="error-badge ${err.severity}">${badgeLabel[err.severity]}</span>
           <div class="error-body">
             <div class="error-title">${err.title}</div>
             <div class="error-detail">${err.detail}</div>
           </div>
         `;
-        errorsListEl.appendChild(row);
-      });
-    } else {
-      errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
-    }
-
-    // ---- Standalone Resume ATS Score (Overall resume quality) ----
-    const standaloneKwCoverage = Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40));
-    const densityDeltaStandalone = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
-    const standaloneRelevancePct = Math.max(45, Math.min(100, Math.round(100 - densityDeltaStandalone * 4)));
-
-    const standaloneWeighted =
-      (sectionCoveragePct * 0.20) +
-      (standaloneKwCoverage * 0.20) +
-      (contentStrengthPct * 0.20) +
-      (formattingPct * 0.15) +
-      (standaloneRelevancePct * 0.10) +
-      (readabilityPct * 0.10) +
-      (timelineConsistencyPct * 0.05);
-
-    let standaloneScore = Math.round(standaloneWeighted);
-    const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
-    standaloneScore -= criticalMissingCount * 5;
-    standaloneScore = Math.max(15, Math.min(100, standaloneScore));
-
-    // ---- Role & Job Description Matched ATS Score ----
-    const resumeTextLower = (text || "").toLowerCase();
-    const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-    const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
-    const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
-
-    let roleWeighted = 0;
-    if (jdResult && jdResult.ratio !== null) {
-      roleWeighted =
-        (titleAlignmentPct * 0.10) +
-        (Math.round(roleSkillMatchRatio * 100) * 0.25) +
-        (Math.round(jdResult.ratio * 100) * 0.20) +
-        (relevanceAlignmentPct * 0.15) +
-        (contentStrengthPct * 0.10) +
-        (timelineConsistencyPct * 0.05) +
-        (sectionCoveragePct * 0.05) +
-        (readabilityPct * 0.10);
-    } else {
-      roleWeighted =
-        (titleAlignmentPct * 0.10) +
-        (Math.round(roleSkillMatchRatio * 100) * 0.35) +
-        (relevanceAlignmentPct * 0.20) +
-        (contentStrengthPct * 0.15) +
-        (timelineConsistencyPct * 0.05) +
-        (sectionCoveragePct * 0.05) +
-        (readabilityPct * 0.10);
-    }
-    let roleScore = Math.round(roleWeighted);
-    roleScore -= criticalMissingCount * 5;
-    roleScore = Math.max(15, Math.min(100, roleScore));
-
-    // Select active score based on current analysis mode
-    const score = (analysisMode === "ats") ? standaloneScore : roleScore;
-
-    // Update Gauge Heading & Subtitle dynamically based on mode
-    const verdictSubEl = document.getElementById("atsVerdictSub");
-    const atsHeadHeading = document.querySelector(".ats-score-card-head h2");
-    const compBox = document.getElementById("atsComparisonBox");
-
-    if (analysisMode === "ats") {
-      if (atsHeadHeading) atsHeadHeading.textContent = "Overall Resume ATS Score";
-      if (verdictSubEl) verdictSubEl.textContent = "This overall score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.";
-      if (compBox) compBox.style.display = "none";
-    } else {
-      if (atsHeadHeading) atsHeadHeading.textContent = `ATS Score for ${targetRoleTitle}`;
-      if (verdictSubEl) verdictSubEl.textContent = `This score evaluates how well your resume matches ${targetRoleTitle}${hasUserJobDescription ? " and the provided job description" : ""}. Actual ATS systems vary.`;
-      
-      // Update ATS with Role Comparison Box
-      if (compBox) {
-        compBox.style.display = "block";
-        const roleScoreEl = document.getElementById("compRoleScoreVal");
-        const overallScoreEl = document.getElementById("compOverallScoreVal");
-        const deltaEl = document.getElementById("compDeltaVal");
-        const compDescEl = document.getElementById("compDescText");
-
-        if (roleScoreEl) roleScoreEl.textContent = `${roleScore} / 100`;
-        if (overallScoreEl) overallScoreEl.textContent = `${standaloneScore} / 100`;
-
-        const diff = roleScore - standaloneScore;
-        if (deltaEl) {
-          deltaEl.className = "ats-comp-delta " + (diff > 0 ? "pos" : (diff < 0 ? "neg" : "zero"));
-          deltaEl.textContent = diff > 0 ? `+${diff} pts higher` : (diff < 0 ? `${diff} pts lower` : "Same as overall");
-        }
-
-        if (compDescEl) {
-          if (diff > 0) {
-            compDescEl.textContent = `Your resume scores ${diff} pts higher for ${targetRoleTitle} because your technical skills align strongly with this specific role.`;
-          } else if (diff < 0) {
-            compDescEl.textContent = `Your resume scores ${Math.abs(diff)} pts lower for ${targetRoleTitle} due to missing role-specific keywords or required skills.`;
-          } else {
-            compDescEl.textContent = `Your target role ATS score matches your general resume ATS score.`;
-          }
-        }
-      }
-    }
-
-    // Verdict labels:
-    // 90-100: Excellent Match
-    // 80-89: Strong Match
-    // 70-79: Good Match
-    // 60-69: Needs Improvement
-    // Below 60: Low Match
-    let color = "#d9534f", verdict = "Low Match";
-    if (score >= 90){ color = "#2e7d32"; verdict = "Excellent Match"; }
-    else if (score >= 80){ color = "#25855a"; verdict = "Strong Match"; }
-    else if (score >= 70){ color = "#1e88e5"; verdict = "Good Match"; }
-    else if (score >= 60){ color = "#c9962c"; verdict = "Needs Improvement"; }
-    else { color = "#d9534f"; verdict = "Low Match"; }
-
-    renderATSScore(score, color, verdict);
-
-    // Display ATS Gauge card and breakdown in both modes
-    const scoreCardEl = document.getElementById("atsCard");
-    const scoreBreakdownCardEl = document.querySelector(".ats-hero-breakdown");
-    const atsDisclaimerEl = document.getElementById("atsDisclaimerNotice");
-
-    if (scoreCardEl) scoreCardEl.style.display = "block";
-    if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "block";
-    if (atsDisclaimerEl) atsDisclaimerEl.style.display = "block";
-
-    // Snapshot everything the PDF export button needs
-    lastAnalysisData = {
-      filename, name,
-      email: emailMatch ? emailMatch[0] : "Not found",
-      phone: (phoneMatch && phoneMatch[0].replace(/\D/g,"").length >= 7) ? phoneMatch[0] : "Not found",
-      location: locationStr || "",
-      linkedin: linkedinMatch ? linkedinMatch[0] : "Not found",
-      github: githubMatch ? githubMatch[0] : "Not found",
-      skills: skills.map(s => s.name),
-      years, wordCount,
-      experience: experience || "",
-      education: education || "",
-      projects: projects || "",
-      certifications: certifications || "",
-      summary: summary || "",
-      achievements: achievements || "",
-      languages: languages || "",
-      leadership: leadership || "",
-      allIdentifiedSections: allSections.filter(s => s.found).map(s => s.label),
-      missing,
-      quant, uniqueWeakPhrases, duplicateBullets,
-      jdResult,
-      score, verdict,
-      targetJobRole: targetRoleTitle
-    };
-
-    if (!historySavedForCurrentUpload){
-      saveHistoryEntry(currentUser ? currentUser.email : null, filename, score, verdict);
-      historySavedForCurrentUpload = true;
-    }
-
-    // Prepare context and trigger AI recommendations asynchronously now that score & all metrics are fully computed
-    lastAIAnalysisContext = {
-      mode: analysisMode,
-      resumeText: text,
-      targetRole: targetRoleTitle,
-      customRole: customJobRoleText || "",
-      jobDescription: userJobDescriptionText || "",
-      matchedSkills: typeof matchedRoleSkills !== "undefined" ? matchedRoleSkills : [],
-      missingSkills: typeof missingRoleSkills !== "undefined" ? missingRoleSkills : [],
-      jdAnalysis: typeof jdResult !== "undefined" ? jdResult : null,
-      overallScore: score,
-      scoreBreakdown: {
-        structure: typeof sectionCoveragePct !== "undefined" ? sectionCoveragePct : 70,
-        keywords: typeof kwCoveragePct !== "undefined" ? kwCoveragePct : 70,
-        impact: typeof impactPct !== "undefined" ? impactPct : 70,
-        formatting: typeof formatPct !== "undefined" ? formatPct : 70
-      },
-      missingSections: typeof missing !== "undefined" ? missing : [],
-      missingKeywords: (analysisMode === "ats" && typeof missingCommonKw !== "undefined") ? missingCommonKw : [],
-      weakPhrases: typeof uniqueWeakPhrases !== "undefined" ? uniqueWeakPhrases : [],
-      quantifiedStats: typeof quant !== "undefined" ? quant : { total: 0, quantified: 0 },
-      formattingIssues: [
-        (typeof wordCount !== "undefined" && (wordCount < 300 || wordCount > 1100)) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
-        (typeof noDatesFound !== "undefined" && noDatesFound) ? "No clear dates or employment timelines detected" : null
-      ].filter(Boolean),
-      ruleBasedRecs: recs
-    };
-
-    triggerAIRecommendations(lastAIAnalysisContext);
-
-    document.getElementById("results").style.display = "block";
-    document.getElementById("results").scrollIntoView({ behavior: "smooth" });
-  }
-
-  async function extractPdfText(arrayBuffer){
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
-    for (let i = 1; i <= pdf.numPages; i++){
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-
-      const rawItems = (content.items || [])
-        .filter(it => it.str !== undefined && it.str.trim().length > 0)
-        .map(it => {
-          const x = it.transform ? it.transform[4] : (it.x || 0);
-          const y = it.transform ? it.transform[5] : (it.y || 0);
-          const width = it.width || (it.str.length * 5.5);
-          const height = it.height || 10;
-          return { str: it.str, x, y, width, height };
-        });
-
-      if (!rawItems.length) continue;
-
-      // Detect multi-column layout on this page
-      const minX = Math.min(...rawItems.map(it => it.x));
-      const maxX = Math.max(...rawItems.map(it => it.x + it.width));
-      const contentWidth = maxX - minX;
-
-      let isTwoColumn = false;
-      let bestSplitX = 0;
-      let headerBottomY = Infinity;
-
-      if (contentWidth > 260 && rawItems.length >= 15) {
-        const maxY = Math.max(...rawItems.map(it => it.y));
-        const minY = Math.min(...rawItems.map(it => it.y));
-        const totalH = maxY - minY;
-        const candidateSplits = [];
-        for (let pct = 0.30; pct <= 0.70; pct += 0.02) {
-          candidateSplits.push(minX + contentWidth * pct);
-        }
-
-        let bestScore = 0;
-
-        for (const splitX of candidateSplits) {
-          // Look at body items below top 12%
-          const bodyItems = rawItems.filter(it => it.y < (maxY - totalH * 0.12));
-          if (bodyItems.length < 10) continue;
-
-          let leftCount = 0;
-          let rightCount = 0;
-          let crossingCount = 0;
-
-          for (const it of bodyItems) {
-            const itRight = it.x + it.width;
-            if (it.x < splitX - 8 && itRight > splitX + 8) {
-              crossingCount++;
-            } else if (it.x + it.width * 0.5 < splitX) {
-              leftCount++;
-            } else {
-              rightCount++;
-            }
-          }
-
-          const crossingRatio = crossingCount / bodyItems.length;
-          const leftRatio = leftCount / bodyItems.length;
-          const rightRatio = rightCount / bodyItems.length;
-
-          if (crossingRatio < 0.12 && leftRatio >= 0.20 && rightRatio >= 0.20) {
-            // Heavily penalize crossing items so a true gutter (with 0 or minimal crossings)
-            // is always chosen over an accidental split cutting through body text
-            const penalty = Math.pow(Math.max(0, 1 - crossingRatio * 3), 2);
-            const score = penalty * Math.min(leftRatio, rightRatio);
-            if (score > bestScore) {
-              bestScore = score;
-              bestSplitX = splitX;
-              isTwoColumn = true;
-            }
-          }
-        }
-
-        if (isTwoColumn && bestSplitX > 0) {
-          const crossingItems = rawItems.filter(it => it.x < bestSplitX - 10 && (it.x + it.width) > bestSplitX + 10);
-          if (crossingItems.length > 0) {
-            headerBottomY = Math.min(...crossingItems.map(it => it.y)) - 5;
-          } else {
-            headerBottomY = maxY - (totalH > 400 ? 70 : 40);
-          }
-        }
-      }
-
-      function assembleLines(itemList) {
-        if (!itemList.length) return [];
-        const sorted = [...itemList].sort((a, b) => {
-          if (Math.abs(a.y - b.y) > 3.5) return b.y - a.y;
-          return a.x - b.x;
-        });
-
-        const lines = [];
-        let currentLine = [];
-        let lastItem = null;
-        let lastY = null;
-
-        for (const item of sorted) {
-          if (lastY !== null && Math.abs(item.y - lastY) > 3.5) {
-            lines.push(currentLine.join(" ").replace(/\s+/g, " ").trim());
-            currentLine = [];
-            lastItem = null;
-          }
-          if (lastItem && (item.x - (lastItem.x + lastItem.width)) > 24) {
-            currentLine.push("   "); // Insert 3 spaces so regex /\s{2,}/ can split glued column headers
-          }
-          currentLine.push(item.str);
-          lastItem = item;
-          lastY = item.y;
-        }
-        if (currentLine.length) {
-          lines.push(currentLine.join(" ").replace(/\s+/g, " ").trim());
-        }
-        return lines.filter(Boolean);
-      }
-
-      let pageLines = [];
-      if (isTwoColumn && bestSplitX > 0) {
-        const headerItems = rawItems.filter(it => it.y >= headerBottomY);
-        const leftItems = rawItems.filter(it => it.y < headerBottomY && (it.x + it.width * 0.5) < bestSplitX);
-        const rightItems = rawItems.filter(it => it.y < headerBottomY && (it.x + it.width * 0.5) >= bestSplitX);
-
-        pageLines = [
-          ...assembleLines(headerItems),
-          ...assembleLines(leftItems),
-          ...assembleLines(rightItems)
-        ];
-      } else {
-        pageLines = assembleLines(rawItems);
-      }
-
-      fullText += pageLines.join("\n") + "\n";
-    }
-    return fullText;
-  }
-
-  async function extractDocxText(arrayBuffer){
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value;
-  }
-
-  function setStatus(msg, isError){
-    const el = document.getElementById("status");
-    el.textContent = msg;
-    el.className = isError ? "error" : "";
-  }
-
-  // ---- Loading indicator: shown during file extraction / analysis so the
-  // user gets feedback instead of a frozen-looking page on larger files ----
-  const loadingIndicator = document.getElementById("loadingIndicator");
-  const loadingText = document.getElementById("loadingText");
-
-  function showLoading(msg){
-    loadingText.textContent = msg || "Working…";
-    loadingIndicator.style.display = "flex";
-    uploadBtn.disabled = true;
-    analyzePastedBtn.disabled = true;
-  }
-  function hideLoading(){
-    loadingIndicator.style.display = "none";
-    uploadBtn.disabled = !pendingFile;
-    analyzePastedBtn.disabled = false;
-  }
-  // Lets the browser actually paint the loading indicator before we run
-  // synchronous, CPU-heavy work (regex scans, PDF text sorting, etc.)
-  function paintFrame(){
-    return new Promise(resolve => setTimeout(resolve, 30));
-  }
-
-  async function handleFile(file){
-    if (!file) return;
-    if (!currentUser){
-      setStatus("Please log in or sign up to upload and analyze your resume.", true);
-      openAuth("login");
-      showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
-      return;
-    }
-    const ext = file.name.split(".").pop().toLowerCase();
-    if (!["pdf", "docx"].includes(ext)){
-      setStatus("Only .pdf and .docx files are supported.", true);
-      return;
-    }
-    document.getElementById("results").style.display = "none";
-    document.getElementById("analysisOptions").style.display = "none";
-    document.getElementById("preUploadFields").style.display = "none";
-    document.getElementById("tipsCard").style.display = "none";
-    setStatus("");
-    showLoading("Reading " + file.name + " …");
-    await paintFrame();
-
-    try{
-      const arrayBuffer = await file.arrayBuffer();
-      let text = "";
-      if (ext === "pdf"){
-        showLoading("Extracting text from PDF…");
-        await paintFrame();
-        text = await extractPdfText(arrayBuffer);
-      } else {
-        showLoading("Extracting text from DOCX…");
-        await paintFrame();
-        text = await extractDocxText(arrayBuffer);
-      }
-      if (!text || !text.trim()){
-        hideLoading();
-        setStatus("Could not extract any text from this file.", true);
-        return;
-      }
-      pendingResumeText = text;
-      pendingResumeFilename = file.name;
-      window.currentOriginalResumeFile = file;
-      window.currentOriginalResumeFilename = file.name;
-      try {
-        pendingResumeFileData = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (evt) => resolve(evt.target.result);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
-        });
-        if (pendingResumeFileData) {
-          window.currentOriginalResumeDataUrl = pendingResumeFileData;
-          try {
-            sessionStorage.setItem("original_resume_" + file.name, pendingResumeFileData);
-            sessionStorage.setItem("latest_original_resume_name", file.name);
-            sessionStorage.setItem("latest_original_resume_data", pendingResumeFileData);
-          } catch(storageErr) {}
-        }
-      } catch (e) {
-        pendingResumeFileData = null;
-      }
-      historySavedForCurrentUpload = false;
-      logResumeUploadActivity(file.name);
-      hideLoading();
-      setStatus("Resume ready — choose how you'd like it analyzed.");
-      showAnalysisOptions();
-    } catch(err){
-      console.error(err);
-      hideLoading();
-      setStatus("Error while analyzing: " + err.message, true);
-    }
-  }
-
-  async function logResumeUploadActivity(filename) {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      await safeFetchJson("/api/activity/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + token
-        },
-        body: JSON.stringify({ filename })
-      });
-    } catch (e) {}
-  }
-
-  async function logResumeDownloadActivity(filename) {
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      await safeFetchJson("/api/activity/download", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + token
-        },
-        body: JSON.stringify({ filename: filename || "resume_report.pdf", format: "pdf" })
-      });
-    } catch (e) {}
-  }
-
-  const dropzone = document.getElementById("dropzone");
-  const fileInput = document.getElementById("fileInput");
-  const chosenName = document.getElementById("chosenName");
-  const uploadBtn = document.getElementById("uploadBtn");
-
-  let pendingFile = null;
-
-  function setPendingFile(file){
-    if (!file) return;
-    const ext = file.name.split(".").pop().toLowerCase();
-    if (!["pdf", "docx"].includes(ext)){
-      setStatus("Only .pdf and .docx files are supported.", true);
-      return;
-    }
-    pendingFile = file;
-    chosenName.textContent = file.name;
-    uploadBtn.disabled = false;
-    setStatus("File ready — click Upload to analyze.");
-  }
-
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files.length) setPendingFile(fileInput.files[0]);
-  });
-
-  ["dragenter", "dragover"].forEach(evt => {
-    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add("drag"); });
-  });
-  ["dragleave", "drop"].forEach(evt => {
-    dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove("drag"); });
-  });
-  dropzone.addEventListener("drop", e => {
-    const file = e.dataTransfer.files[0];
-    if (file) setPendingFile(file);
-  });
-
-  uploadBtn.addEventListener("click", () => {
-    if (pendingFile) handleFile(pendingFile);
-  });
-
-  // ---- Paste-resume-text flow (alternative to file upload) ----
-  const pasteToggleBtn = document.getElementById("pasteToggleBtn");
-  const pasteWrap = document.getElementById("pasteWrap");
-  const pasteTextInput = document.getElementById("pasteTextInput");
-  const analyzePastedBtn = document.getElementById("analyzePastedBtn");
-
-  pasteToggleBtn.addEventListener("click", () => {
-    const showing = pasteWrap.style.display !== "none";
-    pasteWrap.style.display = showing ? "none" : "block";
-    pasteToggleBtn.textContent = showing ? "Paste text" : "Hide the text box";
-    if (!showing) pasteTextInput.focus();
-  });
-
-  analyzePastedBtn.addEventListener("click", async () => {
-    if (!currentUser){
-      setStatus("Please log in or sign up to upload and analyze your resume.", true);
-      openAuth("login");
-      showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
-      return;
-    }
-    const text = pasteTextInput.value.trim();
-    if (!text){
-      setStatus("Please paste some resume text first.", true);
-      return;
-    }
-    if (text.split(/\s+/).filter(Boolean).length < 20){
-      setStatus("That looks too short to be a resume — please paste more text.", true);
-      return;
-    }
-    document.getElementById("results").style.display = "none";
-    document.getElementById("analysisOptions").style.display = "none";
-    document.getElementById("preUploadFields").style.display = "none";
-    document.getElementById("tipsCard").style.display = "none";
-    setStatus("");
-    showLoading("Reading pasted text…");
-    await paintFrame();
-    try {
-      pendingResumeText = text;
-      pendingResumeFilename = "Pasted Resume Text";
-      historySavedForCurrentUpload = false;
-      logResumeUploadActivity("Pasted Resume Text");
-      hideLoading();
-      setStatus("Resume ready — choose how you'd like it analyzed.");
-      showAnalysisOptions();
-    } catch(err){
-      console.error(err);
-      hideLoading();
-      setStatus("Error while analyzing: " + err.message, true);
-    }
-  });
-
-  // ---- Analysis mode selection: shows the two-option screen after the
-  // resume text has been extracted, then routes to the ATS-only or the
-  // full normal-analysis report using the already-extracted text. ----
-  const analysisOptionsEl = document.getElementById("analysisOptions");
-  const resultsEl = document.getElementById("results");
-
-  function showAnalysisOptions(){
-    resultsEl.style.display = "none";
-    analysisOptionsEl.style.display = "block";
-    analysisOptionsEl.scrollIntoView({ behavior: "smooth" });
-  }
-
-  function updateReportTabState(mode){
-    const tabAtsBtn = document.getElementById("tabAtsBtn");
-    const tabNormalBtn = document.getElementById("tabNormalBtn");
-    if (tabAtsBtn) tabAtsBtn.classList.toggle("active", mode === "ats");
-    if (tabNormalBtn) tabNormalBtn.classList.toggle("active", mode === "normal");
-  }
-
-  function selectAnalysisMode(mode){
-    if (!pendingResumeText) {
-      setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
-      const dropzone = document.getElementById("dropzone");
-      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
-      return;
-    }
-    analysisMode = mode;
-    if (analysisOptionsEl) analysisOptionsEl.style.display = "none";
-    if (resultsEl) resultsEl.dataset.mode = mode;
-    updateReportTabState(mode);
-
-    const execHeading = document.getElementById("execSummaryHeading");
-    const execColIssues = document.getElementById("execColTitleIssues");
-    const execColFixes = document.getElementById("execColTitleFixes");
-
-    if (execHeading){
-      execHeading.textContent = mode === "ats"
-        ? "ATS Improvement Recommendations"
-        : "Target Role & Skill Recommendations";
-    }
-    if (execColIssues) {
-      execColIssues.textContent = mode === "ats" ? "Top Issues to Fix" : "Target Role & Skill Gaps";
-    }
-    if (execColFixes) {
-      execColFixes.textContent = mode === "ats" ? "Quick Fixes" : "Actionable Role Fixes";
-    }
-
-    if (mode === "ats") {
-      runATSAnalysis();
-    } else {
-      runNormalAnalysis();
-    }
-    setStatus("Analysis complete ✓");
-    if (typeof logUserAction === "function") {
-      logUserAction("mode selection", mode === "ats" ? "User selected Check ATS Score mode" : "User selected ATS with Role mode", { mode });
-    }
-  }
-
-  // Both modes share the same underlying extraction/analysis engine —
-  // analyzeText() renders every section, and CSS (driven by #results'
-  // data-mode attribute) shows only the sections relevant to the chosen mode.
-  function runATSAnalysis(){
-    analyzeText(pendingResumeText, pendingResumeFilename);
-  }
-
-  function runNormalAnalysis(){
-    analyzeText(pendingResumeText, pendingResumeFilename);
-  }
-
-  function resetAnalysis(){
-    if (currentAIAbortController) {
-      currentAIAbortController.abort();
-      currentAIAbortController = null;
-    }
-    lastAIAnalysisContext = null;
-    const expContainer = document.getElementById("aiExpandedContainer");
-    if (expContainer) {
-      expContainer.style.display = "none";
-      expContainer.innerHTML = "";
-    }
-    const aiBanner = document.getElementById("aiSummaryBanner");
-    if (aiBanner) aiBanner.style.display = "none";
-    const fbBanner = document.getElementById("aiFallbackBanner");
-    if (fbBanner) fbBanner.style.display = "none";
-    const aiLoading = document.getElementById("aiRecsLoading");
-    if (aiLoading) aiLoading.style.display = "none";
-    updateAIRecsBadge("normal");
-
-    resultsEl.style.display = "none";
-    analysisOptionsEl.style.display = "none";
-    resultsEl.removeAttribute("data-mode");
-    document.getElementById("preUploadFields").style.display = "";
-    document.getElementById("tipsCard").style.display = "";
-    chosenName.textContent = "No file selected";
-    uploadBtn.disabled = true;
-    pendingFile = null;
-    pendingResumeText = null;
-    pendingResumeFilename = null;
-    analysisMode = null;
-    historySavedForCurrentUpload = false;
-    fileInput.value = "";
-    pasteTextInput.value = "";
-    setStatus("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  const chooseAtsBtn = document.getElementById("chooseAtsBtn");
-  if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
-
-  const chooseNormalBtn = document.getElementById("chooseNormalBtn");
-  if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => openTargetJobModal("normal"));
-
-  setupTargetJobModalListeners();
-
-  const tabAtsBtn = document.getElementById("tabAtsBtn");
-  if (tabAtsBtn) tabAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
-
-  const tabNormalBtn = document.getElementById("tabNormalBtn");
-  if (tabNormalBtn) {
-    tabNormalBtn.addEventListener("click", () => {
-      if (!selectedTargetJobRole && !customJobRoleText) {
-        openTargetJobModal("normal");
-      } else {
-        selectAnalysisMode("normal");
-      }
+      errorsListEl.appendChild(row);
     });
+  } else {
+    errorsListEl.innerHTML = "<div class='errors-empty'>✓ No major errors found — this resume looks solid!</div>";
   }
 
-  const changeTargetRoleBtn = document.getElementById("changeTargetRoleBtn");
-  if (changeTargetRoleBtn) {
-    changeTargetRoleBtn.addEventListener("click", () => openTargetJobModal("normal"));
-  }
+  // ---- Standalone Resume ATS Score (Overall resume quality) ----
+  const standaloneKwCoverage = Math.min(100, (skills.length >= 10 ? 95 : skills.length >= 7 ? 85 : skills.length >= 5 ? 75 : skills.length >= 3 ? 60 : 40));
+  const densityDeltaStandalone = skillDensity < 6 ? 6 - skillDensity : (skillDensity > 22 ? skillDensity - 22 : 0);
+  const standaloneRelevancePct = Math.max(45, Math.min(100, Math.round(100 - densityDeltaStandalone * 4)));
 
-  // AI Insights Toggle Switch Listener
-  const aiRecsToggle = document.getElementById("aiRecsToggle");
-  if (aiRecsToggle) {
-    const savedPref = localStorage.getItem("ara_ai_recs_enabled");
-    if (savedPref !== null) {
-      aiRecsToggle.checked = savedPref === "true";
-    }
-    aiRecsToggle.addEventListener("change", () => {
-      localStorage.setItem("ara_ai_recs_enabled", aiRecsToggle.checked);
-      if (lastAIAnalysisContext) {
-        if (aiRecsToggle.checked) {
-          triggerAIRecommendations(lastAIAnalysisContext);
+  const standaloneWeighted =
+    (sectionCoveragePct * 0.20) +
+    (standaloneKwCoverage * 0.20) +
+    (contentStrengthPct * 0.20) +
+    (formattingPct * 0.15) +
+    (standaloneRelevancePct * 0.10) +
+    (readabilityPct * 0.10) +
+    (timelineConsistencyPct * 0.05);
+
+  let standaloneScore = Math.round(standaloneWeighted);
+  const criticalMissingCount = missing.filter(m => criticalMissingFields.includes(m)).length;
+  standaloneScore -= criticalMissingCount * 5;
+  standaloneScore = Math.max(15, Math.min(100, standaloneScore));
+
+  // ---- Role & Job Description Matched ATS Score ----
+  const resumeTextLower = (text || "").toLowerCase();
+  const titleTokens = targetRoleTitle.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+  const titleMatchedCount = titleTokens.filter(t => resumeTextLower.includes(t)).length;
+  const titleAlignmentPct = titleTokens.length > 0 ? Math.round((titleMatchedCount / titleTokens.length) * 100) : 70;
+
+  let roleWeighted = 0;
+  if (jdResult && jdResult.ratio !== null) {
+    roleWeighted =
+      (titleAlignmentPct * 0.10) +
+      (Math.round(roleSkillMatchRatio * 100) * 0.25) +
+      (Math.round(jdResult.ratio * 100) * 0.20) +
+      (relevanceAlignmentPct * 0.15) +
+      (contentStrengthPct * 0.10) +
+      (timelineConsistencyPct * 0.05) +
+      (sectionCoveragePct * 0.05) +
+      (readabilityPct * 0.10);
+  } else {
+    roleWeighted =
+      (titleAlignmentPct * 0.10) +
+      (Math.round(roleSkillMatchRatio * 100) * 0.35) +
+      (relevanceAlignmentPct * 0.20) +
+      (contentStrengthPct * 0.15) +
+      (timelineConsistencyPct * 0.05) +
+      (sectionCoveragePct * 0.05) +
+      (readabilityPct * 0.10);
+  }
+  let roleScore = Math.round(roleWeighted);
+  roleScore -= criticalMissingCount * 5;
+  roleScore = Math.max(15, Math.min(100, roleScore));
+
+  // Select active score based on current analysis mode
+  const score = (analysisMode === "ats") ? standaloneScore : roleScore;
+
+  // Update Gauge Heading & Subtitle dynamically based on mode
+  const verdictSubEl = document.getElementById("atsVerdictSub");
+  const atsHeadHeading = document.querySelector(".ats-score-card-head h2");
+  const compBox = document.getElementById("atsComparisonBox");
+
+  if (analysisMode === "ats") {
+    if (atsHeadHeading) atsHeadHeading.textContent = "Overall Resume ATS Score";
+    if (verdictSubEl) verdictSubEl.textContent = "This overall score evaluates your resume's standalone ATS compatibility, structure, formatting, and content quality. Actual ATS systems vary.";
+    if (compBox) compBox.style.display = "none";
+  } else {
+    if (atsHeadHeading) atsHeadHeading.textContent = `ATS Score for ${targetRoleTitle}`;
+    if (verdictSubEl) verdictSubEl.textContent = `This score evaluates how well your resume matches ${targetRoleTitle}${hasUserJobDescription ? " and the provided job description" : ""}. Actual ATS systems vary.`;
+
+    // Update ATS with Role Comparison Box
+    if (compBox) {
+      compBox.style.display = "block";
+      const roleScoreEl = document.getElementById("compRoleScoreVal");
+      const overallScoreEl = document.getElementById("compOverallScoreVal");
+      const deltaEl = document.getElementById("compDeltaVal");
+      const compDescEl = document.getElementById("compDescText");
+
+      if (roleScoreEl) roleScoreEl.textContent = `${roleScore} / 100`;
+      if (overallScoreEl) overallScoreEl.textContent = `${standaloneScore} / 100`;
+
+      const diff = roleScore - standaloneScore;
+      if (deltaEl) {
+        deltaEl.className = "ats-comp-delta " + (diff > 0 ? "pos" : (diff < 0 ? "neg" : "zero"));
+        deltaEl.textContent = diff > 0 ? `+${diff} pts higher` : (diff < 0 ? `${diff} pts lower` : "Same as overall");
+      }
+
+      if (compDescEl) {
+        if (diff > 0) {
+          compDescEl.textContent = `Your resume scores ${diff} pts higher for ${targetRoleTitle} because your technical skills align strongly with this specific role.`;
+        } else if (diff < 0) {
+          compDescEl.textContent = `Your resume scores ${Math.abs(diff)} pts lower for ${targetRoleTitle} due to missing role-specific keywords or required skills.`;
         } else {
-          renderRuleBasedRecs(lastAIAnalysisContext.ruleBasedRecs, lastAIAnalysisContext.mode);
-          const fbBanner = document.getElementById("aiFallbackBanner");
-          if (fbBanner) {
-            fbBanner.style.display = "flex";
-            const fbText = document.getElementById("aiFallbackText");
-            if (fbText) fbText.textContent = "AI Insights disabled by user. Displaying high-precision rule-based recommendations.";
+          compDescEl.textContent = `Your target role ATS score matches your general resume ATS score.`;
+        }
+      }
+    }
+  }
+
+  // Verdict labels:
+  // 90-100: Excellent Match
+  // 80-89: Strong Match
+  // 70-79: Good Match
+  // 60-69: Needs Improvement
+  // Below 60: Low Match
+  let color = "#d9534f", verdict = "Low Match";
+  if (score >= 90) { color = "#2e7d32"; verdict = "Excellent Match"; }
+  else if (score >= 80) { color = "#25855a"; verdict = "Strong Match"; }
+  else if (score >= 70) { color = "#1e88e5"; verdict = "Good Match"; }
+  else if (score >= 60) { color = "#c9962c"; verdict = "Needs Improvement"; }
+  else { color = "#d9534f"; verdict = "Low Match"; }
+
+  renderATSScore(score, color, verdict);
+
+  // Display ATS Gauge card and breakdown in both modes
+  const scoreCardEl = document.getElementById("atsCard");
+  const scoreBreakdownCardEl = document.querySelector(".ats-hero-breakdown");
+  const atsDisclaimerEl = document.getElementById("atsDisclaimerNotice");
+
+  if (scoreCardEl) scoreCardEl.style.display = "block";
+  if (scoreBreakdownCardEl) scoreBreakdownCardEl.style.display = "block";
+  if (atsDisclaimerEl) atsDisclaimerEl.style.display = "block";
+
+  // Snapshot everything the PDF export button needs
+  lastAnalysisData = {
+    filename, name,
+    email: emailMatch ? emailMatch[0] : "Not found",
+    phone: (phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7) ? phoneMatch[0] : "Not found",
+    location: locationStr || "",
+    linkedin: linkedinMatch ? linkedinMatch[0] : "Not found",
+    github: githubMatch ? githubMatch[0] : "Not found",
+    skills: skills.map(s => s.name),
+    years, wordCount,
+    experience: experience || "",
+    education: education || "",
+    projects: projects || "",
+    certifications: certifications || "",
+    summary: summary || "",
+    achievements: achievements || "",
+    languages: languages || "",
+    leadership: leadership || "",
+    allIdentifiedSections: allSections.filter(s => s.found).map(s => s.label),
+    missing,
+    quant, uniqueWeakPhrases, duplicateBullets,
+    jdResult,
+    score, verdict,
+    targetJobRole: targetRoleTitle
+  };
+
+  if (!historySavedForCurrentUpload) {
+    saveHistoryEntry(currentUser ? currentUser.email : null, filename, score, verdict);
+    historySavedForCurrentUpload = true;
+  }
+
+  // Prepare context and trigger AI recommendations asynchronously now that score & all metrics are fully computed
+  lastAIAnalysisContext = {
+    mode: analysisMode,
+    resumeText: text,
+    targetRole: targetRoleTitle,
+    customRole: customJobRoleText || "",
+    jobDescription: userJobDescriptionText || "",
+    matchedSkills: typeof matchedRoleSkills !== "undefined" ? matchedRoleSkills : [],
+    missingSkills: typeof missingRoleSkills !== "undefined" ? missingRoleSkills : [],
+    jdAnalysis: typeof jdResult !== "undefined" ? jdResult : null,
+    overallScore: score,
+    scoreBreakdown: {
+      structure: typeof sectionCoveragePct !== "undefined" ? sectionCoveragePct : 70,
+      keywords: typeof kwCoveragePct !== "undefined" ? kwCoveragePct : 70,
+      impact: typeof impactPct !== "undefined" ? impactPct : 70,
+      formatting: typeof formatPct !== "undefined" ? formatPct : 70
+    },
+    missingSections: typeof missing !== "undefined" ? missing : [],
+    missingKeywords: (analysisMode === "ats" && typeof missingCommonKw !== "undefined") ? missingCommonKw : [],
+    weakPhrases: typeof uniqueWeakPhrases !== "undefined" ? uniqueWeakPhrases : [],
+    quantifiedStats: typeof quant !== "undefined" ? quant : { total: 0, quantified: 0 },
+    formattingIssues: [
+      (typeof wordCount !== "undefined" && (wordCount < 300 || wordCount > 1100)) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
+      (typeof noDatesFound !== "undefined" && noDatesFound) ? "No clear dates or employment timelines detected" : null
+    ].filter(Boolean),
+    ruleBasedRecs: recs
+  };
+
+  triggerAIRecommendations(lastAIAnalysisContext);
+
+  document.getElementById("results").style.display = "block";
+  document.getElementById("results").scrollIntoView({ behavior: "smooth" });
+}
+
+async function extractPdfText(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    const rawItems = (content.items || [])
+      .filter(it => it.str !== undefined && it.str.trim().length > 0)
+      .map(it => {
+        const x = it.transform ? it.transform[4] : (it.x || 0);
+        const y = it.transform ? it.transform[5] : (it.y || 0);
+        const width = it.width || (it.str.length * 5.5);
+        const height = it.height || 10;
+        return { str: it.str, x, y, width, height };
+      });
+
+    if (!rawItems.length) continue;
+
+    // Detect multi-column layout on this page
+    const minX = Math.min(...rawItems.map(it => it.x));
+    const maxX = Math.max(...rawItems.map(it => it.x + it.width));
+    const contentWidth = maxX - minX;
+
+    let isTwoColumn = false;
+    let bestSplitX = 0;
+    let headerBottomY = Infinity;
+
+    if (contentWidth > 260 && rawItems.length >= 15) {
+      const maxY = Math.max(...rawItems.map(it => it.y));
+      const minY = Math.min(...rawItems.map(it => it.y));
+      const totalH = maxY - minY;
+      const candidateSplits = [];
+      for (let pct = 0.30; pct <= 0.70; pct += 0.02) {
+        candidateSplits.push(minX + contentWidth * pct);
+      }
+
+      let bestScore = 0;
+
+      for (const splitX of candidateSplits) {
+        // Look at body items below top 12%
+        const bodyItems = rawItems.filter(it => it.y < (maxY - totalH * 0.12));
+        if (bodyItems.length < 10) continue;
+
+        let leftCount = 0;
+        let rightCount = 0;
+        let crossingCount = 0;
+
+        for (const it of bodyItems) {
+          const itRight = it.x + it.width;
+          if (it.x < splitX - 8 && itRight > splitX + 8) {
+            crossingCount++;
+          } else if (it.x + it.width * 0.5 < splitX) {
+            leftCount++;
+          } else {
+            rightCount++;
+          }
+        }
+
+        const crossingRatio = crossingCount / bodyItems.length;
+        const leftRatio = leftCount / bodyItems.length;
+        const rightRatio = rightCount / bodyItems.length;
+
+        if (crossingRatio < 0.12 && leftRatio >= 0.20 && rightRatio >= 0.20) {
+          // Heavily penalize crossing items so a true gutter (with 0 or minimal crossings)
+          // is always chosen over an accidental split cutting through body text
+          const penalty = Math.pow(Math.max(0, 1 - crossingRatio * 3), 2);
+          const score = penalty * Math.min(leftRatio, rightRatio);
+          if (score > bestScore) {
+            bestScore = score;
+            bestSplitX = splitX;
+            isTwoColumn = true;
           }
         }
       }
-    });
-  }
 
-  const backToOptionsBtn = document.getElementById("backToOptionsBtn");
-  if (backToOptionsBtn) {
-    backToOptionsBtn.addEventListener("click", () => {
-      showAnalysisOptions();
-    });
-  }
-
-  const resetBtn = document.getElementById("resetBtn");
-  if (resetBtn) resetBtn.addEventListener("click", resetAnalysis);
-
-  const navHomeLink = document.getElementById("navHomeLink");
-  if (navHomeLink) {
-    navHomeLink.addEventListener("click", (e) => {
-      goHome(e);
-    });
-  }
-
-  const navBrandLogo = document.getElementById("navBrandLogo");
-  if (navBrandLogo) {
-    navBrandLogo.addEventListener("click", (e) => {
-      goHome(e);
-    });
-  }
-
-  // ---- Download Original Uploaded Resume (Exact PDF/DOCX file user gave) ----
-  const downloadOriginalResumeBtn = document.getElementById("downloadOriginalResumeBtn");
-  if (downloadOriginalResumeBtn) {
-    downloadOriginalResumeBtn.addEventListener("click", () => {
-      downloadCurrentOriginalResume();
-    });
-  }
-
-  function downloadCurrentOriginalResume() {
-    // 1. If original File object is in memory from current upload
-    if (window.currentOriginalResumeFile) {
-      const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = blobUrl;
-      a.download = window.currentOriginalResumeFile.name || "resume.pdf";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-        if (a.parentNode) a.parentNode.removeChild(a);
-      }, 1500);
-      showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
-      return;
+      if (isTwoColumn && bestSplitX > 0) {
+        const crossingItems = rawItems.filter(it => it.x < bestSplitX - 10 && (it.x + it.width) > bestSplitX + 10);
+        if (crossingItems.length > 0) {
+          headerBottomY = Math.min(...crossingItems.map(it => it.y)) - 5;
+        } else {
+          headerBottomY = maxY - (totalH > 400 ? 70 : 40);
+        }
+      }
     }
 
-    // 2. If base64 data URL is stored in memory or sessionStorage
-    const targetName = pendingResumeFilename || sessionStorage.getItem("latest_original_resume_name") || (lastAnalysisData && lastAnalysisData.filename) || "resume.pdf";
-    const dataUrl = window.currentOriginalResumeDataUrl || 
-      sessionStorage.getItem("original_resume_" + targetName) ||
-      sessionStorage.getItem("latest_original_resume_data");
+    function assembleLines(itemList) {
+      if (!itemList.length) return [];
+      const sorted = [...itemList].sort((a, b) => {
+        if (Math.abs(a.y - b.y) > 3.5) return b.y - a.y;
+        return a.x - b.x;
+      });
 
-    if (dataUrl && dataUrl.startsWith("data:")) {
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = dataUrl;
-      a.download = targetName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
-      showToast(`Downloaded original resume: ${targetName}`, "success");
-      return;
+      const lines = [];
+      let currentLine = [];
+      let lastItem = null;
+      let lastY = null;
+
+      for (const item of sorted) {
+        if (lastY !== null && Math.abs(item.y - lastY) > 3.5) {
+          lines.push(currentLine.join(" ").replace(/\s+/g, " ").trim());
+          currentLine = [];
+          lastItem = null;
+        }
+        if (lastItem && (item.x - (lastItem.x + lastItem.width)) > 24) {
+          currentLine.push("   "); // Insert 3 spaces so regex /\s{2,}/ can split glued column headers
+        }
+        currentLine.push(item.str);
+        lastItem = item;
+        lastY = item.y;
+      }
+      if (currentLine.length) {
+        lines.push(currentLine.join(" ").replace(/\s+/g, " ").trim());
+      }
+      return lines.filter(Boolean);
     }
 
-    // 3. If loaded from history or server analysis
-    if (lastAnalysisData && (lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename)) {
-      downloadHistoricalResume(lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename, targetName);
-      return;
+    let pageLines = [];
+    if (isTwoColumn && bestSplitX > 0) {
+      const headerItems = rawItems.filter(it => it.y >= headerBottomY);
+      const leftItems = rawItems.filter(it => it.y < headerBottomY && (it.x + it.width * 0.5) < bestSplitX);
+      const rightItems = rawItems.filter(it => it.y < headerBottomY && (it.x + it.width * 0.5) >= bestSplitX);
+
+      pageLines = [
+        ...assembleLines(headerItems),
+        ...assembleLines(leftItems),
+        ...assembleLines(rightItems)
+      ];
+    } else {
+      pageLines = assembleLines(rawItems);
     }
 
-    showToast("No resume file available to download. Please upload a resume first.", "error");
+    fullText += pageLines.join("\n") + "\n";
+  }
+  return fullText;
+}
+
+async function extractDocxText(arrayBuffer) {
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+function setStatus(msg, isError) {
+  const el = document.getElementById("status");
+  el.textContent = msg;
+  el.className = isError ? "error" : "";
+}
+
+// ---- Loading indicator: shown during file extraction / analysis so the
+// user gets feedback instead of a frozen-looking page on larger files ----
+const loadingIndicator = document.getElementById("loadingIndicator");
+const loadingText = document.getElementById("loadingText");
+
+function showLoading(msg) {
+  loadingText.textContent = msg || "Working…";
+  loadingIndicator.style.display = "flex";
+  uploadBtn.disabled = true;
+  analyzePastedBtn.disabled = true;
+}
+function hideLoading() {
+  loadingIndicator.style.display = "none";
+  uploadBtn.disabled = !pendingFile;
+  analyzePastedBtn.disabled = false;
+}
+// Lets the browser actually paint the loading indicator before we run
+// synchronous, CPU-heavy work (regex scans, PDF text sorting, etc.)
+function paintFrame() {
+  return new Promise(resolve => setTimeout(resolve, 30));
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  if (!currentUser) {
+    setStatus("Please log in or sign up to upload and analyze your resume.", true);
+    openAuth("login");
+    showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
+    return;
+  }
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!["pdf", "docx"].includes(ext)) {
+    setStatus("Only .pdf and .docx files are supported.", true);
+    return;
+  }
+  document.getElementById("results").style.display = "none";
+  document.getElementById("analysisOptions").style.display = "none";
+  document.getElementById("preUploadFields").style.display = "none";
+  document.getElementById("tipsCard").style.display = "none";
+  setStatus("");
+  showLoading("Reading " + file.name + " …");
+  await paintFrame();
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    let text = "";
+    if (ext === "pdf") {
+      showLoading("Extracting text from PDF…");
+      await paintFrame();
+      text = await extractPdfText(arrayBuffer);
+    } else {
+      showLoading("Extracting text from DOCX…");
+      await paintFrame();
+      text = await extractDocxText(arrayBuffer);
+    }
+    if (!text || !text.trim()) {
+      hideLoading();
+      setStatus("Could not extract any text from this file.", true);
+      return;
+    }
+    pendingResumeText = text;
+    pendingResumeFilename = file.name;
+    window.currentOriginalResumeFile = file;
+    window.currentOriginalResumeFilename = file.name;
+    try {
+      pendingResumeFileData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => resolve(evt.target.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+      if (pendingResumeFileData) {
+        window.currentOriginalResumeDataUrl = pendingResumeFileData;
+        try {
+          sessionStorage.setItem("original_resume_" + file.name, pendingResumeFileData);
+          sessionStorage.setItem("latest_original_resume_name", file.name);
+          sessionStorage.setItem("latest_original_resume_data", pendingResumeFileData);
+        } catch (storageErr) { }
+      }
+    } catch (e) {
+      pendingResumeFileData = null;
+    }
+    historySavedForCurrentUpload = false;
+    logResumeUploadActivity(file.name);
+    hideLoading();
+    setStatus("Resume ready — choose how you'd like it analyzed.");
+    showAnalysisOptions();
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+    setStatus("Error while analyzing: " + err.message, true);
+  }
+}
+
+async function logResumeUploadActivity(filename) {
+  const token = getAuthToken();
+  if (!token) return;
+  try {
+    await safeFetchJson("/api/activity/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({ filename })
+    });
+  } catch (e) { }
+}
+
+async function logResumeDownloadActivity(filename) {
+  const token = getAuthToken();
+  if (!token) return;
+  try {
+    await safeFetchJson("/api/activity/download", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({ filename: filename || "resume_report.pdf", format: "pdf" })
+    });
+  } catch (e) { }
+}
+
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const chosenName = document.getElementById("chosenName");
+const uploadBtn = document.getElementById("uploadBtn");
+
+let pendingFile = null;
+
+function setPendingFile(file) {
+  if (!file) return;
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!["pdf", "docx"].includes(ext)) {
+    setStatus("Only .pdf and .docx files are supported.", true);
+    return;
+  }
+  pendingFile = file;
+  chosenName.textContent = file.name;
+  uploadBtn.disabled = false;
+  setStatus("File ready — click Upload to analyze.");
+}
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) setPendingFile(fileInput.files[0]);
+});
+
+["dragenter", "dragover"].forEach(evt => {
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add("drag"); });
+});
+["dragleave", "drop"].forEach(evt => {
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove("drag"); });
+});
+dropzone.addEventListener("drop", e => {
+  const file = e.dataTransfer.files[0];
+  if (file) setPendingFile(file);
+});
+
+uploadBtn.addEventListener("click", () => {
+  if (pendingFile) handleFile(pendingFile);
+});
+
+// ---- Paste-resume-text flow (alternative to file upload) ----
+const pasteToggleBtn = document.getElementById("pasteToggleBtn");
+const pasteWrap = document.getElementById("pasteWrap");
+const pasteTextInput = document.getElementById("pasteTextInput");
+const analyzePastedBtn = document.getElementById("analyzePastedBtn");
+
+pasteToggleBtn.addEventListener("click", () => {
+  const showing = pasteWrap.style.display !== "none";
+  pasteWrap.style.display = showing ? "none" : "block";
+  pasteToggleBtn.textContent = showing ? "Paste text" : "Hide the text box";
+  if (!showing) pasteTextInput.focus();
+});
+
+analyzePastedBtn.addEventListener("click", async () => {
+  if (!currentUser) {
+    setStatus("Please log in or sign up to upload and analyze your resume.", true);
+    openAuth("login");
+    showToast(loginToast, "Please log in or sign up to upload and analyze your resume.", true);
+    return;
+  }
+  const text = pasteTextInput.value.trim();
+  if (!text) {
+    setStatus("Please paste some resume text first.", true);
+    return;
+  }
+  if (text.split(/\s+/).filter(Boolean).length < 20) {
+    setStatus("That looks too short to be a resume — please paste more text.", true);
+    return;
+  }
+  document.getElementById("results").style.display = "none";
+  document.getElementById("analysisOptions").style.display = "none";
+  document.getElementById("preUploadFields").style.display = "none";
+  document.getElementById("tipsCard").style.display = "none";
+  setStatus("");
+  showLoading("Reading pasted text…");
+  await paintFrame();
+  try {
+    pendingResumeText = text;
+    pendingResumeFilename = "Pasted Resume Text";
+    historySavedForCurrentUpload = false;
+    logResumeUploadActivity("Pasted Resume Text");
+    hideLoading();
+    setStatus("Resume ready — choose how you'd like it analyzed.");
+    showAnalysisOptions();
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+    setStatus("Error while analyzing: " + err.message, true);
+  }
+});
+
+// ---- Analysis mode selection: shows the two-option screen after the
+// resume text has been extracted, then routes to the ATS-only or the
+// full normal-analysis report using the already-extracted text. ----
+const analysisOptionsEl = document.getElementById("analysisOptions");
+const resultsEl = document.getElementById("results");
+
+function showAnalysisOptions() {
+  resultsEl.style.display = "none";
+  analysisOptionsEl.style.display = "block";
+  analysisOptionsEl.scrollIntoView({ behavior: "smooth" });
+}
+
+function updateReportTabState(mode) {
+  const tabAtsBtn = document.getElementById("tabAtsBtn");
+  const tabNormalBtn = document.getElementById("tabNormalBtn");
+  if (tabAtsBtn) tabAtsBtn.classList.toggle("active", mode === "ats");
+  if (tabNormalBtn) tabNormalBtn.classList.toggle("active", mode === "normal");
+}
+
+function selectAnalysisMode(mode) {
+  if (!pendingResumeText) {
+    setStatus("Please upload or paste a resume first before selecting an analysis option.", true);
+    const dropzone = document.getElementById("dropzone");
+    if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+  analysisMode = mode;
+  if (analysisOptionsEl) analysisOptionsEl.style.display = "none";
+  if (resultsEl) resultsEl.dataset.mode = mode;
+  updateReportTabState(mode);
+
+  const execHeading = document.getElementById("execSummaryHeading");
+  const execColIssues = document.getElementById("execColTitleIssues");
+  const execColFixes = document.getElementById("execColTitleFixes");
+
+  if (execHeading) {
+    execHeading.textContent = mode === "ats"
+      ? "ATS Improvement Recommendations"
+      : "Target Role & Skill Recommendations";
+  }
+  if (execColIssues) {
+    execColIssues.textContent = mode === "ats" ? "Top Issues to Fix" : "Target Role & Skill Gaps";
+  }
+  if (execColFixes) {
+    execColFixes.textContent = mode === "ats" ? "Quick Fixes" : "Actionable Role Fixes";
   }
 
-  // ---- PDF report export (client-side, via jsPDF — no server involved) ----
-  const pdfExportBtn = document.getElementById("pdfExportBtn");
-  if (pdfExportBtn) {
-    pdfExportBtn.addEventListener("click", () => {
-    if (!lastAnalysisData){
+  if (mode === "ats") {
+    runATSAnalysis();
+  } else {
+    runNormalAnalysis();
+  }
+  setStatus("Analysis complete ✓");
+  if (typeof logUserAction === "function") {
+    logUserAction("mode selection", mode === "ats" ? "User selected Check ATS Score mode" : "User selected ATS with Role mode", { mode });
+  }
+}
+
+// Both modes share the same underlying extraction/analysis engine —
+// analyzeText() renders every section, and CSS (driven by #results'
+// data-mode attribute) shows only the sections relevant to the chosen mode.
+function runATSAnalysis() {
+  analyzeText(pendingResumeText, pendingResumeFilename);
+}
+
+function runNormalAnalysis() {
+  analyzeText(pendingResumeText, pendingResumeFilename);
+}
+
+function resetAnalysis() {
+  if (currentAIAbortController) {
+    currentAIAbortController.abort();
+    currentAIAbortController = null;
+  }
+  lastAIAnalysisContext = null;
+  const expContainer = document.getElementById("aiExpandedContainer");
+  if (expContainer) {
+    expContainer.style.display = "none";
+    expContainer.innerHTML = "";
+  }
+  const aiBanner = document.getElementById("aiSummaryBanner");
+  if (aiBanner) aiBanner.style.display = "none";
+  const fbBanner = document.getElementById("aiFallbackBanner");
+  if (fbBanner) fbBanner.style.display = "none";
+  const aiLoading = document.getElementById("aiRecsLoading");
+  if (aiLoading) aiLoading.style.display = "none";
+  updateAIRecsBadge("normal");
+
+  resultsEl.style.display = "none";
+  analysisOptionsEl.style.display = "none";
+  resultsEl.removeAttribute("data-mode");
+  document.getElementById("preUploadFields").style.display = "";
+  document.getElementById("tipsCard").style.display = "";
+  chosenName.textContent = "No file selected";
+  uploadBtn.disabled = true;
+  pendingFile = null;
+  pendingResumeText = null;
+  pendingResumeFilename = null;
+  analysisMode = null;
+  historySavedForCurrentUpload = false;
+  fileInput.value = "";
+  pasteTextInput.value = "";
+  setStatus("");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+const chooseAtsBtn = document.getElementById("chooseAtsBtn");
+if (chooseAtsBtn) chooseAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
+
+const chooseNormalBtn = document.getElementById("chooseNormalBtn");
+if (chooseNormalBtn) chooseNormalBtn.addEventListener("click", () => openTargetJobModal("normal"));
+
+setupTargetJobModalListeners();
+
+const tabAtsBtn = document.getElementById("tabAtsBtn");
+if (tabAtsBtn) tabAtsBtn.addEventListener("click", () => selectAnalysisMode("ats"));
+
+const tabNormalBtn = document.getElementById("tabNormalBtn");
+if (tabNormalBtn) {
+  tabNormalBtn.addEventListener("click", () => {
+    if (!selectedTargetJobRole && !customJobRoleText) {
+      openTargetJobModal("normal");
+    } else {
+      selectAnalysisMode("normal");
+    }
+  });
+}
+
+const changeTargetRoleBtn = document.getElementById("changeTargetRoleBtn");
+if (changeTargetRoleBtn) {
+  changeTargetRoleBtn.addEventListener("click", () => openTargetJobModal("normal"));
+}
+
+// AI Insights Toggle Switch Listener
+const aiRecsToggle = document.getElementById("aiRecsToggle");
+if (aiRecsToggle) {
+  const savedPref = localStorage.getItem("ara_ai_recs_enabled");
+  if (savedPref !== null) {
+    aiRecsToggle.checked = savedPref === "true";
+  }
+  aiRecsToggle.addEventListener("change", () => {
+    localStorage.setItem("ara_ai_recs_enabled", aiRecsToggle.checked);
+    if (lastAIAnalysisContext) {
+      if (aiRecsToggle.checked) {
+        triggerAIRecommendations(lastAIAnalysisContext);
+      } else {
+        renderRuleBasedRecs(lastAIAnalysisContext.ruleBasedRecs, lastAIAnalysisContext.mode);
+        const fbBanner = document.getElementById("aiFallbackBanner");
+        if (fbBanner) {
+          fbBanner.style.display = "flex";
+          const fbText = document.getElementById("aiFallbackText");
+          if (fbText) fbText.textContent = "AI Insights disabled by user. Displaying high-precision rule-based recommendations.";
+        }
+      }
+    }
+  });
+}
+
+const backToOptionsBtn = document.getElementById("backToOptionsBtn");
+if (backToOptionsBtn) {
+  backToOptionsBtn.addEventListener("click", () => {
+    showAnalysisOptions();
+  });
+}
+
+const resetBtn = document.getElementById("resetBtn");
+if (resetBtn) resetBtn.addEventListener("click", resetAnalysis);
+
+const navHomeLink = document.getElementById("navHomeLink");
+if (navHomeLink) {
+  navHomeLink.addEventListener("click", (e) => {
+    goHome(e);
+  });
+}
+
+const navBrandLogo = document.getElementById("navBrandLogo");
+if (navBrandLogo) {
+  navBrandLogo.addEventListener("click", (e) => {
+    goHome(e);
+  });
+}
+
+// ---- Download Original Uploaded Resume (Exact PDF/DOCX file user gave) ----
+const downloadOriginalResumeBtn = document.getElementById("downloadOriginalResumeBtn");
+if (downloadOriginalResumeBtn) {
+  downloadOriginalResumeBtn.addEventListener("click", () => {
+    downloadCurrentOriginalResume();
+  });
+}
+
+function downloadCurrentOriginalResume() {
+  // 1. If original File object is in memory from current upload
+  if (window.currentOriginalResumeFile) {
+    const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = blobUrl;
+    a.download = window.currentOriginalResumeFile.name || "resume.pdf";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1500);
+    showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
+    return;
+  }
+
+  // 2. If base64 data URL is stored in memory or sessionStorage
+  const targetName = pendingResumeFilename || sessionStorage.getItem("latest_original_resume_name") || (lastAnalysisData && lastAnalysisData.filename) || "resume.pdf";
+  const dataUrl = window.currentOriginalResumeDataUrl ||
+    sessionStorage.getItem("original_resume_" + targetName) ||
+    sessionStorage.getItem("latest_original_resume_data");
+
+  if (dataUrl && dataUrl.startsWith("data:")) {
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = dataUrl;
+    a.download = targetName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+    showToast(`Downloaded original resume: ${targetName}`, "success");
+    return;
+  }
+
+  // 3. If loaded from history or server analysis
+  if (lastAnalysisData && (lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename)) {
+    downloadHistoricalResume(lastAnalysisData.id || lastAnalysisData.resumeId || lastAnalysisData.filename, targetName);
+    return;
+  }
+
+  showToast("No resume file available to download. Please upload a resume first.", "error");
+}
+
+// ---- PDF report export (client-side, via jsPDF — no server involved) ----
+const pdfExportBtn = document.getElementById("pdfExportBtn");
+if (pdfExportBtn) {
+  pdfExportBtn.addEventListener("click", () => {
+    if (!lastAnalysisData) {
       setStatus("Analyze a resume first, then download the report.", true);
       return;
     }
-    if (!window.jspdf || !window.jspdf.jsPDF){
+    if (!window.jspdf || !window.jspdf.jsPDF) {
       setStatus("PDF library didn't load — check your connection and try again.", true);
       return;
     }
     try {
       generatePdfReport(lastAnalysisData);
       logResumeDownloadActivity(lastAnalysisData.filename || "resume_report.pdf");
-    } catch (err){
+    } catch (err) {
       console.error(err);
       setStatus("Couldn't generate the PDF report: " + err.message, true);
     }
   });
 }
 
-  function generatePdfReport(data){
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const marginX = 48;
-    const maxWidth = pageWidth - marginX * 2;
-    let y = 56;
+function generatePdfReport(data) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 48;
+  const maxWidth = pageWidth - marginX * 2;
+  let y = 56;
 
-    function ensureSpace(lineHeight){
-      if (y > 780){
-        doc.addPage();
-        y = 56;
-      }
+  function ensureSpace(lineHeight) {
+    if (y > 780) {
+      doc.addPage();
+      y = 56;
     }
-    function heading(text){
-      ensureSpace(24);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(30, 30, 40);
-      doc.text(text, marginX, y);
-      y += 18;
-      doc.setDrawColor(220, 220, 220);
-      doc.line(marginX, y - 12, pageWidth - marginX, y - 12);
-    }
-    function field(label, value){
-      ensureSpace(16);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10.5);
-      doc.setTextColor(90, 90, 100);
-      doc.text(label + ":", marginX, y);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(20, 20, 28);
-      doc.text(String(value), marginX + 100, y);
-      y += 16;
-    }
-    function paragraph(text, fontSize){
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(fontSize || 10.5);
-      doc.setTextColor(40, 40, 48);
-      const lines = doc.splitTextToSize(text || "Not clearly detected", maxWidth);
-      lines.forEach(line => {
-        ensureSpace(14);
-        doc.text(line, marginX, y);
-        y += 14;
-      });
-      y += 6;
-    }
-    function tagLine(items, prefix){
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10.5);
-      doc.setTextColor(40, 40, 48);
-      const text = items && items.length ? items.join(", ") : "None found";
-      const lines = doc.splitTextToSize((prefix ? prefix + " " : "") + text, maxWidth);
-      lines.forEach(line => {
-        ensureSpace(14);
-        doc.text(line, marginX, y);
-        y += 14;
-      });
-      y += 6;
-    }
-
-    // ---- Title ----
+  }
+  function heading(text) {
+    ensureSpace(24);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.setTextColor(20, 20, 28);
-    doc.text("AI Resume Analyzer — Report", marginX, y);
-    y += 22;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(120, 120, 130);
-    doc.text("Source file: " + data.filename + "   |   Generated: " + new Date().toLocaleString(), marginX, y);
-    y += 28;
-
-    // ---- ATS Score ----
-    heading("ATS Compatibility Score");
+    doc.setFontSize(13);
+    doc.setTextColor(30, 30, 40);
+    doc.text(text, marginX, y);
+    y += 18;
+    doc.setDrawColor(220, 220, 220);
+    doc.line(marginX, y - 12, pageWidth - marginX, y - 12);
+  }
+  function field(label, value) {
+    ensureSpace(16);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(28);
-    doc.setTextColor(20, 20, 28);
-    doc.text(String(data.score) + " / 100", marginX, y + 6);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(12);
+    doc.setFontSize(10.5);
     doc.setTextColor(90, 90, 100);
-    doc.text(data.verdict, marginX + 120, y + 4);
-    y += 30;
-
-    // ---- Basic Info ----
-    heading("Basic Info");
-    field("Name", data.name);
-    field("Email", data.email);
-    field("Phone", data.phone);
-    field("LinkedIn", data.linkedin);
-    field("GitHub", data.github);
-    field("Years Experience", data.years ? data.years + "+" : "Not explicitly stated");
-    field("Word Count", data.wordCount);
-    y += 6;
-
-    // ---- Skills ----
-    heading("Skills Detected (" + data.skills.length + ")");
-    tagLine(data.skills);
-
-    // ---- Missing Information ----
-    heading("Missing Information");
-    if (data.missing.length){
-      tagLine(data.missing);
-    } else {
-      paragraph("Nothing missing — resume looks complete!");
-    }
-
-    // ---- Writing Quality ----
-    heading("Writing Quality");
-    field("Quantified achievements", data.quant.total ? `${data.quant.quantified} / ${data.quant.total} bullets` : "No bullet points detected");
-    if (data.uniqueWeakPhrases.length){
-      tagLine(data.uniqueWeakPhrases.map(p => `"${p}"`), "Weak/passive phrasing found:");
-    }
-    if (data.duplicateBullets.length){
-      tagLine(data.duplicateBullets.slice(0, 6), "Possible repeated bullets:");
-    }
-
-    // ---- Job Description Match ----
-    if (data.jdResult && data.jdResult.ratio !== null){
-      heading("Job Description Match");
-      field("Keyword match", Math.round(data.jdResult.ratio * 100) + "%");
-      tagLine(data.jdResult.matched, "Matched:");
-      tagLine(data.jdResult.missing, "Missing:");
-    }
-
-    // ---- Sections ----
-    heading("Experience Section");
-    paragraph(data.experience);
-    heading("Education Section");
-    paragraph(data.education);
-    heading("Projects Section");
-    paragraph(data.projects);
-
-    const safeName = (data.filename || "resume").replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "_");
-    doc.save(`${safeName}_analysis_report.pdf`);
+    doc.text(label + ":", marginX, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(20, 20, 28);
+    doc.text(String(value), marginX + 100, y);
+    y += 16;
   }
-
-  // =================================================================
-  // AUTH
-  //
-  // IMPORTANT — read this before deploying: this is still a static
-  // HTML file with no server. There is no real database. Accounts and
-  // reset tokens are kept in the browser's localStorage, which means
-  // they only exist on this device/browser, not on an actual server,
-  // and anyone with local access to the browser could read them. For
-  // a real product you'd move `accounts`, password checks, and reset
-  // tokens to a real backend (with hashed passwords, e.g. bcrypt) and
-  // call it with fetch(). What's below is as far as this can safely
-  // go as a front-end-only page — Google sign-in and the emails are
-  // real, but "account storage" is still local to the browser.
-  //
-  // Fill these in before the Google button / emails will work:
-  // =================================================================
-  const AUTH_CONFIG = {
-    // Google Cloud Console → APIs & Services → Credentials → OAuth Client ID (Web application)
-    GOOGLE_CLIENT_ID: "YOUR_GOOGLE_CLIENT_ID",
-    ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
-  };
-
-  // User accounts storage helper
-  function loadAccounts(){
-    try {
-      const raw = localStorage.getItem("ara_accounts_v1");
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (e){ return {}; }
-  }
-  let accounts = loadAccounts();
-
-  function getFirebaseAuth() {
-    return window.firebaseAuth || null;
-  }
-  function getFirebaseAuthHelpers() {
-    return window.firebaseAuthHelpers || null;
-  }
-
-  function saveAccounts(){
-    try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e){}
-  }
-
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  }
-
-  function normalizeEmail(email){
-    if (!email) return "";
-    return String(email).trim().toLowerCase();
-  }
-
-  function isValidEmail(email){
-    if (!email) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
-  }
-
-  function generateResetToken(){
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
-  }
-
-  // Safe stubs (all site emails are routed via backend SMTP transport)
-  function sendEmailStub(fields){
-    return Promise.resolve(true);
-  }
-
-  function notifyAdminOfAuthEvent({ email, name, action }){
-    console.log(`[AUTH EVENT] ${action} — ${name || "User"} (${email})`);
-  }
-
-  function notifyUserOfAuthEvent({ email, name, action }){
-    console.log(`[AUTH EVENT] User notification for ${action} — ${email}`);
-  }
-
-  function sendDirectUserEmail({ toEmail, subject, message }){
-    console.log(`[EMAIL DISPATCH] Handled via backend SMTP for: ${toEmail}`);
-  }
-
-  // Sends a "confirm your email" link directly to the user's registered email inbox
-  function sendVerificationEmail(email, name, serverToken){
-    const account = accounts[email] || {};
-
-    const token = serverToken || account.verifyToken || generateResetToken();
-    account.verifyToken = token;
-    account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid exactly 5 minutes
-    if (accounts[email]) saveAccounts();
-
-    // Email verification delivery is handled reliably by the backend NodeMailer service
-
-    let origin = location.origin;
-    let pathname = location.pathname;
-    if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")){
-      origin = "http://localhost:5000";
-    }
-
-    const verifyLink = `${origin}/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
-    const displayName = name || account.name || "there";
-
-    const welcomeMessage =
-      `Hi ${displayName},\n\n` +
-      `Thank you for creating an account with AI Resume Analyzer!\n` +
-      `Please confirm your email address by clicking the link below:\n\n` +
-      `${verifyLink}\n\n` +
-      `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
-      `If you didn't create this account, you can safely ignore this email.`;
-
-    console.log("Sending verification email directly to user inbox:", { to: email });
-
-    // Deliver email directly to user's registered inbox ONLY
-    sendDirectUserEmail({
-      toEmail: email,
-      subject: "Verify Your Account",
-      message: welcomeMessage
+  function paragraph(text, fontSize) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(fontSize || 10.5);
+    doc.setTextColor(40, 40, 48);
+    const lines = doc.splitTextToSize(text || "Not clearly detected", maxWidth);
+    lines.forEach(line => {
+      ensureSpace(14);
+      doc.text(line, marginX, y);
+      y += 14;
     });
-
-    return verifyLink;
+    y += 6;
+  }
+  function tagLine(items, prefix) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(40, 40, 48);
+    const text = items && items.length ? items.join(", ") : "None found";
+    const lines = doc.splitTextToSize((prefix ? prefix + " " : "") + text, maxWidth);
+    lines.forEach(line => {
+      ensureSpace(14);
+      doc.text(line, marginX, y);
+      y += 14;
+    });
+    y += 6;
   }
 
-  function hideToast(el){
-    if (!el || typeof el !== "object" || !el.style) return;
-    try {
-      el.style.display = "none";
-    } catch(e){}
-    if (el._toastTimer) {
-      clearTimeout(el._toastTimer);
-      el._toastTimer = null;
-    }
+  // ---- Title ----
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(20, 20, 28);
+  doc.text("AI Resume Analyzer — Report", marginX, y);
+  y += 22;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(120, 120, 130);
+  doc.text("Source file: " + data.filename + "   |   Generated: " + new Date().toLocaleString(), marginX, y);
+  y += 28;
+
+  // ---- ATS Score ----
+  heading("ATS Compatibility Score");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(28);
+  doc.setTextColor(20, 20, 28);
+  doc.text(String(data.score) + " / 100", marginX, y + 6);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(90, 90, 100);
+  doc.text(data.verdict, marginX + 120, y + 4);
+  y += 30;
+
+  // ---- Basic Info ----
+  heading("Basic Info");
+  field("Name", data.name);
+  field("Email", data.email);
+  field("Phone", data.phone);
+  field("LinkedIn", data.linkedin);
+  field("GitHub", data.github);
+  field("Years Experience", data.years ? data.years + "+" : "Not explicitly stated");
+  field("Word Count", data.wordCount);
+  y += 6;
+
+  // ---- Skills ----
+  heading("Skills Detected (" + data.skills.length + ")");
+  tagLine(data.skills);
+
+  // ---- Missing Information ----
+  heading("Missing Information");
+  if (data.missing.length) {
+    tagLine(data.missing);
+  } else {
+    paragraph("Nothing missing — resume looks complete!");
   }
 
-  function showGlobalToast(message, type = "info", duration = 4000){
-    let toast = document.getElementById("appGlobalToast");
-    if (!toast) {
-      toast = document.createElement("div");
-      toast.id = "appGlobalToast";
-      toast.className = "app-global-toast";
-      document.body.appendChild(toast);
-    }
-    const isError = (type === "error" || type === true);
-    const isSuccess = (type === "success");
-    toast.className = `app-global-toast active ${isError ? "error" : (isSuccess ? "success" : "info")}`;
-    
-    const iconSvg = isError
-      ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
-      : (isSuccess
-        ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>`
-        : `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`);
+  // ---- Writing Quality ----
+  heading("Writing Quality");
+  field("Quantified achievements", data.quant.total ? `${data.quant.quantified} / ${data.quant.total} bullets` : "No bullet points detected");
+  if (data.uniqueWeakPhrases.length) {
+    tagLine(data.uniqueWeakPhrases.map(p => `"${p}"`), "Weak/passive phrasing found:");
+  }
+  if (data.duplicateBullets.length) {
+    tagLine(data.duplicateBullets.slice(0, 6), "Possible repeated bullets:");
+  }
 
-    toast.innerHTML = `
+  // ---- Job Description Match ----
+  if (data.jdResult && data.jdResult.ratio !== null) {
+    heading("Job Description Match");
+    field("Keyword match", Math.round(data.jdResult.ratio * 100) + "%");
+    tagLine(data.jdResult.matched, "Matched:");
+    tagLine(data.jdResult.missing, "Missing:");
+  }
+
+  // ---- Sections ----
+  heading("Experience Section");
+  paragraph(data.experience);
+  heading("Education Section");
+  paragraph(data.education);
+  heading("Projects Section");
+  paragraph(data.projects);
+
+  const safeName = (data.filename || "resume").replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "_");
+  doc.save(`${safeName}_analysis_report.pdf`);
+}
+
+// =================================================================
+// AUTH
+//
+// IMPORTANT — read this before deploying: this is still a static
+// HTML file with no server. There is no real database. Accounts and
+// reset tokens are kept in the browser's localStorage, which means
+// they only exist on this device/browser, not on an actual server,
+// and anyone with local access to the browser could read them. For
+// a real product you'd move `accounts`, password checks, and reset
+// tokens to a real backend (with hashed passwords, e.g. bcrypt) and
+// call it with fetch(). What's below is as far as this can safely
+// go as a front-end-only page — Google sign-in and the emails are
+// real, but "account storage" is still local to the browser.
+//
+// Fill these in before the Google button / emails will work:
+// =================================================================
+const AUTH_CONFIG = {
+  // Google Cloud Console → APIs & Services → Credentials → OAuth Client ID (Web application)
+  GOOGLE_CLIENT_ID: "YOUR_GOOGLE_CLIENT_ID",
+  ADMIN_NOTIFY_EMAIL: "airesumeash@gmail.com"
+};
+
+// User accounts storage helper
+function loadAccounts() {
+  try {
+    const raw = localStorage.getItem("ara_accounts_v1");
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) { return {}; }
+}
+let accounts = loadAccounts();
+
+function getFirebaseAuth() {
+  return window.firebaseAuth || null;
+}
+function getFirebaseAuthHelpers() {
+  return window.firebaseAuthHelpers || null;
+}
+
+function saveAccounts() {
+  try { localStorage.setItem("ara_accounts_v1", JSON.stringify(accounts)); } catch (e) { }
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function normalizeEmail(email) {
+  if (!email) return "";
+  return String(email).trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
+}
+
+function generateResetToken() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// Safe stubs (all site emails are routed via backend SMTP transport)
+function sendEmailStub(fields) {
+  return Promise.resolve(true);
+}
+
+function notifyAdminOfAuthEvent({ email, name, action }) {
+  console.log(`[AUTH EVENT] ${action} — ${name || "User"} (${email})`);
+}
+
+function notifyUserOfAuthEvent({ email, name, action }) {
+  console.log(`[AUTH EVENT] User notification for ${action} — ${email}`);
+}
+
+function sendDirectUserEmail({ toEmail, subject, message }) {
+  console.log(`[EMAIL DISPATCH] Handled via backend SMTP for: ${toEmail}`);
+}
+
+// Sends a "confirm your email" link directly to the user's registered email inbox
+function sendVerificationEmail(email, name, serverToken) {
+  const account = accounts[email] || {};
+
+  const token = serverToken || account.verifyToken || generateResetToken();
+  account.verifyToken = token;
+  account.verifyTokenExpires = Date.now() + 5 * 60 * 1000; // link valid exactly 5 minutes
+  if (accounts[email]) saveAccounts();
+
+  // Email verification delivery is handled reliably by the backend NodeMailer service
+
+  let origin = location.origin;
+  let pathname = location.pathname;
+  if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")) {
+    origin = "http://localhost:5000";
+  }
+
+  const verifyLink = `${origin}/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
+  const displayName = name || account.name || "there";
+
+  const welcomeMessage =
+    `Hi ${displayName},\n\n` +
+    `Thank you for creating an account with AI Resume Analyzer!\n` +
+    `Please confirm your email address by clicking the link below:\n\n` +
+    `${verifyLink}\n\n` +
+    `⏰ IMPORTANT: This verification link is valid for 5 minutes.\n\n` +
+    `If you didn't create this account, you can safely ignore this email.`;
+
+  console.log("Sending verification email directly to user inbox:", { to: email });
+
+  // Deliver email directly to user's registered inbox ONLY
+  sendDirectUserEmail({
+    toEmail: email,
+    subject: "Verify Your Account",
+    message: welcomeMessage
+  });
+
+  return verifyLink;
+}
+
+function hideToast(el) {
+  if (!el || typeof el !== "object" || !el.style) return;
+  try {
+    el.style.display = "none";
+  } catch (e) { }
+  if (el._toastTimer) {
+    clearTimeout(el._toastTimer);
+    el._toastTimer = null;
+  }
+}
+
+function showGlobalToast(message, type = "info", duration = 4000) {
+  let toast = document.getElementById("appGlobalToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "appGlobalToast";
+    toast.className = "app-global-toast";
+    document.body.appendChild(toast);
+  }
+  const isError = (type === "error" || type === true);
+  const isSuccess = (type === "success");
+  toast.className = `app-global-toast active ${isError ? "error" : (isSuccess ? "success" : "info")}`;
+
+  const iconSvg = isError
+    ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+    : (isSuccess
+      ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`);
+
+  toast.innerHTML = `
       <span class="global-toast-icon">${iconSvg}</span>
       <span class="global-toast-msg">${escapeHtml(message)}</span>
     `;
 
-    if (toast._timer) clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => {
-      toast.classList.remove("active");
-    }, duration);
+  if (toast._timer) clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.classList.remove("active");
+  }, duration);
+}
+
+function showToast(elOrMsg, msgOrType, isErrorOrAutoHide, autoHideMs = 6000) {
+  if (!elOrMsg) return;
+
+  // Handle global call: showToast("Resume removed from history", "success")
+  if (typeof elOrMsg === "string") {
+    const message = elOrMsg;
+    const type = (typeof msgOrType === "string") ? msgOrType : (msgOrType === true ? "error" : "success");
+    const duration = (typeof isErrorOrAutoHide === "number") ? isErrorOrAutoHide : 4500;
+    showGlobalToast(message, type, duration);
+    return;
   }
 
-  function showToast(elOrMsg, msgOrType, isErrorOrAutoHide, autoHideMs = 6000){
-    if (!elOrMsg) return;
-
-    // Handle global call: showToast("Resume removed from history", "success")
-    if (typeof elOrMsg === "string") {
-      const message = elOrMsg;
-      const type = (typeof msgOrType === "string") ? msgOrType : (msgOrType === true ? "error" : "success");
-      const duration = (typeof isErrorOrAutoHide === "number") ? isErrorOrAutoHide : 4500;
-      showGlobalToast(message, type, duration);
-      return;
-    }
-
-    const el = elOrMsg;
-    if (!el || typeof el !== "object" || !el.style) return;
-    hideToast(el);
-    const msg = msgOrType || "";
-    const isError = Boolean(isErrorOrAutoHide);
-    el.textContent = msg;
-    el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
-    el.title = "Click to dismiss";
-    if (!el._hasClickListener) {
-      el.addEventListener("click", () => hideToast(el));
-      el._hasClickListener = true;
-    }
-    el.style.display = "block";
-    const duration = (typeof autoHideMs === "number" && autoHideMs > 0) ? autoHideMs : 6000;
-    el._toastTimer = setTimeout(() => hideToast(el), duration);
+  const el = elOrMsg;
+  if (!el || typeof el !== "object" || !el.style) return;
+  hideToast(el);
+  const msg = msgOrType || "";
+  const isError = Boolean(isErrorOrAutoHide);
+  el.textContent = msg;
+  el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
+  el.title = "Click to dismiss";
+  if (!el._hasClickListener) {
+    el.addEventListener("click", () => hideToast(el));
+    el._hasClickListener = true;
   }
+  el.style.display = "block";
+  const duration = (typeof autoHideMs === "number" && autoHideMs > 0) ? autoHideMs : 6000;
+  el._toastTimer = setTimeout(() => hideToast(el), duration);
+}
 
-  function showToastHTML(el, html, isError, autoHideMs = 6000){
-    if (!el) return;
-    hideToast(el);
-    el.innerHTML = html;
-    el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
-    el.title = "Click to dismiss";
-    if (!el._hasClickListener) {
-      el.addEventListener("click", () => hideToast(el));
-      el._hasClickListener = true;
-    }
-    el.style.display = "block";
-    if (autoHideMs && autoHideMs > 0) {
-      el._toastTimer = setTimeout(() => hideToast(el), autoHideMs);
-    }
+function showToastHTML(el, html, isError, autoHideMs = 6000) {
+  if (!el) return;
+  hideToast(el);
+  el.innerHTML = html;
+  el.className = "auth-toast auth-toast-top " + (isError ? "error" : "success");
+  el.title = "Click to dismiss";
+  if (!el._hasClickListener) {
+    el.addEventListener("click", () => hideToast(el));
+    el._hasClickListener = true;
   }
-
-  function initials(name){
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return "?";
-    return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+  el.style.display = "block";
+  if (autoHideMs && autoHideMs > 0) {
+    el._toastTimer = setTimeout(() => hideToast(el), autoHideMs);
   }
+}
 
-  function resolveAvatarUrl(photo) {
-    if (!photo || typeof photo !== "string") return "";
-    const clean = photo.trim();
-    if (clean.startsWith("data:")) return clean;
-    if (clean.startsWith("/uploads/") || clean.startsWith("uploads/")) {
-      const path = clean.startsWith("uploads/") ? ("/" + clean) : clean;
-      return (API_BASE && path.startsWith("/uploads/")) ? (API_BASE + path) : path;
-    }
-    // Return direct URL: with referrerpolicy="no-referrer" and crossorigin="anonymous" on the <img> tag,
-    // Google profile photos load cleanly without socket errors or requiring a proxy endpoint.
-    return clean;
+function initials(name) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+}
+
+function resolveAvatarUrl(photo) {
+  if (!photo || typeof photo !== "string") return "";
+  const clean = photo.trim();
+  if (clean.startsWith("data:")) return clean;
+  if (clean.startsWith("/uploads/") || clean.startsWith("uploads/")) {
+    const path = clean.startsWith("uploads/") ? ("/" + clean) : clean;
+    return (API_BASE && path.startsWith("/uploads/")) ? (API_BASE + path) : path;
   }
+  // Return direct URL: with referrerpolicy="no-referrer" and crossorigin="anonymous" on the <img> tag,
+  // Google profile photos load cleanly without socket errors or requiring a proxy endpoint.
+  return clean;
+}
 
-  function applyAvatarToElement(imgEl, fallbackEl, resolvedPhoto) {
-    if (!imgEl) return;
-    imgEl.referrerPolicy = "no-referrer";
-    imgEl.crossOrigin = "anonymous";
+function applyAvatarToElement(imgEl, fallbackEl, resolvedPhoto) {
+  if (!imgEl) return;
+  imgEl.referrerPolicy = "no-referrer";
+  imgEl.crossOrigin = "anonymous";
 
-    if (resolvedPhoto) {
-      imgEl.onerror = function() {
-        this.onerror = null;
-        this.style.display = "none";
-        if (fallbackEl) fallbackEl.style.display = "flex";
-      };
-      imgEl.onload = function() {
-        this.style.display = "block";
-        if (fallbackEl) fallbackEl.style.display = "none";
-      };
-      imgEl.src = resolvedPhoto;
-    } else {
-      imgEl.style.display = "none";
+  if (resolvedPhoto) {
+    imgEl.onerror = function () {
+      this.onerror = null;
+      this.style.display = "none";
       if (fallbackEl) fallbackEl.style.display = "flex";
-    }
+    };
+    imgEl.onload = function () {
+      this.style.display = "block";
+      if (fallbackEl) fallbackEl.style.display = "none";
+    };
+    imgEl.src = resolvedPhoto;
+  } else {
+    imgEl.style.display = "none";
+    if (fallbackEl) fallbackEl.style.display = "flex";
   }
+}
 
-  function renderAvatarEverywhere(user){
-    if (!user) return;
-    const photo = (user && user.photo) ? user.photo : null;
-    const resolvedPhoto = resolveAvatarUrl(photo);
-    const initialsText = initials((user && user.name) ? user.name : "");
+function renderAvatarEverywhere(user) {
+  if (!user) return;
+  const photo = (user && user.photo) ? user.photo : null;
+  const resolvedPhoto = resolveAvatarUrl(photo);
+  const initialsText = initials((user && user.name) ? user.name : "");
 
-    const avatarText = document.getElementById("userAvatar");
-    const avatarImg = document.getElementById("userAvatarImg");
-    const avatarLargeInitials = document.getElementById("userAvatarLargeInitials");
-    const avatarLargeImg = document.getElementById("userAvatarLargeImg");
-    const pageInitials = document.getElementById("profilePageAvatarInitials");
-    const pageImg = document.getElementById("profilePageAvatarImg");
+  const avatarText = document.getElementById("userAvatar");
+  const avatarImg = document.getElementById("userAvatarImg");
+  const avatarLargeInitials = document.getElementById("userAvatarLargeInitials");
+  const avatarLargeImg = document.getElementById("userAvatarLargeImg");
+  const pageInitials = document.getElementById("profilePageAvatarInitials");
+  const pageImg = document.getElementById("profilePageAvatarImg");
 
-    if (avatarText) avatarText.textContent = initialsText;
-    if (avatarLargeInitials) avatarLargeInitials.textContent = initialsText;
-    if (pageInitials) pageInitials.textContent = initialsText;
+  if (avatarText) avatarText.textContent = initialsText;
+  if (avatarLargeInitials) avatarLargeInitials.textContent = initialsText;
+  if (pageInitials) pageInitials.textContent = initialsText;
 
-    applyAvatarToElement(avatarImg, avatarText, resolvedPhoto);
-    applyAvatarToElement(avatarLargeImg, avatarLargeInitials, resolvedPhoto);
-    applyAvatarToElement(pageImg, pageInitials, resolvedPhoto);
+  applyAvatarToElement(avatarImg, avatarText, resolvedPhoto);
+  applyAvatarToElement(avatarLargeImg, avatarLargeInitials, resolvedPhoto);
+  applyAvatarToElement(pageImg, pageInitials, resolvedPhoto);
+}
+
+function setLoggedInUser(user) {
+  if (!user || !user.email) return;
+  const norm = normalizeEmail(user.email);
+  user.email = norm;
+  if (user._id || user.id || user.userId) {
+    const primaryId = (user._id || user.id || user.userId).toString();
+    user._id = primaryId;
+    user.id = primaryId;
+    user.userId = primaryId;
   }
+  const token = user.token || (currentUser && currentUser.token) || getAuthToken();
+  if (token) {
+    user.token = token;
+    setAuthToken(token);
+  }
+  currentUser = user;
+  if (!accounts[norm]) {
+    accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true, photo: user.photo || "" };
+  } else {
+    if (user.name) accounts[norm].name = user.name;
+    if (user.provider) accounts[norm].provider = user.provider;
+    if (user.provider === "google" || user.verified) accounts[norm].verified = true;
+    if (user.photo !== undefined) accounts[norm].photo = user.photo;
+  }
+  saveAccounts();
 
-  function setLoggedInUser(user){
-    if (!user || !user.email) return;
-    const norm = normalizeEmail(user.email);
-    user.email = norm;
-    if (user._id || user.id || user.userId) {
-      const primaryId = (user._id || user.id || user.userId).toString();
-      user._id = primaryId;
-      user.id = primaryId;
-      user.userId = primaryId;
-    }
-    const token = user.token || (currentUser && currentUser.token) || getAuthToken();
-    if (token) {
-      user.token = token;
-      setAuthToken(token);
-    }
-    currentUser = user;
-    if (!accounts[norm]){
-      accounts[norm] = { name: user.name || norm, password: null, provider: user.provider || "email", verified: true, photo: user.photo || "" };
+  try { localStorage.setItem("ara_session_v1", JSON.stringify(user)); } catch (e) { }
+  const wrap = document.getElementById("profileWrap");
+  const nameEl = document.getElementById("userChipName");
+  const dropdownNameEl = document.getElementById("userDropdownName");
+  const emailEl = document.getElementById("userChipEmail");
+
+  const displayName = user.name || norm.split("@")[0];
+  if (nameEl) nameEl.textContent = displayName;
+  if (dropdownNameEl) dropdownNameEl.textContent = displayName;
+  if (emailEl) emailEl.textContent = norm;
+
+  renderAvatarEverywhere(user);
+  if (wrap) {
+    wrap.style.display = "inline-flex";
+    wrap.classList.add("active");
+  }
+  const navLoginBtn = document.getElementById("navLoginBtn");
+  if (navLoginBtn) navLoginBtn.style.display = "none";
+  const navSignupBtn = document.getElementById("navSignupBtn");
+  if (navSignupBtn) navSignupBtn.style.display = "none";
+  const navSignInBtn = document.getElementById("navSignInBtn");
+  if (navSignInBtn) navSignInBtn.style.display = "none";
+  document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "none");
+
+  const navHomeBtn = document.getElementById("navHomeBtn");
+  if (navHomeBtn) navHomeBtn.style.display = "inline-flex";
+  document.querySelectorAll(".logged-in-only").forEach(el => {
+    if (el.classList.contains("nav-home-btn") || el.tagName === "BUTTON") {
+      el.style.display = "inline-flex";
+    } else if (el.classList.contains("profile-wrap")) {
+      el.style.display = "inline-flex";
     } else {
-      if (user.name) accounts[norm].name = user.name;
-      if (user.provider) accounts[norm].provider = user.provider;
-      if (user.provider === "google" || user.verified) accounts[norm].verified = true;
-      if (user.photo !== undefined) accounts[norm].photo = user.photo;
+      el.style.display = "flex";
     }
-    saveAccounts();
+  });
 
-    try { localStorage.setItem("ara_session_v1", JSON.stringify(user)); } catch (e){}
-    const wrap = document.getElementById("profileWrap");
-    const nameEl = document.getElementById("userChipName");
-    const dropdownNameEl = document.getElementById("userDropdownName");
-    const emailEl = document.getElementById("userChipEmail");
+  fetchHistoryFromBackend();
+  fetchActivityFromBackend();
+  syncUnsyncedAnalysesToBackend();
+}
 
-    const displayName = user.name || norm.split("@")[0];
-    if (nameEl) nameEl.textContent = displayName;
-    if (dropdownNameEl) dropdownNameEl.textContent = displayName;
-    if (emailEl) emailEl.textContent = norm;
-
-    renderAvatarEverywhere(user);
-    if (wrap) {
-      wrap.style.display = "inline-flex";
-      wrap.classList.add("active");
-    }
-    const navLoginBtn = document.getElementById("navLoginBtn");
-    if (navLoginBtn) navLoginBtn.style.display = "none";
-    const navSignupBtn = document.getElementById("navSignupBtn");
-    if (navSignupBtn) navSignupBtn.style.display = "none";
-    const navSignInBtn = document.getElementById("navSignInBtn");
-    if (navSignInBtn) navSignInBtn.style.display = "none";
-    document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "none");
-
-    const navHomeBtn = document.getElementById("navHomeBtn");
-    if (navHomeBtn) navHomeBtn.style.display = "inline-flex";
-    document.querySelectorAll(".logged-in-only").forEach(el => {
-      if (el.classList.contains("nav-home-btn") || el.tagName === "BUTTON") {
-        el.style.display = "inline-flex";
-      } else if (el.classList.contains("profile-wrap")) {
-        el.style.display = "inline-flex";
-      } else {
-        el.style.display = "flex";
-      }
-    });
-
-    fetchHistoryFromBackend();
-    fetchActivityFromBackend();
-    syncUnsyncedAnalysesToBackend();
+async function logoutUser() {
+  const auth = getFirebaseAuth();
+  const helpers = getFirebaseAuthHelpers();
+  if (auth && helpers && helpers.signOut) {
+    try { await helpers.signOut(auth); } catch (e) { }
   }
 
-  async function logoutUser(){
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.signOut) {
-      try { await helpers.signOut(auth); } catch (e) {}
-    }
-
-    const token = getAuthToken();
-    if (token) {
-      try {
-        await safeFetchJson("/api/auth/logout", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + token }
-        });
-      } catch (e) {}
-    }
-    currentUser = null;
-    clearAuthToken();
-    try { localStorage.removeItem("ara_session_v1"); } catch (e){}
-    try { localStorage.removeItem("ara_history_cache_v1"); } catch (e){}
-    userHistoryList = [];
-    userActivitiesList = [];
-    unsyncedPendingAnalyses = [];
-    renderHistory();
-
-    const profileWrap = document.getElementById("profileWrap");
-    if (profileWrap) {
-      profileWrap.style.display = "none";
-      profileWrap.classList.remove("active");
-    }
-    const profileDropdown = document.getElementById("profileDropdown");
-    if (profileDropdown) profileDropdown.classList.remove("open");
-
-    const navLoginBtn = document.getElementById("navLoginBtn");
-    if (navLoginBtn) navLoginBtn.style.display = "";
-    const navSignupBtn = document.getElementById("navSignupBtn");
-    if (navSignupBtn) navSignupBtn.style.display = "";
-    const navSignInBtn = document.getElementById("navSignInBtn");
-    if (navSignInBtn) navSignInBtn.style.display = "";
-    const userMenuDivider = document.getElementById("userMenuDivider");
-    if (userMenuDivider) userMenuDivider.style.display = "none";
-
-    document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
-    document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "");
-    const navMenuDropdown = document.getElementById("navMenuDropdown");
-    if (navMenuDropdown) navMenuDropdown.classList.remove("open");
-
-    if (typeof closeProfilePage === "function") closeProfilePage();
-    if (typeof closeHistory === "function") closeHistory();
-    if (typeof closeSupport === "function") closeSupport();
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  // Determine Backend API Base URL
-  // If a custom backend URL is explicitly set (e.g. when frontend is on a static CDN and backend is a separate web service), use it.
-  // Otherwise, if running via Live Server (port 5500) or file://, target the local backend on port 5000 matching the current hostname.
-  const customBackendUrl = (
-    (typeof window !== "undefined" && window.__BACKEND_URL__) ||
-    (typeof localStorage !== "undefined" && localStorage.getItem("AI_RESUME_BACKEND_URL")) ||
-    ""
-  );
-
-  const isDifferentPortOrFile = (
-    location.protocol === "file:" ||
-    (location.port && location.port !== "5000" && location.protocol !== "https:")
-  );
-
-  const targetHost = (location.hostname && location.hostname !== "0.0.0.0") ? location.hostname : "127.0.0.1";
-  const devProtocol = location.protocol === "file:" ? "http:" : location.protocol;
-
-  const API_BASE = customBackendUrl
-    ? customBackendUrl.replace(/\/+$/, "")
-    : (isDifferentPortOrFile ? `${devProtocol}//${targetHost}:5000` : "");
-
-  // Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
-  async function safeFetchJson(url, options = {}, retries = 1) {
-    const rawFullUrl = (url.startsWith("/api/") && API_BASE)
-      ? (API_BASE + url)
-      : url;
-    const fullUrl = rawFullUrl.replace(/([^:])\/\/+/g, "$1/");
-
-    options = options || {};
-    options.headers = options.headers || {};
-
-    const method = (options.method || "GET").toUpperCase();
-    if (method === "GET" || method === "HEAD") {
-      delete options.body;
-      delete options.headers["Content-Type"];
-      delete options.headers["content-type"];
-    } else if (options.body && typeof options.body === "object" && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
-      try {
-        options.body = JSON.stringify(options.body);
-        if (!options.headers["Content-Type"] && !options.headers["content-type"]) {
-          options.headers["Content-Type"] = "application/json";
-        }
-      } catch (err) {
-        console.warn("safeFetchJson JSON body stringify error:", err);
-      }
-    }
-
-    const token = getAuthToken();
-    if (token && !options.headers["Authorization"] && !options.headers["authorization"]) {
-      options.headers["Authorization"] = "Bearer " + token;
-    }
-    if (currentUser && currentUser.email && !options.headers["x-user-email"]) {
-      options.headers["x-user-email"] = currentUser.email;
-    }
-
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await fetch(fullUrl, options);
-
-        if (!res.ok) {
-          if (res.status >= 500) {
-            console.error(`Server error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
-          } else if (res.status !== 404) {
-            // Do not warn if it is a standard 404 (handled gracefully by frontend fallbacks)
-            console.warn(`Request notice ${res.status}: ${res.statusText || "Handled response"} at ${fullUrl}`);
-          }
-        }
-
-        // Auto re-hydrate token if renewed by backend
-        const renewedToken = res.headers && res.headers.get("x-auth-token");
-        if (renewedToken) {
-          setAuthToken(renewedToken);
-          if (currentUser) currentUser.token = renewedToken;
-        }
-
-        const contentType = (res.headers && res.headers.get("content-type")) || "";
-        if (!contentType.includes("application/json")) {
-          return {
-            success: false,
-            isNonJson: true,
-            isOffline: !res.ok ? false : true,
-            status: res.status,
-            message: !res.ok ? `HTTP ${res.status} error (${res.statusText || "Not Found"}) at ${fullUrl}` : `Backend server returned non-JSON response.`
-          };
-        }
-        const text = await res.text();
-        if (!text || !text.trim()) {
-          return { success: false, isEmpty: true, status: res.status, message: `Empty response (${res.status})` };
-        }
-        const parsed = JSON.parse(text);
-        if (parsed && parsed.token && typeof setAuthToken === "function") {
-          setAuthToken(parsed.token);
-          if (currentUser) currentUser.token = parsed.token;
-        }
-        if (!res.ok && parsed && typeof parsed === "object") {
-          parsed.success = false;
-          parsed.status = res.status;
-        }
-        return parsed;
-      } catch (err) {
-        if (attempt === retries) {
-          return {
-            success: false,
-            isError: true,
-            isOffline: true,
-            status: 0,
-            message: `Backend server is offline or unreachable. Please start server with 'node server.js'.`
-          };
-        }
-        await new Promise(r => setTimeout(r, 800));
-      }
-    }
-  }
-
-  // Centralized User Activity Logger to ensure everything the user does is logged in MongoDB
-  async function logUserAction(action, description, metadata = {}) {
+  const token = getAuthToken();
+  if (token) {
     try {
-      const email = (currentUser && currentUser.email) ? currentUser.email : "";
-      await safeFetchJson("/api/activity", {
+      await safeFetchJson("/api/auth/logout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          activityType: action,
-          description: description || `User performed ${action}`,
-          email,
-          ...metadata
-        })
-      }, 0);
-    } catch (e) {}
+        headers: { "Authorization": "Bearer " + token }
+      });
+    } catch (e) { }
+  }
+  currentUser = null;
+  clearAuthToken();
+  try { localStorage.removeItem("ara_session_v1"); } catch (e) { }
+  try { localStorage.removeItem("ara_history_cache_v1"); } catch (e) { }
+  userHistoryList = [];
+  userActivitiesList = [];
+  unsyncedPendingAnalyses = [];
+  renderHistory();
+
+  const profileWrap = document.getElementById("profileWrap");
+  if (profileWrap) {
+    profileWrap.style.display = "none";
+    profileWrap.classList.remove("active");
+  }
+  const profileDropdown = document.getElementById("profileDropdown");
+  if (profileDropdown) profileDropdown.classList.remove("open");
+
+  const navLoginBtn = document.getElementById("navLoginBtn");
+  if (navLoginBtn) navLoginBtn.style.display = "";
+  const navSignupBtn = document.getElementById("navSignupBtn");
+  if (navSignupBtn) navSignupBtn.style.display = "";
+  const navSignInBtn = document.getElementById("navSignInBtn");
+  if (navSignInBtn) navSignInBtn.style.display = "";
+  const userMenuDivider = document.getElementById("userMenuDivider");
+  if (userMenuDivider) userMenuDivider.style.display = "none";
+
+  document.querySelectorAll(".logged-in-only").forEach(el => el.style.display = "none");
+  document.querySelectorAll(".logged-out-only").forEach(el => el.style.display = "");
+  const navMenuDropdown = document.getElementById("navMenuDropdown");
+  if (navMenuDropdown) navMenuDropdown.classList.remove("open");
+
+  if (typeof closeProfilePage === "function") closeProfilePage();
+  if (typeof closeHistory === "function") closeHistory();
+  if (typeof closeSupport === "function") closeSupport();
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// Determine Backend API Base URL
+// If a custom backend URL is explicitly set (e.g. when frontend is on a static CDN and backend is a separate web service), use it.
+// Otherwise, if running via Live Server (port 5500) or file://, target the local backend on port 5000 matching the current hostname.
+const customBackendUrl = (
+  (typeof window !== "undefined" && window.__BACKEND_URL__) ||
+  (typeof localStorage !== "undefined" && localStorage.getItem("AI_RESUME_BACKEND_URL")) ||
+  ""
+);
+
+const isDifferentPortOrFile = (
+  location.protocol === "file:" ||
+  (location.port && location.port !== "5000" && location.protocol !== "https:")
+);
+
+const targetHost = (location.hostname && location.hostname !== "0.0.0.0") ? location.hostname : "127.0.0.1";
+const devProtocol = location.protocol === "file:" ? "http:" : location.protocol;
+
+const API_BASE = customBackendUrl
+  ? customBackendUrl.replace(/\/+$/, "")
+  : (isDifferentPortOrFile ? `${devProtocol}//${targetHost}:5000` : "");
+
+// Safe JSON Fetch helper preventing SyntaxError on non-JSON, cold-start, or 404 responses
+async function safeFetchJson(url, options = {}, retries = 1) {
+  const rawFullUrl = (url.startsWith("/api/") && API_BASE)
+    ? (API_BASE + url)
+    : url;
+  const fullUrl = rawFullUrl.replace(/([^:])\/\/+/g, "$1/");
+
+  options = options || {};
+  options.headers = options.headers || {};
+
+  const method = (options.method || "GET").toUpperCase();
+  if (method === "GET" || method === "HEAD") {
+    delete options.body;
+    delete options.headers["Content-Type"];
+    delete options.headers["content-type"];
+  } else if (options.body && typeof options.body === "object" && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
+    try {
+      options.body = JSON.stringify(options.body);
+      if (!options.headers["Content-Type"] && !options.headers["content-type"]) {
+        options.headers["Content-Type"] = "application/json";
+      }
+    } catch (err) {
+      console.warn("safeFetchJson JSON body stringify error:", err);
+    }
   }
 
-  let sessionRestorePromise = null;
+  const token = getAuthToken();
+  if (token && !options.headers["Authorization"] && !options.headers["authorization"]) {
+    options.headers["Authorization"] = "Bearer " + token;
+  }
+  if (currentUser && currentUser.email && !options.headers["x-user-email"]) {
+    options.headers["x-user-email"] = currentUser.email;
+  }
 
-  // Restore a logged-in session on page load strictly from MongoDB Backend
-  async function restoreSession(){
-    const token = getAuthToken();
-    if (!token){
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(fullUrl, options);
+
+      if (!res.ok) {
+        if (res.status >= 500) {
+          console.error(`Server error ${res.status}: ${res.statusText || "Request failed"} at ${fullUrl}`);
+        } else if (res.status !== 404) {
+          // Do not warn if it is a standard 404 (handled gracefully by frontend fallbacks)
+          console.warn(`Request notice ${res.status}: ${res.statusText || "Handled response"} at ${fullUrl}`);
+        }
+      }
+
+      // Auto re-hydrate token if renewed by backend
+      const renewedToken = res.headers && res.headers.get("x-auth-token");
+      if (renewedToken) {
+        setAuthToken(renewedToken);
+        if (currentUser) currentUser.token = renewedToken;
+      }
+
+      const contentType = (res.headers && res.headers.get("content-type")) || "";
+      if (!contentType.includes("application/json")) {
+        return {
+          success: false,
+          isNonJson: true,
+          isOffline: !res.ok ? false : true,
+          status: res.status,
+          message: !res.ok ? `HTTP ${res.status} error (${res.statusText || "Not Found"}) at ${fullUrl}` : `Backend server returned non-JSON response.`
+        };
+      }
+      const text = await res.text();
+      if (!text || !text.trim()) {
+        return { success: false, isEmpty: true, status: res.status, message: `Empty response (${res.status})` };
+      }
+      const parsed = JSON.parse(text);
+      if (parsed && parsed.token && typeof setAuthToken === "function") {
+        setAuthToken(parsed.token);
+        if (currentUser) currentUser.token = parsed.token;
+      }
+      if (!res.ok && parsed && typeof parsed === "object") {
+        parsed.success = false;
+        parsed.status = res.status;
+      }
+      return parsed;
+    } catch (err) {
+      if (attempt === retries) {
+        return {
+          success: false,
+          isError: true,
+          isOffline: true,
+          status: 0,
+          message: `Backend server is offline or unreachable. Please start server with 'node server.js'.`
+        };
+      }
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+}
+
+// Centralized User Activity Logger to ensure everything the user does is logged in MongoDB
+async function logUserAction(action, description, metadata = {}) {
+  try {
+    const email = (currentUser && currentUser.email) ? currentUser.email : "";
+    await safeFetchJson("/api/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        activityType: action,
+        description: description || `User performed ${action}`,
+        email,
+        ...metadata
+      })
+    }, 0);
+  } catch (e) { }
+}
+
+let sessionRestorePromise = null;
+
+// Restore a logged-in session on page load strictly from MongoDB Backend
+async function restoreSession() {
+  const token = getAuthToken();
+  if (!token) {
+    currentUser = null;
+    try { localStorage.removeItem("ara_session_v1"); } catch (e) { }
+    userHistoryList = [];
+    renderHistory();
+    return;
+  }
+
+  try {
+    const data = await safeFetchJson("/api/user/profile", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (data && data.success && data.user) {
+      setLoggedInUser({
+        _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+        id: (data.user._id || data.user.id || data.user.userId || "").toString(),
+        userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
+        name: data.user.name,
+        email: data.user.email,
+        provider: data.user.provider,
+        photo: data.user.photo,
+        token: token
+      });
+      await fetchHistoryFromBackend();
+      return;
+    } else {
+      // Token is invalid/expired on backend -> clear invalid token & session state
+      clearAuthToken();
       currentUser = null;
-      try { localStorage.removeItem("ara_session_v1"); } catch(e){}
+      try { localStorage.removeItem("ara_session_v1"); } catch (e) { }
       userHistoryList = [];
       renderHistory();
       return;
     }
+  } catch (err) {
+    console.warn("Could not restore session from MongoDB backend:", err);
+    clearAuthToken();
+    currentUser = null;
+    try { localStorage.removeItem("ara_session_v1"); } catch (e) { }
+    userHistoryList = [];
+    renderHistory();
+  }
+}
 
+document.getElementById("userLogoutBtn").addEventListener("click", logoutUser);
+
+// ---- Full-page profile (photo + name editing) ----
+const profilePageOverlay = document.getElementById("profilePageOverlay");
+const profilePageToast = document.getElementById("profilePageToast");
+
+async function openProfilePage() {
+  if (sessionRestorePromise) {
+    try { await sessionRestorePromise; } catch (e) { }
+  }
+  if (!currentUser) return;
+  const pdd = document.getElementById("profileDropdown");
+  if (pdd) pdd.classList.remove("open");
+
+  const token = getAuthToken();
+  if (token) {
     try {
       const data = await safeFetchJson("/api/user/profile", {
         headers: { "Authorization": "Bearer " + token }
       });
-      if (data && data.success && data.user){
+      if (data && data.success && data.user) {
         setLoggedInUser({
+          ...currentUser,
           _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
           id: (data.user._id || data.user.id || data.user.userId || "").toString(),
           userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
           name: data.user.name,
           email: data.user.email,
-          provider: data.user.provider,
+          provider: data.user.provider || currentUser.provider,
           photo: data.user.photo,
           token: token
         });
-        await fetchHistoryFromBackend();
-        return;
-      } else {
-        // Token is invalid/expired on backend -> clear invalid token & session state
-        clearAuthToken();
-        currentUser = null;
-        try { localStorage.removeItem("ara_session_v1"); } catch(e){}
-        userHistoryList = [];
-        renderHistory();
-        return;
       }
-    } catch(err){
-      console.warn("Could not restore session from MongoDB backend:", err);
-      clearAuthToken();
-      currentUser = null;
-      try { localStorage.removeItem("ara_session_v1"); } catch(e){}
-      userHistoryList = [];
-      renderHistory();
-    }
+    } catch (e) { }
   }
 
-  document.getElementById("userLogoutBtn").addEventListener("click", logoutUser);
+  const account = accounts[currentUser.email] || {};
 
-  // ---- Full-page profile (photo + name editing) ----
-  const profilePageOverlay = document.getElementById("profilePageOverlay");
-  const profilePageToast = document.getElementById("profilePageToast");
+  const nameInput = document.getElementById("profilePageNameInput");
+  const emailEl = document.getElementById("profilePageEmail");
+  const providerEl = document.getElementById("profilePageProvider");
+  const verifiedEl = document.getElementById("profilePageVerified");
 
-  async function openProfilePage(){
-    if (sessionRestorePromise) {
-      try { await sessionRestorePromise; } catch(e){}
-    }
-    if (!currentUser) return;
-    const pdd = document.getElementById("profileDropdown");
-    if (pdd) pdd.classList.remove("open");
+  if (nameInput) nameInput.value = currentUser.name || "";
+  if (emailEl) emailEl.textContent = currentUser.email || "—";
 
-    const token = getAuthToken();
-    if (token) {
-      try {
-        const data = await safeFetchJson("/api/user/profile", {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (data && data.success && data.user) {
-          setLoggedInUser({
-            ...currentUser,
-            _id: (data.user._id || data.user.id || data.user.userId || "").toString(),
-            id: (data.user._id || data.user.id || data.user.userId || "").toString(),
-            userId: (data.user.userId || data.user._id || data.user.id || "").toString(),
-            name: data.user.name,
-            email: data.user.email,
-            provider: data.user.provider || currentUser.provider,
-            photo: data.user.photo,
-            token: token
-          });
-        }
-      } catch (e) {}
-    }
+  const provider = currentUser.provider || account.provider || "email";
+  if (providerEl) providerEl.textContent = provider === "google" ? "Google Account (OAuth)" : "Email & Password";
 
-    const account = accounts[currentUser.email] || {};
+  const isVerified = account.verified !== false;
+  if (verifiedEl) {
+    verifiedEl.textContent = isVerified ? "Verified Account ✓" : "Verification Pending";
+    verifiedEl.style.color = isVerified ? "#2e7d32" : "#d32f2f";
+  }
 
-    const nameInput = document.getElementById("profilePageNameInput");
-    const emailEl = document.getElementById("profilePageEmail");
-    const providerEl = document.getElementById("profilePageProvider");
-    const verifiedEl = document.getElementById("profilePageVerified");
+  renderAvatarEverywhere(currentUser);
+  if (profilePageToast) profilePageToast.textContent = "";
+  profilePageOverlay.classList.add("active");
+  document.body.style.overflow = "hidden";
+}
 
-    if (nameInput) nameInput.value = currentUser.name || "";
-    if (emailEl) emailEl.textContent = currentUser.email || "—";
+function closeProfilePage() {
+  profilePageOverlay.classList.remove("active");
+  document.body.style.overflow = "";
+}
 
-    const provider = currentUser.provider || account.provider || "email";
-    if (providerEl) providerEl.textContent = provider === "google" ? "Google Account (OAuth)" : "Email & Password";
+document.getElementById("userProfileBtn").addEventListener("click", openProfilePage);
+document.getElementById("profilePageBackBtn").addEventListener("click", closeProfilePage);
 
-    const isVerified = account.verified !== false;
-    if (verifiedEl) {
-      verifiedEl.textContent = isVerified ? "Verified Account ✓" : "Verification Pending";
-      verifiedEl.style.color = isVerified ? "#2e7d32" : "#d32f2f";
-    }
-
-    renderAvatarEverywhere(currentUser);
+const profileNameInputEl = document.getElementById("profilePageNameInput");
+if (profileNameInputEl) {
+  profileNameInputEl.addEventListener("input", () => {
     if (profilePageToast) profilePageToast.textContent = "";
-    profilePageOverlay.classList.add("active");
-    document.body.style.overflow = "hidden";
-  }
-
-  function closeProfilePage(){
-    profilePageOverlay.classList.remove("active");
-    document.body.style.overflow = "";
-  }
-
-  document.getElementById("userProfileBtn").addEventListener("click", openProfilePage);
-  document.getElementById("profilePageBackBtn").addEventListener("click", closeProfilePage);
-
-  const profileNameInputEl = document.getElementById("profilePageNameInput");
-  if (profileNameInputEl) {
-    profileNameInputEl.addEventListener("input", () => {
-      if (profilePageToast) profilePageToast.textContent = "";
-    });
-  }
-
-  let pendingProfileAvatarDataUrl = null;
-
-  async function ensureAuthToken() {
-    let token = getAuthToken();
-    if (token) return token;
-    if (currentUser && currentUser.token) {
-      setAuthToken(currentUser.token);
-      return currentUser.token;
-    }
-    try {
-      const sess = localStorage.getItem("ara_session_v1");
-      if (sess) {
-        const parsed = JSON.parse(sess);
-        if (parsed && parsed.token) {
-          setAuthToken(parsed.token);
-          return parsed.token;
-        }
-      }
-    } catch (e) {}
-    if (currentUser && currentUser.email) {
-      try {
-        const res = await safeFetchJson("/api/auth/session-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: currentUser.email })
-        });
-        if (res && res.success && res.token) {
-          setAuthToken(res.token);
-          currentUser.token = res.token;
-          return res.token;
-        }
-      } catch (e) {}
-    }
-    return null;
-  }
-
-  function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.85) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (readerEvent) => {
-        const img = new Image();
-        img.onload = () => {
-          let width = img.width;
-          let height = img.height;
-          if (width > height) {
-            if (width > maxWidth) {
-              height = Math.round((height * maxWidth) / width);
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width = Math.round((width * maxHeight) / height);
-              height = maxHeight;
-            }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
-          resolve(compressedDataUrl);
-        };
-        img.onerror = () => reject(new Error("Failed to process image"));
-        img.src = readerEvent.target.result;
-      };
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  document.getElementById("profilePageAvatarEditBtn").addEventListener("click", () => {
-    document.getElementById("profilePagePhotoInput").click();
   });
+}
 
-  document.getElementById("profilePagePhotoInput").addEventListener("change", async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file || !currentUser) return;
-    if (!file.type.startsWith("image/")){
-      profilePageToast.style.color = "#b3261e";
-      profilePageToast.textContent = "Please choose an image file.";
-      return;
+let pendingProfileAvatarDataUrl = null;
+
+async function ensureAuthToken() {
+  let token = getAuthToken();
+  if (token) return token;
+  if (currentUser && currentUser.token) {
+    setAuthToken(currentUser.token);
+    return currentUser.token;
+  }
+  try {
+    const sess = localStorage.getItem("ara_session_v1");
+    if (sess) {
+      const parsed = JSON.parse(sess);
+      if (parsed && parsed.token) {
+        setAuthToken(parsed.token);
+        return parsed.token;
+      }
     }
+  } catch (e) { }
+  if (currentUser && currentUser.email) {
     try {
-      profilePageToast.style.color = "var(--muted)";
-      profilePageToast.textContent = "Processing photo...";
-
-      const compressedDataUrl = await compressImage(file, 400, 400, 0.85);
-      pendingProfileAvatarDataUrl = compressedDataUrl;
-
-      // Update avatar preview immediately across UI
-      renderAvatarEverywhere({ ...currentUser, photo: compressedDataUrl });
-
-      const token = await ensureAuthToken();
-      const headers = {
-        "Content-Type": "application/json",
-        "x-user-email": currentUser.email
-      };
-      if (token) headers["Authorization"] = "Bearer " + token;
-
-      const res = await safeFetchJson("/api/user/profile", {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({ photo: compressedDataUrl, email: currentUser.email })
+      const res = await safeFetchJson("/api/auth/session-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: currentUser.email })
       });
-      if (res && res.success && res.user) {
-        const activeToken = res.token || token || (currentUser && currentUser.token) || "";
-        if (activeToken) setAuthToken(activeToken);
-
-        setLoggedInUser({
-          ...currentUser,
-          _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-          id: (res.user._id || res.user.id || res.user.userId || "").toString(),
-          userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
-          name: res.user.name,
-          email: res.user.email,
-          provider: res.user.provider || currentUser.provider,
-          photo: res.user.photo,
-          token: activeToken
-        });
-        renderAvatarEverywhere(res.user);
-        profilePageToast.style.color = "#2e7d32";
-        profilePageToast.textContent = "Profile photo updated successfully.";
-
-        logUserAction("profile photo update", "User updated profile photo");
-        return;
+      if (res && res.success && res.token) {
+        setAuthToken(res.token);
+        currentUser.token = res.token;
+        return res.token;
       }
-      profilePageToast.style.color = "#2e7d32";
-      profilePageToast.textContent = "Photo chosen. Click Save Changes to confirm.";
-    } catch(err) {
-      console.error("Profile photo processing failed:", err);
-      profilePageToast.style.color = "#b3261e";
-      profilePageToast.textContent = "Error processing photo: " + err.message;
-    }
+    } catch (e) { }
+  }
+  return null;
+}
+
+function compressImage(file, maxWidth = 400, maxHeight = 400, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => reject(new Error("Failed to process image"));
+      img.src = readerEvent.target.result;
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
   });
+}
 
-  document.getElementById("profilePageSaveBtn").addEventListener("click", async () => {
-    if (!currentUser) return;
-    const newName = document.getElementById("profilePageNameInput").value.trim();
-    if (!newName){
-      profilePageToast.style.color = "#b3261e";
-      profilePageToast.textContent = "Name can't be empty.";
-      return;
-    }
+document.getElementById("profilePageAvatarEditBtn").addEventListener("click", () => {
+  document.getElementById("profilePagePhotoInput").click();
+});
 
+document.getElementById("profilePagePhotoInput").addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file || !currentUser) return;
+  if (!file.type.startsWith("image/")) {
+    profilePageToast.style.color = "#b3261e";
+    profilePageToast.textContent = "Please choose an image file.";
+    return;
+  }
+  try {
     profilePageToast.style.color = "var(--muted)";
-    profilePageToast.textContent = "Saving profile to MongoDB...";
+    profilePageToast.textContent = "Processing photo...";
+
+    const compressedDataUrl = await compressImage(file, 400, 400, 0.85);
+    pendingProfileAvatarDataUrl = compressedDataUrl;
+
+    // Update avatar preview immediately across UI
+    renderAvatarEverywhere({ ...currentUser, photo: compressedDataUrl });
 
     const token = await ensureAuthToken();
-    const updatePayload = {
-      name: newName,
-      email: currentUser.email
+    const headers = {
+      "Content-Type": "application/json",
+      "x-user-email": currentUser.email
     };
-    if (pendingProfileAvatarDataUrl !== null) {
-      updatePayload.photo = pendingProfileAvatarDataUrl;
-    } else if (currentUser.photo) {
-      updatePayload.photo = currentUser.photo;
-    }
+    if (token) headers["Authorization"] = "Bearer " + token;
 
-    try {
-      const headers = {
-        "Content-Type": "application/json",
-        "x-user-email": currentUser.email
-      };
-      if (token) headers["Authorization"] = "Bearer " + token;
-
-      const res = await safeFetchJson("/api/user/profile", {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updatePayload)
-      });
-      if (!res || !res.success || !res.user) {
-        profilePageToast.style.color = "#b3261e";
-        profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
-        return;
-      }
-
+    const res = await safeFetchJson("/api/user/profile", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ photo: compressedDataUrl, email: currentUser.email })
+    });
+    if (res && res.success && res.user) {
       const activeToken = res.token || token || (currentUser && currentUser.token) || "";
       if (activeToken) setAuthToken(activeToken);
 
@@ -4645,533 +4574,594 @@
         photo: res.user.photo,
         token: activeToken
       });
-
       renderAvatarEverywhere(res.user);
-      const nameEl = document.getElementById("userChipName");
-      const dropdownNameEl = document.getElementById("profileDropdownName");
-      if (nameEl) nameEl.textContent = res.user.name;
-      if (dropdownNameEl) dropdownNameEl.textContent = res.user.name;
-
-      pendingProfileAvatarDataUrl = null;
       profilePageToast.style.color = "#2e7d32";
-      profilePageToast.textContent = "Profile saved successfully.";
-      setTimeout(() => {
-        if (profilePageToast) profilePageToast.textContent = "";
-      }, 3000);
+      profilePageToast.textContent = "Profile photo updated successfully.";
 
-      logUserAction("profile update", `User updated profile (Name: ${res.user.name})`, { name: res.user.name });
-    } catch(err){
-      console.error("MongoDB profile save error:", err);
+      logUserAction("profile photo update", "User updated profile photo");
+      return;
+    }
+    profilePageToast.style.color = "#2e7d32";
+    profilePageToast.textContent = "Photo chosen. Click Save Changes to confirm.";
+  } catch (err) {
+    console.error("Profile photo processing failed:", err);
+    profilePageToast.style.color = "#b3261e";
+    profilePageToast.textContent = "Error processing photo: " + err.message;
+  }
+});
+
+document.getElementById("profilePageSaveBtn").addEventListener("click", async () => {
+  if (!currentUser) return;
+  const newName = document.getElementById("profilePageNameInput").value.trim();
+  if (!newName) {
+    profilePageToast.style.color = "#b3261e";
+    profilePageToast.textContent = "Name can't be empty.";
+    return;
+  }
+
+  profilePageToast.style.color = "var(--muted)";
+  profilePageToast.textContent = "Saving profile to MongoDB...";
+
+  const token = await ensureAuthToken();
+  const updatePayload = {
+    name: newName,
+    email: currentUser.email
+  };
+  if (pendingProfileAvatarDataUrl !== null) {
+    updatePayload.photo = pendingProfileAvatarDataUrl;
+  } else if (currentUser.photo) {
+    updatePayload.photo = currentUser.photo;
+  }
+
+  try {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-user-email": currentUser.email
+    };
+    if (token) headers["Authorization"] = "Bearer " + token;
+
+    const res = await safeFetchJson("/api/user/profile", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(updatePayload)
+    });
+    if (!res || !res.success || !res.user) {
       profilePageToast.style.color = "#b3261e";
-      profilePageToast.textContent = "Database error: " + err.message;
-    }
-  });
-
-  // ---- Profile button dropdown (open/close on click, close on item click & outside click) ----
-  const profileBtn = document.getElementById("profileBtn");
-  const profileDropdown = document.getElementById("profileDropdown");
-  if (profileBtn && profileDropdown) {
-    profileBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      profileDropdown.classList.toggle("open");
-    });
-    profileDropdown.querySelectorAll(".profile-dropdown-item").forEach(item => {
-      item.addEventListener("click", () => {
-        profileDropdown.classList.remove("open");
-      });
-    });
-  }
-  document.addEventListener("click", (e) => {
-    const pdd = document.getElementById("profileDropdown");
-    const pbtn = document.getElementById("profileBtn");
-    if (pdd && !pdd.contains(e.target) && (!pbtn || !pbtn.contains(e.target))){
-      pdd.classList.remove("open");
-    }
-  });
-
-  // ---- Modal open/close ----
-  const authModal = document.getElementById("authModal");
-  const navLoginBtn = document.getElementById("navLoginBtn");
-  const navSignupBtn = document.getElementById("navSignupBtn");
-  const modalCloseBtn = document.getElementById("modalCloseBtn");
-  const tabLogin = document.getElementById("tabLogin");
-  const tabSignup = document.getElementById("tabSignup");
-  const authTabs = document.getElementById("authTabs");
-
-  const loginPanel = document.getElementById("loginPanel");
-  const signupPanel = document.getElementById("signupPanel");
-  const forgotPanel = document.getElementById("forgotPanel");
-  const resetPanel = document.getElementById("resetPanel");
-  const verifyPendingPanel = document.getElementById("verifyPendingPanel");
-
-  const loginToast = document.getElementById("loginToast");
-  const signupToast = document.getElementById("signupToast");
-  const forgotToast = document.getElementById("forgotToast");
-  const resetToast = document.getElementById("resetToast");
-  const verifyPendingToast = document.getElementById("verifyPendingToast");
-
-  let currentPendingVerifyEmail = "";
-
-  function showPanel(which){
-    [loginPanel, signupPanel, forgotPanel, resetPanel, verifyPendingPanel].forEach(p => p && p.classList.remove("active"));
-    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
-    document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
-    if (mismatchHint) mismatchHint.classList.remove("show");
-
-    if (which === "login"){
-      loginPanel.classList.add("active");
-      authTabs.style.display = "flex";
-      tabLogin.classList.add("active");
-      tabSignup.classList.remove("active");
-    } else if (which === "signup"){
-      signupPanel.classList.add("active");
-      authTabs.style.display = "flex";
-      tabSignup.classList.add("active");
-      tabLogin.classList.remove("active");
-    } else if (which === "forgot"){
-      forgotPanel.classList.add("active");
-      authTabs.style.display = "none"; // forgot-password is its own step, not a tab
-    } else if (which === "reset"){
-      resetPanel.classList.add("active");
-      authTabs.style.display = "none"; // set-new-password is its own step too
-    } else if (which === "verifyPending"){
-      verifyPendingPanel.classList.add("active");
-      authTabs.style.display = "none";
-    }
-  }
-
-  function showVerifyPendingScreen(email){
-    currentPendingVerifyEmail = email;
-    const pendingLabel = document.getElementById("pendingVerifyEmail");
-    if (pendingLabel) pendingLabel.textContent = email;
-    showPanel("verifyPending");
-  }
-
-  function openAuth(mode){
-    showPanel(mode === "signup" ? "signup" : "login");
-    authModal.classList.add("active");
-  }
-
-  function closeAuth(){
-    authModal.classList.remove("active");
-    hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
-    document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
-    if (mismatchHint) mismatchHint.classList.remove("show");
-  }
-
-  if (navLoginBtn) navLoginBtn.addEventListener("click", () => openAuth("login"));
-  if (navSignupBtn) navSignupBtn.addEventListener("click", () => openAuth("signup"));
-  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeAuth);
-  authModal.addEventListener("click", (e) => { if (e.target === authModal) closeAuth(); });
-  tabLogin.addEventListener("click", () => showPanel("login"));
-  tabSignup.addEventListener("click", () => showPanel("signup"));
-
-  // Auto-clear error toasts as soon as user clicks or types in any auth input field
-  document.querySelectorAll("#loginPanel input, #signupPanel input, #forgotPanel input, #resetPanel input").forEach(input => {
-    input.addEventListener("input", () => {
-      hideToast(loginToast);
-      hideToast(signupToast);
-      hideToast(forgotToast);
-      hideToast(resetToast);
-    });
-    input.addEventListener("focus", () => {
-      hideToast(loginToast);
-      hideToast(signupToast);
-      hideToast(forgotToast);
-      hideToast(resetToast);
-    });
-  });
-
-  // ---- Forgot password: request the email ----
-  document.getElementById("forgotLinkBtn").addEventListener("click", () => showPanel("forgot"));
-  document.getElementById("backToLoginBtn").addEventListener("click", () => showPanel("login"));
-
-  forgotPanel.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const rawEmail = document.getElementById("forgotEmail").value;
-    const email = normalizeEmail(rawEmail);
-
-    if (!isValidEmail(email)){
-      showToast(forgotToast, "Please enter a valid email address.", true);
+      profilePageToast.textContent = (res && res.message) ? res.message : "Failed to save profile in MongoDB.";
       return;
     }
 
-    // Password reset email delivery is handled by the backend NodeMailer service (/api/auth/forgot-password)
+    const activeToken = res.token || token || (currentUser && currentUser.token) || "";
+    if (activeToken) setAuthToken(activeToken);
 
-    try {
-      const data = await safeFetchJson("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-      if (data.success){
-        const account = accounts[email];
-        if (account && data.resetToken){
-          account.resetToken = data.resetToken;
-          account.resetTokenExpires = Date.now() + 15 * 60 * 1000;
-          saveAccounts();
-        }
-        showToast(forgotToast, data.message || `If an account exists for ${email}, a password reset link has been sent to that inbox.`, false);
-        forgotPanel.reset();
-        return;
+    setLoggedInUser({
+      ...currentUser,
+      _id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+      id: (res.user._id || res.user.id || res.user.userId || "").toString(),
+      userId: (res.user.userId || res.user._id || res.user.id || "").toString(),
+      name: res.user.name,
+      email: res.user.email,
+      provider: res.user.provider || currentUser.provider,
+      photo: res.user.photo,
+      token: activeToken
+    });
+
+    renderAvatarEverywhere(res.user);
+    const nameEl = document.getElementById("userChipName");
+    const dropdownNameEl = document.getElementById("profileDropdownName");
+    if (nameEl) nameEl.textContent = res.user.name;
+    if (dropdownNameEl) dropdownNameEl.textContent = res.user.name;
+
+    pendingProfileAvatarDataUrl = null;
+    profilePageToast.style.color = "#2e7d32";
+    profilePageToast.textContent = "Profile saved successfully.";
+    setTimeout(() => {
+      if (profilePageToast) profilePageToast.textContent = "";
+    }, 3000);
+
+    logUserAction("profile update", `User updated profile (Name: ${res.user.name})`, { name: res.user.name });
+  } catch (err) {
+    console.error("MongoDB profile save error:", err);
+    profilePageToast.style.color = "#b3261e";
+    profilePageToast.textContent = "Database error: " + err.message;
+  }
+});
+
+// ---- Profile button dropdown (open/close on click, close on item click & outside click) ----
+const profileBtn = document.getElementById("profileBtn");
+const profileDropdown = document.getElementById("profileDropdown");
+if (profileBtn && profileDropdown) {
+  profileBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    profileDropdown.classList.toggle("open");
+  });
+  profileDropdown.querySelectorAll(".profile-dropdown-item").forEach(item => {
+    item.addEventListener("click", () => {
+      profileDropdown.classList.remove("open");
+    });
+  });
+}
+document.addEventListener("click", (e) => {
+  const pdd = document.getElementById("profileDropdown");
+  const pbtn = document.getElementById("profileBtn");
+  if (pdd && !pdd.contains(e.target) && (!pbtn || !pbtn.contains(e.target))) {
+    pdd.classList.remove("open");
+  }
+});
+
+// ---- Modal open/close ----
+const authModal = document.getElementById("authModal");
+const navLoginBtn = document.getElementById("navLoginBtn");
+const navSignupBtn = document.getElementById("navSignupBtn");
+const modalCloseBtn = document.getElementById("modalCloseBtn");
+const tabLogin = document.getElementById("tabLogin");
+const tabSignup = document.getElementById("tabSignup");
+const authTabs = document.getElementById("authTabs");
+
+const loginPanel = document.getElementById("loginPanel");
+const signupPanel = document.getElementById("signupPanel");
+const forgotPanel = document.getElementById("forgotPanel");
+const resetPanel = document.getElementById("resetPanel");
+const verifyPendingPanel = document.getElementById("verifyPendingPanel");
+
+const loginToast = document.getElementById("loginToast");
+const signupToast = document.getElementById("signupToast");
+const forgotToast = document.getElementById("forgotToast");
+const resetToast = document.getElementById("resetToast");
+const verifyPendingToast = document.getElementById("verifyPendingToast");
+
+let currentPendingVerifyEmail = "";
+
+function showPanel(which) {
+  [loginPanel, signupPanel, forgotPanel, resetPanel, verifyPendingPanel].forEach(p => p && p.classList.remove("active"));
+  hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
+  document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
+  if (mismatchHint) mismatchHint.classList.remove("show");
+
+  if (which === "login") {
+    loginPanel.classList.add("active");
+    authTabs.style.display = "flex";
+    tabLogin.classList.add("active");
+    tabSignup.classList.remove("active");
+  } else if (which === "signup") {
+    signupPanel.classList.add("active");
+    authTabs.style.display = "flex";
+    tabSignup.classList.add("active");
+    tabLogin.classList.remove("active");
+  } else if (which === "forgot") {
+    forgotPanel.classList.add("active");
+    authTabs.style.display = "none"; // forgot-password is its own step, not a tab
+  } else if (which === "reset") {
+    resetPanel.classList.add("active");
+    authTabs.style.display = "none"; // set-new-password is its own step too
+  } else if (which === "verifyPending") {
+    verifyPendingPanel.classList.add("active");
+    authTabs.style.display = "none";
+  }
+}
+
+function showVerifyPendingScreen(email) {
+  currentPendingVerifyEmail = email;
+  const pendingLabel = document.getElementById("pendingVerifyEmail");
+  if (pendingLabel) pendingLabel.textContent = email;
+  showPanel("verifyPending");
+}
+
+function openAuth(mode) {
+  showPanel(mode === "signup" ? "signup" : "login");
+  authModal.classList.add("active");
+}
+
+function closeAuth() {
+  authModal.classList.remove("active");
+  hideToast(loginToast); hideToast(signupToast); hideToast(forgotToast); hideToast(resetToast); hideToast(verifyPendingToast);
+  document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error"));
+  if (mismatchHint) mismatchHint.classList.remove("show");
+}
+
+if (navLoginBtn) navLoginBtn.addEventListener("click", () => openAuth("login"));
+if (navSignupBtn) navSignupBtn.addEventListener("click", () => openAuth("signup"));
+if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeAuth);
+authModal.addEventListener("click", (e) => { if (e.target === authModal) closeAuth(); });
+tabLogin.addEventListener("click", () => showPanel("login"));
+tabSignup.addEventListener("click", () => showPanel("signup"));
+
+// Auto-clear error toasts as soon as user clicks or types in any auth input field
+document.querySelectorAll("#loginPanel input, #signupPanel input, #forgotPanel input, #resetPanel input").forEach(input => {
+  input.addEventListener("input", () => {
+    hideToast(loginToast);
+    hideToast(signupToast);
+    hideToast(forgotToast);
+    hideToast(resetToast);
+  });
+  input.addEventListener("focus", () => {
+    hideToast(loginToast);
+    hideToast(signupToast);
+    hideToast(forgotToast);
+    hideToast(resetToast);
+  });
+});
+
+// ---- Forgot password: request the email ----
+document.getElementById("forgotLinkBtn").addEventListener("click", () => showPanel("forgot"));
+document.getElementById("backToLoginBtn").addEventListener("click", () => showPanel("login"));
+
+forgotPanel.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const rawEmail = document.getElementById("forgotEmail").value;
+  const email = normalizeEmail(rawEmail);
+
+  if (!isValidEmail(email)) {
+    showToast(forgotToast, "Please enter a valid email address.", true);
+    return;
+  }
+
+  // Password reset email delivery is handled by the backend NodeMailer service (/api/auth/forgot-password)
+
+  try {
+    const data = await safeFetchJson("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    if (data.success) {
+      const account = accounts[email];
+      if (account && data.resetToken) {
+        account.resetToken = data.resetToken;
+        account.resetTokenExpires = Date.now() + 15 * 60 * 1000;
+        saveAccounts();
       }
-    } catch(err){
-      console.warn("MongoDB forgot password backend error, using local fallback:", err);
-    }
-
-    const account = accounts[email];
-
-    if (!account || account.provider !== "email"){
-      showToast(forgotToast, `If an account exists for ${email}, a password reset link has been sent to that inbox (or spam folder).`, false);
+      showToast(forgotToast, data.message || `If an account exists for ${email}, a password reset link has been sent to that inbox.`, false);
       forgotPanel.reset();
       return;
     }
+  } catch (err) {
+    console.warn("MongoDB forgot password backend error, using local fallback:", err);
+  }
 
-    const token = generateResetToken();
-    account.resetToken = token;
-    account.resetTokenExpires = Date.now() + 15 * 60 * 1000; // link valid 15 minutes
-    saveAccounts();
+  const account = accounts[email];
 
-    let origin = location.origin;
-    let pathname = location.pathname;
-    if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")){
-      origin = "http://localhost:5000";
-    }
-
-    const resetLink = `${origin}${pathname}?resetEmail=${encodeURIComponent(email)}&resetToken=${token}`;
-    const resetMessage =
-      `Hi ${account.name || "there"},\n\n` +
-      `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
-      `${resetLink}\n\n` +
-      `⏰ IMPORTANT: This password reset link is valid for 15 minutes.\n\n` +
-      `If you didn't request a password reset, you can safely ignore this email.`;
-
-    // Deliver reset email directly to user's registered inbox ONLY
-    sendDirectUserEmail({
-      toEmail: email,
-      subject: "Reset your password — AI Resume Analyzer",
-      message: resetMessage
-    });
-
-    showToast(forgotToast, `Password reset link sent to ${email}! Please check your inbox and spam folder (valid for 15 minutes).`, false);
+  if (!account || account.provider !== "email") {
+    showToast(forgotToast, `If an account exists for ${email}, a password reset link has been sent to that inbox (or spam folder).`, false);
     forgotPanel.reset();
+    return;
+  }
+
+  const token = generateResetToken();
+  account.resetToken = token;
+  account.resetTokenExpires = Date.now() + 15 * 60 * 1000; // link valid 15 minutes
+  saveAccounts();
+
+  let origin = location.origin;
+  let pathname = location.pathname;
+  if (location.protocol === "file:" || !origin || origin === "null" || origin.startsWith("file:")) {
+    origin = "http://localhost:5000";
+  }
+
+  const resetLink = `${origin}${pathname}?resetEmail=${encodeURIComponent(email)}&resetToken=${token}`;
+  const resetMessage =
+    `Hi ${account.name || "there"},\n\n` +
+    `Click the link below to reset your password for AI Resume Analyzer:\n\n` +
+    `${resetLink}\n\n` +
+    `⏰ IMPORTANT: This password reset link is valid for 15 minutes.\n\n` +
+    `If you didn't request a password reset, you can safely ignore this email.`;
+
+  // Deliver reset email directly to user's registered inbox ONLY
+  sendDirectUserEmail({
+    toEmail: email,
+    subject: "Reset your password — AI Resume Analyzer",
+    message: resetMessage
   });
 
-  // ---- Forgot password: the link in the email lands back here with
-  // ?resetEmail=...&resetToken=... — verify it and let them set a new password ----
-  let pendingResetEmail = null;
-  let pendingResetToken = null;
+  showToast(forgotToast, `Password reset link sent to ${email}! Please check your inbox and spam folder (valid for 15 minutes).`, false);
+  forgotPanel.reset();
+});
 
-  // ---- Email verification: the link in the confirmation email lands back
-  // here with ?verifyEmail=...&verifyToken=... — validate it, flip the
-  // account to verified, open the login panel with email prefilled, and prompt to log in ----
-  let isVerificationProcessing = false;
-  async function checkForVerifyLink(){
-    if (isVerificationProcessing) return;
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token") || params.get("verifyToken");
-    const email = params.get("email") || params.get("verifyEmail");
-    const pathname = window.location.pathname || "";
+// ---- Forgot password: the link in the email lands back here with
+// ?resetEmail=...&resetToken=... — verify it and let them set a new password ----
+let pendingResetEmail = null;
+let pendingResetToken = null;
 
-    if (!token && !pathname.includes("verify-email")) return;
-    if (!token) return;
+// ---- Email verification: the link in the confirmation email lands back
+// here with ?verifyEmail=...&verifyToken=... — validate it, flip the
+// account to verified, open the login panel with email prefilled, and prompt to log in ----
+let isVerificationProcessing = false;
+async function checkForVerifyLink() {
+  if (isVerificationProcessing) return;
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token") || params.get("verifyToken");
+  const email = params.get("email") || params.get("verifyEmail");
+  const pathname = window.location.pathname || "";
 
-    isVerificationProcessing = true;
-    const normalized = email ? normalizeEmail(email) : "";
+  if (!token && !pathname.includes("verify-email")) return;
+  if (!token) return;
 
-    try {
-      const data = await safeFetchJson("/api/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalized, token })
-      });
-      if (data && data.success){
-        const verifiedEmail = normalizeEmail(data.user?.email || normalized);
-        if (verifiedEmail){
-          if (!accounts[verifiedEmail]){
-            accounts[verifiedEmail] = { name: data.user?.name || verifiedEmail, provider: "email", verified: true };
-          } else {
-            accounts[verifiedEmail].verified = true;
-          }
-          saveAccounts();
+  isVerificationProcessing = true;
+  const normalized = email ? normalizeEmail(email) : "";
+
+  try {
+    const data = await safeFetchJson("/api/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalized, token })
+    });
+    if (data && data.success) {
+      const verifiedEmail = normalizeEmail(data.user?.email || normalized);
+      if (verifiedEmail) {
+        if (!accounts[verifiedEmail]) {
+          accounts[verifiedEmail] = { name: data.user?.name || verifiedEmail, provider: "email", verified: true };
+        } else {
+          accounts[verifiedEmail].verified = true;
         }
-
-        notifyUserOfAuthEvent({ email: verifiedEmail, name: data.user?.name || verifiedEmail, action: "Sign Up" });
-
-        // Open login panel & prefill email so user can use login
-        authModal.classList.add("active");
-        showPanel("login");
-        const loginEmailInput = document.getElementById("loginEmail");
-        if (loginEmailInput && verifiedEmail) {
-          loginEmailInput.value = verifiedEmail;
-        }
-        const loginPasswordInput = document.getElementById("loginPassword");
-        if (loginPasswordInput) {
-          setTimeout(() => loginPasswordInput.focus(), 300);
-        }
-
-        showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
-
-        let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-        if (!cleanPath) cleanPath = "/";
-        history.replaceState({}, document.title, cleanPath);
-        return;
-      } else if (data && !data.success && data.message){
-        authModal.classList.add("active");
-        showPanel("login");
-        showToast(loginToast, data.message, true);
-        let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-        if (!cleanPath) cleanPath = "/";
-        history.replaceState({}, document.title, cleanPath);
-        return;
+        saveAccounts();
       }
-    } catch(err){
-      console.warn("MongoDB verification backend error, using local fallback:", err);
-    }
 
-    const account = accounts[normalized];
-    if (!account){
+      notifyUserOfAuthEvent({ email: verifiedEmail, name: data.user?.name || verifiedEmail, action: "Sign Up" });
+
+      // Open login panel & prefill email so user can use login
       authModal.classList.add("active");
       showPanel("login");
-      showToast(loginToast, "Account not found. Please sign up to create your account.", true);
+      const loginEmailInput = document.getElementById("loginEmail");
+      if (loginEmailInput && verifiedEmail) {
+        loginEmailInput.value = verifiedEmail;
+      }
+      const loginPasswordInput = document.getElementById("loginPassword");
+      if (loginPasswordInput) {
+        setTimeout(() => loginPasswordInput.focus(), 300);
+      }
+
+      showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
+
+      let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+      if (!cleanPath) cleanPath = "/";
+      history.replaceState({}, document.title, cleanPath);
+      return;
+    } else if (data && !data.success && data.message) {
+      authModal.classList.add("active");
+      showPanel("login");
+      showToast(loginToast, data.message, true);
       let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
       if (!cleanPath) cleanPath = "/";
       history.replaceState({}, document.title, cleanPath);
       return;
     }
+  } catch (err) {
+    console.warn("MongoDB verification backend error, using local fallback:", err);
+  }
 
-    const isExpired = account.verifyTokenExpires && Date.now() > account.verifyTokenExpires;
-    const valid = account.verifyToken === token && !isExpired;
-
-    if (!valid){
-      authModal.classList.add("active");
-      showPanel("login");
-      showToast(loginToast, isExpired ? "Verification link expired. Click 'Resend confirmation' for a new link." : "Verification link is invalid or used.", true);
-      let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
-      if (!cleanPath) cleanPath = "/";
-      history.replaceState({}, document.title, cleanPath);
-      return;
-    }
-
-    account.verified = true;
-    saveAccounts();
-
+  const account = accounts[normalized];
+  if (!account) {
     authModal.classList.add("active");
     showPanel("login");
-    const loginEmailInput = document.getElementById("loginEmail");
-    if (loginEmailInput && normalized) {
-      loginEmailInput.value = normalized;
-    }
-    const loginPasswordInput = document.getElementById("loginPassword");
-    if (loginPasswordInput) {
-      setTimeout(() => loginPasswordInput.focus(), 300);
-    }
-
-    showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
+    showToast(loginToast, "Account not found. Please sign up to create your account.", true);
     let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
     if (!cleanPath) cleanPath = "/";
     history.replaceState({}, document.title, cleanPath);
+    return;
   }
 
-  function checkForResetLink(){
-    const params = new URLSearchParams(location.search);
-    const email = params.get("email") || params.get("resetEmail");
-    const token = params.get("token") || params.get("resetToken");
-    const pathname = window.location.pathname || "";
+  const isExpired = account.verifyTokenExpires && Date.now() > account.verifyTokenExpires;
+  const valid = account.verifyToken === token && !isExpired;
 
-    if (!token && !pathname.includes("reset-password")) return;
-    if (!token || !email) return;
-
-    const normalized = normalizeEmail(email);
-    pendingResetEmail = normalized;
-    pendingResetToken = token;
-    const labelEl = document.getElementById("resetEmailLabel");
-    if (labelEl) labelEl.textContent = normalized;
-
+  if (!valid) {
     authModal.classList.add("active");
-    showPanel("reset");
+    showPanel("login");
+    showToast(loginToast, isExpired ? "Verification link expired. Click 'Resend confirmation' for a new link." : "Verification link is invalid or used.", true);
+    let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+    if (!cleanPath) cleanPath = "/";
+    history.replaceState({}, document.title, cleanPath);
+    return;
   }
 
-  resetPanel.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!pendingResetEmail) return;
+  account.verified = true;
+  saveAccounts();
 
-    const pw = document.getElementById("resetPassword").value;
-    const confirm = document.getElementById("resetConfirmPassword").value;
+  authModal.classList.add("active");
+  showPanel("login");
+  const loginEmailInput = document.getElementById("loginEmail");
+  if (loginEmailInput && normalized) {
+    loginEmailInput.value = normalized;
+  }
+  const loginPasswordInput = document.getElementById("loginPassword");
+  if (loginPasswordInput) {
+    setTimeout(() => loginPasswordInput.focus(), 300);
+  }
 
-    if (pw.length < 6){
-      showToast(resetToast, "Password must be at least 6 characters.", true);
-      return;
-    }
-    if (pw !== confirm){
-      showToast(resetToast, "Passwords don't match.", true);
-      return;
-    }
+  showToast(loginToast, `🎉 Email verified successfully! Your account is active. Please log in with your password.`, false);
+  let cleanPath = window.location.pathname.replace(/\/verify-email\/?$/, "/");
+  if (!cleanPath) cleanPath = "/";
+  history.replaceState({}, document.title, cleanPath);
+}
 
-    const params = new URLSearchParams(location.search);
-    const token = pendingResetToken || params.get("token") || params.get("resetToken");
+function checkForResetLink() {
+  const params = new URLSearchParams(location.search);
+  const email = params.get("email") || params.get("resetEmail");
+  const token = params.get("token") || params.get("resetToken");
+  const pathname = window.location.pathname || "";
 
-    if (!token) {
-      showToast(resetToast, "Reset token is missing or expired. Please request a new link.", true);
-      return;
-    }
+  if (!token && !pathname.includes("reset-password")) return;
+  if (!token || !email) return;
 
-    try {
-      const data = await safeFetchJson("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: pendingResetEmail, token, password: pw })
-      });
-      if (data && data.success){
-        const account = accounts[pendingResetEmail];
-        if (account){
-          account.password = pw;
-          delete account.resetToken;
-          delete account.resetTokenExpires;
-          saveAccounts();
-        }
-        showToast(resetToast, "🎉 Password updated successfully! Redirecting to login...", false);
-        setTimeout(() => {
-          let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
-          if (!cleanPath) cleanPath = "/";
-          history.replaceState({}, document.title, cleanPath);
-          const emailForLogin = pendingResetEmail;
-          pendingResetEmail = null;
-          pendingResetToken = null;
-          resetPanel.reset();
-          showPanel("login");
-          const loginEmailInput = document.getElementById("loginEmail");
-          if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
-          const loginPasswordInput = document.getElementById("loginPassword");
-          if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
-          showToast(loginToast, "Password updated! Please log in with your new password.", false);
-        }, 1400);
-        return;
-      } else if (data && !data.success && data.message){
-        showToast(resetToast, data.message, true);
-        return;
+  const normalized = normalizeEmail(email);
+  pendingResetEmail = normalized;
+  pendingResetToken = token;
+  const labelEl = document.getElementById("resetEmailLabel");
+  if (labelEl) labelEl.textContent = normalized;
+
+  authModal.classList.add("active");
+  showPanel("reset");
+}
+
+resetPanel.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!pendingResetEmail) return;
+
+  const pw = document.getElementById("resetPassword").value;
+  const confirm = document.getElementById("resetConfirmPassword").value;
+
+  if (pw.length < 6) {
+    showToast(resetToast, "Password must be at least 6 characters.", true);
+    return;
+  }
+  if (pw !== confirm) {
+    showToast(resetToast, "Passwords don't match.", true);
+    return;
+  }
+
+  const params = new URLSearchParams(location.search);
+  const token = pendingResetToken || params.get("token") || params.get("resetToken");
+
+  if (!token) {
+    showToast(resetToast, "Reset token is missing or expired. Please request a new link.", true);
+    return;
+  }
+
+  try {
+    const data = await safeFetchJson("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: pendingResetEmail, token, password: pw })
+    });
+    if (data && data.success) {
+      const account = accounts[pendingResetEmail];
+      if (account) {
+        account.password = pw;
+        delete account.resetToken;
+        delete account.resetTokenExpires;
+        saveAccounts();
       }
-    } catch(err){
-      console.warn("Backend reset-password error, using local fallback:", err);
+      showToast(resetToast, "🎉 Password updated successfully! Redirecting to login...", false);
+      setTimeout(() => {
+        let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
+        if (!cleanPath) cleanPath = "/";
+        history.replaceState({}, document.title, cleanPath);
+        const emailForLogin = pendingResetEmail;
+        pendingResetEmail = null;
+        pendingResetToken = null;
+        resetPanel.reset();
+        showPanel("login");
+        const loginEmailInput = document.getElementById("loginEmail");
+        if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
+        const loginPasswordInput = document.getElementById("loginPassword");
+        if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
+        showToast(loginToast, "Password updated! Please log in with your new password.", false);
+      }, 1400);
+      return;
+    } else if (data && !data.success && data.message) {
+      showToast(resetToast, data.message, true);
+      return;
     }
+  } catch (err) {
+    console.warn("Backend reset-password error, using local fallback:", err);
+  }
 
-    const account = accounts[pendingResetEmail];
-    if (account) {
-      account.password = pw;
-      delete account.resetToken;
-      delete account.resetTokenExpires;
+  const account = accounts[pendingResetEmail];
+  if (account) {
+    account.password = pw;
+    delete account.resetToken;
+    delete account.resetTokenExpires;
+    saveAccounts();
+  }
+
+  showToast(resetToast, "Password updated successfully! Redirecting to login...", false);
+  setTimeout(() => {
+    let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
+    if (!cleanPath) cleanPath = "/";
+    history.replaceState({}, document.title, cleanPath);
+    const emailForLogin = pendingResetEmail;
+    pendingResetEmail = null;
+    pendingResetToken = null;
+    resetPanel.reset();
+    showPanel("login");
+    const loginEmailInput = document.getElementById("loginEmail");
+    if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
+    const loginPasswordInput = document.getElementById("loginPassword");
+    if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
+    showToast(loginToast, "Password updated! Please log in with your new password.", false);
+  }, 1400);
+});
+
+// ---- Signup ----
+const signupConfirmInput = document.getElementById("signupConfirmPassword");
+const signupPasswordInput = document.getElementById("signupPassword");
+const mismatchHint = document.getElementById("signupMismatchHint");
+
+function checkPasswordsMatch() {
+  const match = signupPasswordInput.value === signupConfirmInput.value;
+  signupConfirmInput.classList.toggle("field-error", !match && signupConfirmInput.value.length > 0);
+  mismatchHint.classList.toggle("show", !match && signupConfirmInput.value.length > 0);
+  return match;
+}
+signupConfirmInput.addEventListener("input", checkPasswordsMatch);
+signupPasswordInput.addEventListener("input", checkPasswordsMatch);
+
+signupPanel.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = document.getElementById("signupName").value.trim();
+  const email = normalizeEmail(document.getElementById("signupEmail").value);
+  const password = signupPasswordInput.value;
+
+  if (!isValidEmail(email)) {
+    showToast(signupToast, "Please enter a valid email address (e.g. yourname@gmail.com).", true);
+    return;
+  }
+  if (!checkPasswordsMatch()) {
+    showToast(signupToast, "Your passwords don't match. Please re-enter them.", true);
+    return;
+  }
+  if (password.length < 6) {
+    showToast(signupToast, "Password must be at least 6 characters.", true);
+    return;
+  }
+
+  // Account registration and email verification are handled by the MongoDB backend service (/api/auth/signup)
+
+  // 2. MongoDB Backend Sync with Local Offline Fallback
+  try {
+    const data = await safeFetchJson("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password })
+    });
+    if (data && data.success && data.requireVerification) {
+      signupPanel.reset();
+      checkPasswordsMatch();
+      showVerifyPendingScreen(email);
+      showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
+      return;
+    } else if (data && data.success && data.token) {
+      setAuthToken(data.token);
+      setLoggedInUser({
+        id: data.user._id || data.user.id || data.user.userId,
+        _id: data.user._id || data.user.id,
+        userId: data.user.userId || data.user._id,
+        name: data.user.name,
+        email: data.user.email,
+        provider: "email",
+        photo: data.user.photo
+      });
+      showToast(signupToast, `Account created! Welcome, ${data.user.name}!`, false);
+      fetchHistoryFromBackend();
+      setTimeout(() => {
+        closeAuth();
+        signupPanel.reset();
+        checkPasswordsMatch();
+      }, 700);
+      return;
+    } else if (data && !data.success && data.isOffline) {
+      // Instant Local Offline Signup Fallback (requires email verification)
+      accounts[email] = { name, password, provider: "email", verified: false };
       saveAccounts();
-    }
-
-    showToast(resetToast, "Password updated successfully! Redirecting to login...", false);
-    setTimeout(() => {
-      let cleanPath = window.location.pathname.replace(/\/reset-password\/?$/, "/");
-      if (!cleanPath) cleanPath = "/";
-      history.replaceState({}, document.title, cleanPath);
-      const emailForLogin = pendingResetEmail;
-      pendingResetEmail = null;
-      pendingResetToken = null;
-      resetPanel.reset();
-      showPanel("login");
-      const loginEmailInput = document.getElementById("loginEmail");
-      if (loginEmailInput && emailForLogin) loginEmailInput.value = emailForLogin;
-      const loginPasswordInput = document.getElementById("loginPassword");
-      if (loginPasswordInput) setTimeout(() => loginPasswordInput.focus(), 300);
-      showToast(loginToast, "Password updated! Please log in with your new password.", false);
-    }, 1400);
-  });
-
-  // ---- Signup ----
-  const signupConfirmInput = document.getElementById("signupConfirmPassword");
-  const signupPasswordInput = document.getElementById("signupPassword");
-  const mismatchHint = document.getElementById("signupMismatchHint");
-
-  function checkPasswordsMatch(){
-    const match = signupPasswordInput.value === signupConfirmInput.value;
-    signupConfirmInput.classList.toggle("field-error", !match && signupConfirmInput.value.length > 0);
-    mismatchHint.classList.toggle("show", !match && signupConfirmInput.value.length > 0);
-    return match;
-  }
-  signupConfirmInput.addEventListener("input", checkPasswordsMatch);
-  signupPasswordInput.addEventListener("input", checkPasswordsMatch);
-
-  signupPanel.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = document.getElementById("signupName").value.trim();
-    const email = normalizeEmail(document.getElementById("signupEmail").value);
-    const password = signupPasswordInput.value;
-
-    if (!isValidEmail(email)){
-      showToast(signupToast, "Please enter a valid email address (e.g. yourname@gmail.com).", true);
+      signupPanel.reset();
+      checkPasswordsMatch();
+      showVerifyPendingScreen(email);
+      showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
       return;
-    }
-    if (!checkPasswordsMatch()){
-      showToast(signupToast, "Your passwords don't match. Please re-enter them.", true);
+    } else if (data && !data.success && data.message) {
+      showToast(signupToast, data.message, true);
       return;
-    }
-    if (password.length < 6){
-      showToast(signupToast, "Password must be at least 6 characters.", true);
-      return;
-    }
-
-    // Account registration and email verification are handled by the MongoDB backend service (/api/auth/signup)
-
-    // 2. MongoDB Backend Sync with Local Offline Fallback
-    try {
-      const data = await safeFetchJson("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password })
-      });
-      if (data && data.success && data.requireVerification){
-        signupPanel.reset();
-        checkPasswordsMatch();
-        showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, data.message || "Account created successfully! A verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
-        return;
-      } else if (data && data.success && data.token){
-        setAuthToken(data.token);
-        setLoggedInUser({
-          id: data.user._id || data.user.id || data.user.userId,
-          _id: data.user._id || data.user.id,
-          userId: data.user.userId || data.user._id,
-          name: data.user.name,
-          email: data.user.email,
-          provider: "email",
-          photo: data.user.photo
-        });
-        showToast(signupToast, `Account created! Welcome, ${data.user.name}!`, false);
-        fetchHistoryFromBackend();
-        setTimeout(() => {
-          closeAuth();
-          signupPanel.reset();
-          checkPasswordsMatch();
-        }, 700);
-        return;
-      } else if (data && !data.success && data.isOffline) {
-        // Instant Local Offline Signup Fallback (requires email verification)
-        accounts[email] = { name, password, provider: "email", verified: false };
-        saveAccounts();
-        signupPanel.reset();
-        checkPasswordsMatch();
-        showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
-        return;
-      } else if (data && !data.success && data.message){
-        showToast(signupToast, data.message, true);
-        return;
-      } else {
-        // Fallback local unverified account
-        accounts[email] = { name, password, provider: "email", verified: false };
-        saveAccounts();
-        signupPanel.reset();
-        checkPasswordsMatch();
-        showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
-        return;
-      }
-    } catch(err){
-      console.warn("MongoDB signup API notice:", err);
+    } else {
+      // Fallback local unverified account
       accounts[email] = { name, password, provider: "email", verified: false };
       saveAccounts();
       signupPanel.reset();
@@ -5180,793 +5170,803 @@
       showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
       return;
     }
-  });
+  } catch (err) {
+    console.warn("MongoDB signup API notice:", err);
+    accounts[email] = { name, password, provider: "email", verified: false };
+    saveAccounts();
+    signupPanel.reset();
+    checkPasswordsMatch();
+    showVerifyPendingScreen(email);
+    showToast(verifyPendingToast, "Account created! A verification link has been sent to your email inbox. Please verify your email before logging in.", false);
+    return;
+  }
+});
 
-  const googleSignupBtn = document.getElementById("googleSignupBtn");
-  if (googleSignupBtn) googleSignupBtn.addEventListener("click", () => signInWithGoogle(signupToast, true));
-  const googleSignupRedirectBtn = document.getElementById("googleSignupRedirectBtn");
-  if (googleSignupRedirectBtn) googleSignupRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(signupToast));
+const googleSignupBtn = document.getElementById("googleSignupBtn");
+if (googleSignupBtn) googleSignupBtn.addEventListener("click", () => signInWithGoogle(signupToast, true));
+const googleSignupRedirectBtn = document.getElementById("googleSignupRedirectBtn");
+if (googleSignupRedirectBtn) googleSignupRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(signupToast));
 
-  // ---- Login ----
-  loginPanel.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = normalizeEmail(document.getElementById("loginEmail").value);
-    const password = document.getElementById("loginPassword").value;
+// ---- Login ----
+loginPanel.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = normalizeEmail(document.getElementById("loginEmail").value);
+  const password = document.getElementById("loginPassword").value;
 
-    if (!isValidEmail(email)){
-      showToast(loginToast, "Please enter a valid email address (e.g. yourname@gmail.com).", true);
-      return;
-    }
+  if (!isValidEmail(email)) {
+    showToast(loginToast, "Please enter a valid email address (e.g. yourname@gmail.com).", true);
+    return;
+  }
 
-    // Authentication is handled entirely by the MongoDB backend below.
-    // Firebase Auth is NOT used for email+password login — users exist in MongoDB only.
-    // Firebase is only used for Google OAuth popups (signInWithPopup).
+  // Authentication is handled entirely by the MongoDB backend below.
+  // Firebase Auth is NOT used for email+password login — users exist in MongoDB only.
+  // Firebase is only used for Google OAuth popups (signInWithPopup).
 
-    // 2. MongoDB Backend Sync with Local Fallback
-    try {
-      const data = await safeFetchJson("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+  // 2. MongoDB Backend Sync with Local Fallback
+  try {
+    const data = await safeFetchJson("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    if (data && data.success && data.token) {
+      setAuthToken(data.token);
+      setLoggedInUser({
+        id: data.user._id || data.user.id || data.user.userId,
+        _id: data.user._id || data.user.id,
+        userId: data.user.userId || data.user._id,
+        name: data.user.name,
+        email: data.user.email,
+        provider: "email",
+        photo: data.user.photo,
+        token: data.token
       });
-      if (data && data.success && data.token){
-        setAuthToken(data.token);
-        setLoggedInUser({
-          id: data.user._id || data.user.id || data.user.userId,
-          _id: data.user._id || data.user.id,
-          userId: data.user.userId || data.user._id,
-          name: data.user.name,
-          email: data.user.email,
-          provider: "email",
-          photo: data.user.photo,
-          token: data.token
-        });
-        showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
-        fetchHistoryFromBackend();
-        setTimeout(() => {
-          closeAuth();
-          loginPanel.reset();
-        }, 700);
-        return;
-      } else if (data && !data.success && data.requireVerification){
-        showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email inbox.", true);
-        return;
-      } else if (data && !data.success && data.isOffline) {
-        // Instant Local Offline Login Fallback
-        const existingAcc = accounts[email];
-        if (existingAcc && !existingAcc.verified) {
-          showToast(loginToast, "Please verify your email address before logging in. Check your email inbox for the verification link.", true);
-          return;
-        }
-        if (existingAcc && existingAcc.password === password) {
-          const userName = existingAcc.name || email.split("@")[0] || "User";
-          setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
-          showToast(loginToast, `Welcome back, ${userName}!`, false);
-          setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
-          return;
-        }
-        showToast(loginToast, "Incorrect email or password.", true);
-        return;
-      } else if (data && !data.success && data.message){
-        showToast(loginToast, data.message, true);
-        return;
-      } else {
-        showToast(loginToast, "Unable to log in. Please check your credentials.", true);
+      showToast(loginToast, `Welcome back, ${data.user.name}!`, false);
+      fetchHistoryFromBackend();
+      setTimeout(() => {
+        closeAuth();
+        loginPanel.reset();
+      }, 700);
+      return;
+    } else if (data && !data.success && data.requireVerification) {
+      showToast(loginToast, data.message || "Please verify your email before logging in. We have sent a verification link to your email inbox.", true);
+      return;
+    } else if (data && !data.success && data.isOffline) {
+      // Instant Local Offline Login Fallback
+      const existingAcc = accounts[email];
+      if (existingAcc && !existingAcc.verified) {
+        showToast(loginToast, "Please verify your email address before logging in. Check your email inbox for the verification link.", true);
         return;
       }
-    } catch(err){
-      console.warn("MongoDB login API error:", err);
-      // Do NOT fall back to localStorage accounts on other devices — the local
-      // cache doesn't exist there, so showing "wrong password" is misleading.
-      showToast(loginToast, "Unable to reach the server. Please check your internet connection and try again.", true);
+      if (existingAcc && existingAcc.password === password) {
+        const userName = existingAcc.name || email.split("@")[0] || "User";
+        setLoggedInUser({ id: "local_" + Date.now(), name: userName, email, provider: "email" });
+        showToast(loginToast, `Welcome back, ${userName}!`, false);
+        setTimeout(() => { closeAuth(); loginPanel.reset(); }, 700);
+        return;
+      }
+      showToast(loginToast, "Incorrect email or password.", true);
+      return;
+    } else if (data && !data.success && data.message) {
+      showToast(loginToast, data.message, true);
+      return;
+    } else {
+      showToast(loginToast, "Unable to log in. Please check your credentials.", true);
       return;
     }
-  });
+  } catch (err) {
+    console.warn("MongoDB login API error:", err);
+    // Do NOT fall back to localStorage accounts on other devices — the local
+    // cache doesn't exist there, so showing "wrong password" is misleading.
+    showToast(loginToast, "Unable to reach the server. Please check your internet connection and try again.", true);
+    return;
+  }
+});
 
-  const googleLoginBtn = document.getElementById("googleLoginBtn");
-  if (googleLoginBtn) googleLoginBtn.addEventListener("click", () => signInWithGoogle(loginToast, false));
-  const googleLoginRedirectBtn = document.getElementById("googleLoginRedirectBtn");
-  if (googleLoginRedirectBtn) googleLoginRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(loginToast));
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+if (googleLoginBtn) googleLoginBtn.addEventListener("click", () => signInWithGoogle(loginToast, false));
+const googleLoginRedirectBtn = document.getElementById("googleLoginRedirectBtn");
+if (googleLoginRedirectBtn) googleLoginRedirectBtn.addEventListener("click", () => signInWithGoogleRedirect(loginToast));
 
 
-  // ---- Manual "resend verification email" button (login panel) ----
-  document.getElementById("resendVerifyBtn").addEventListener("click", async () => {
-    const email = normalizeEmail(document.getElementById("loginEmail").value);
+// ---- Manual "resend verification email" button (login panel) ----
+document.getElementById("resendVerifyBtn").addEventListener("click", async () => {
+  const email = normalizeEmail(document.getElementById("loginEmail").value);
 
-    if (!isValidEmail(email)){
-      showToast(loginToast, "Enter your email address above first, then tap this again.", true);
+  if (!isValidEmail(email)) {
+    showToast(loginToast, "Enter your email address above first, then tap this again.", true);
+    return;
+  }
+
+  try {
+    const data = await safeFetchJson("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    if (data.success && (data.verifyToken || data.message)) {
+      if (data.verifyToken) sendVerificationEmail(email, data.name || "", data.verifyToken);
+      showVerifyPendingScreen(email);
+      showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
+      return;
+    } else if (!data.success && data.message === "Email is already verified. Please log in normally.") {
+      showToast(loginToast, data.message, false);
       return;
     }
+  } catch (err) {
+    console.warn("Backend resend verification error, using fallback:", err);
+  }
+
+  const account = accounts[email];
+
+  if (account && account.verified) {
+    showToast(loginToast, "That email is already verified — just log in normally.", false);
+    return;
+  }
+
+  sendVerificationEmail(email, account ? account.name : "");
+  showVerifyPendingScreen(email);
+  showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
+});
+
+// ---- Pending Verification Panel buttons ----
+const resendPendingVerifyBtn = document.getElementById("resendPendingVerifyBtn");
+if (resendPendingVerifyBtn) {
+  resendPendingVerifyBtn.addEventListener("click", async () => {
+    if (!currentPendingVerifyEmail || !isValidEmail(currentPendingVerifyEmail)) return;
 
     try {
       const data = await safeFetchJson("/api/auth/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email: currentPendingVerifyEmail })
       });
-      if (data.success && (data.verifyToken || data.message)){
-        if (data.verifyToken) sendVerificationEmail(email, data.name || "", data.verifyToken);
-        showVerifyPendingScreen(email);
-        showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
+      if (data.success && (data.verifyToken || data.message)) {
+        if (data.verifyToken) sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
+        showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
         return;
-      } else if (!data.success && data.message === "Email is already verified. Please log in normally."){
-        showToast(loginToast, data.message, false);
-        return;
-      }
-    } catch(err){
-      console.warn("Backend resend verification error, using fallback:", err);
-    }
-
-    const account = accounts[email];
-
-    if (account && account.verified){
-      showToast(loginToast, "That email is already verified — just log in normally.", false);
-      return;
-    }
-
-    sendVerificationEmail(email, account ? account.name : "");
-    showVerifyPendingScreen(email);
-    showToast(verifyPendingToast, "Account created successfully! A verification link has been sent to your email. Please check your Inbox or Spam/Junk folder.", false);
-  });
-
-  // ---- Pending Verification Panel buttons ----
-  const resendPendingVerifyBtn = document.getElementById("resendPendingVerifyBtn");
-  if (resendPendingVerifyBtn){
-    resendPendingVerifyBtn.addEventListener("click", async () => {
-      if (!currentPendingVerifyEmail || !isValidEmail(currentPendingVerifyEmail)) return;
-
-      try {
-        const data = await safeFetchJson("/api/auth/resend-verification", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: currentPendingVerifyEmail })
-        });
-        if (data.success && (data.verifyToken || data.message)){
-          if (data.verifyToken) sendVerificationEmail(currentPendingVerifyEmail, data.name || "", data.verifyToken);
-          showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
-          return;
-        }
-      } catch(err){
-        console.warn("Backend resend verification error, fallback:", err);
-      }
-
-      const account = accounts[currentPendingVerifyEmail];
-      const name = account ? account.name : "";
-      sendVerificationEmail(currentPendingVerifyEmail, name);
-      showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
-    });
-  }
-
-  const backToLoginFromVerifyBtn = document.getElementById("backToLoginFromVerifyBtn");
-  if (backToLoginFromVerifyBtn){
-    backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
-  }
-
-  let isSigningIn = false;
-
-  async function checkFirebaseRedirectResult() {
-    const isRedirect = window.location.search.includes("apiKey") || 
-      window.location.search.includes("mode=") || 
-      window.sessionStorage.getItem("firebase_redirecting");
-    if (!isRedirect) return;
-
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.getRedirectResult) {
-      try {
-        const result = await helpers.getRedirectResult(auth);
-        window.sessionStorage.removeItem("firebase_redirecting");
-        if (result && result.user) {
-          const gUser = result.user;
-          const email = normalizeEmail(gUser.email);
-          const name = gUser.displayName || email.split("@")[0];
-          const photo = gUser.photoURL || "";
-          let idToken = "";
-          try { idToken = await gUser.getIdToken(); } catch(e){}
-
-          const data = await safeFetchJson("/api/auth/google", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, photo, id_token: idToken })
-          });
-
-          if (data && data.success && data.token) {
-            setAuthToken(data.token);
-            setLoggedInUser({
-              id: data.user._id || data.user.id || data.user.userId,
-              _id: data.user._id || data.user.id,
-              userId: data.user.userId || data.user._id,
-              name: data.user.name || name,
-              email: data.user.email || email,
-              provider: "google",
-              photo: data.user.photo || photo,
-              token: data.token
-            });
-            showToast(loginToast, `Signed in as ${email}.`, false);
-            fetchHistoryFromBackend();
-            closeAuth();
-            return;
-          } else if (data && data.isOffline) {
-            setLoggedInUser({
-              id: "google_" + Date.now(),
-              name: name,
-              email: email,
-              provider: "google",
-              photo: photo
-            });
-            showToast(loginToast, `Signed in as ${email} (offline mode).`, false);
-            closeAuth();
-            return;
-          } else {
-            setLoggedInUser({
-              id: "google_" + Date.now(),
-              name: name,
-              email: email,
-              provider: "google",
-              photo: photo
-            });
-            showToast(loginToast, `Signed in as ${email}.`, false);
-            closeAuth();
-            return;
-          }
-        }
-      } catch (err) {
-        if (err && err.code !== "auth/null-user") {
-          console.info("Firebase getRedirectResult notice:", err.message || err);
-        }
-      }
-    }
-  }
-
-  async function signInWithGoogleRedirect(toastEl) {
-    if (isSigningIn) {
-      console.warn("Sign-in request already in progress.");
-      return;
-    }
-    isSigningIn = true;
-    const googleSignupBtn = document.getElementById("googleSignupBtn");
-    const googleLoginBtn = document.getElementById("googleLoginBtn");
-    if (googleSignupBtn) googleSignupBtn.disabled = true;
-    if (googleLoginBtn) googleLoginBtn.disabled = true;
-
-    try {
-      const auth = getFirebaseAuth();
-      const helpers = getFirebaseAuthHelpers();
-      if (auth && helpers && helpers.signInWithRedirect && helpers.GoogleAuthProvider) {
-        showToast(toastEl, "Redirecting to Google Sign-In...", false);
-        const provider = new helpers.GoogleAuthProvider();
-        if (provider && provider.setCustomParameters) {
-          provider.setCustomParameters({ prompt: 'select_account' });
-        }
-        await helpers.signInWithRedirect(auth, provider);
-        return;
-      } else {
-        showToast(toastEl, "Google Authentication service is loading. Please try again in a moment.", true);
       }
     } catch (err) {
-      console.warn("Google Sign-In redirect notice:", err.message || err);
-      showToast(toastEl, err.message || "Google Sign-In redirect failed.", true);
-    } finally {
-      isSigningIn = false;
-      if (googleSignupBtn) googleSignupBtn.disabled = false;
-      if (googleLoginBtn) googleLoginBtn.disabled = false;
+      console.warn("Backend resend verification error, fallback:", err);
+    }
+
+    const account = accounts[currentPendingVerifyEmail];
+    const name = account ? account.name : "";
+    sendVerificationEmail(currentPendingVerifyEmail, name);
+    showToast(verifyPendingToast, "A fresh verification link has been sent to your email inbox. Please check your Inbox or Spam folder.", false);
+  });
+}
+
+const backToLoginFromVerifyBtn = document.getElementById("backToLoginFromVerifyBtn");
+if (backToLoginFromVerifyBtn) {
+  backToLoginFromVerifyBtn.addEventListener("click", () => showPanel("login"));
+}
+
+let isSigningIn = false;
+
+async function checkFirebaseRedirectResult() {
+  const isRedirect = window.location.search.includes("apiKey") ||
+    window.location.search.includes("mode=") ||
+    window.sessionStorage.getItem("firebase_redirecting");
+  if (!isRedirect) return;
+
+  const auth = getFirebaseAuth();
+  const helpers = getFirebaseAuthHelpers();
+  if (auth && helpers && helpers.getRedirectResult) {
+    try {
+      const result = await helpers.getRedirectResult(auth);
+      window.sessionStorage.removeItem("firebase_redirecting");
+      if (result && result.user) {
+        const gUser = result.user;
+        const email = normalizeEmail(gUser.email);
+        const name = gUser.displayName || email.split("@")[0];
+        const photo = gUser.photoURL || "";
+        let idToken = "";
+        try { idToken = await gUser.getIdToken(); } catch (e) { }
+
+        const data = await safeFetchJson("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, photo, id_token: idToken })
+        });
+
+        if (data && data.success && data.token) {
+          setAuthToken(data.token);
+          setLoggedInUser({
+            id: data.user._id || data.user.id || data.user.userId,
+            _id: data.user._id || data.user.id,
+            userId: data.user.userId || data.user._id,
+            name: data.user.name || name,
+            email: data.user.email || email,
+            provider: "google",
+            photo: data.user.photo || photo,
+            token: data.token
+          });
+          showToast(loginToast, `Signed in as ${email}.`, false);
+          fetchHistoryFromBackend();
+          closeAuth();
+          return;
+        } else if (data && data.isOffline) {
+          setLoggedInUser({
+            id: "google_" + Date.now(),
+            name: name,
+            email: email,
+            provider: "google",
+            photo: photo
+          });
+          showToast(loginToast, `Signed in as ${email} (offline mode).`, false);
+          closeAuth();
+          return;
+        } else {
+          setLoggedInUser({
+            id: "google_" + Date.now(),
+            name: name,
+            email: email,
+            provider: "google",
+            photo: photo
+          });
+          showToast(loginToast, `Signed in as ${email}.`, false);
+          closeAuth();
+          return;
+        }
+      }
+    } catch (err) {
+      if (err && err.code !== "auth/null-user") {
+        console.info("Firebase getRedirectResult notice:", err.message || err);
+      }
     }
   }
+}
 
-  async function signInWithGoogle(toastEl, isSignupFlow){
-    if (isSigningIn) {
-      console.warn("Sign-in request already in progress.");
+async function signInWithGoogleRedirect(toastEl) {
+  if (isSigningIn) {
+    console.warn("Sign-in request already in progress.");
+    return;
+  }
+  isSigningIn = true;
+  const googleSignupBtn = document.getElementById("googleSignupBtn");
+  const googleLoginBtn = document.getElementById("googleLoginBtn");
+  if (googleSignupBtn) googleSignupBtn.disabled = true;
+  if (googleLoginBtn) googleLoginBtn.disabled = true;
+
+  try {
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+    if (auth && helpers && helpers.signInWithRedirect && helpers.GoogleAuthProvider) {
+      showToast(toastEl, "Redirecting to Google Sign-In...", false);
+      const provider = new helpers.GoogleAuthProvider();
+      if (provider && provider.setCustomParameters) {
+        provider.setCustomParameters({ prompt: 'select_account' });
+      }
+      await helpers.signInWithRedirect(auth, provider);
+      return;
+    } else {
+      showToast(toastEl, "Google Authentication service is loading. Please try again in a moment.", true);
+    }
+  } catch (err) {
+    console.warn("Google Sign-In redirect notice:", err.message || err);
+    showToast(toastEl, err.message || "Google Sign-In redirect failed.", true);
+  } finally {
+    isSigningIn = false;
+    if (googleSignupBtn) googleSignupBtn.disabled = false;
+    if (googleLoginBtn) googleLoginBtn.disabled = false;
+  }
+}
+
+async function signInWithGoogle(toastEl, isSignupFlow) {
+  if (isSigningIn) {
+    console.warn("Sign-in request already in progress.");
+    return;
+  }
+
+  isSigningIn = true;
+
+  const googleSignupBtn = document.getElementById("googleSignupBtn");
+  const googleLoginBtn = document.getElementById("googleLoginBtn");
+  if (googleSignupBtn) googleSignupBtn.disabled = true;
+  if (googleLoginBtn) googleLoginBtn.disabled = true;
+
+  try {
+    const auth = getFirebaseAuth();
+    const helpers = getFirebaseAuthHelpers();
+
+    // 1. Try Firebase Auth Google Popup first (synchronous user gesture directly in handler)
+    if (auth && helpers && helpers.signInWithPopup && helpers.GoogleAuthProvider) {
+      const provider = new helpers.GoogleAuthProvider();
+      if (provider && provider.setCustomParameters) {
+        provider.setCustomParameters({ prompt: 'select_account' });
+      }
+
+      let result = null;
+      try {
+        result = await helpers.signInWithPopup(auth, provider);
+      } catch (fbErr) {
+        // Handled case A: User closed or cancelled popup
+        if (fbErr.code === "auth/popup-closed-by-user" || fbErr.code === "auth/cancelled-popup-request") {
+          console.info("Google Sign-In popup was closed by the user.");
+          return;
+        }
+
+        // Handled case B: Browser popup blocker blocked popup -> Automatically fallback to signInWithRedirect!
+        if (fbErr.code === "auth/popup-blocked") {
+          console.info("Google Sign-In popup was blocked by browser. Automatically switching to redirect mode...");
+          showToast(toastEl, "Popup blocked. Redirecting to Google Sign-In...", false);
+          if (helpers.signInWithRedirect) {
+            try {
+              await helpers.signInWithRedirect(auth, provider);
+              return;
+            } catch (redirErr) {
+              console.warn("Firebase signInWithRedirect fallback notice:", redirErr.message || redirErr);
+            }
+          }
+        }
+
+        // Handled case C: Domain not authorized in Firebase Console
+        if (fbErr.code === "auth/unauthorized-domain") {
+          console.info("Firebase notice: Domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).");
+          const fallbackEmail = prompt(
+            "Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:",
+            "user@gmail.com"
+          );
+          if (fallbackEmail && isValidEmail(fallbackEmail.trim())) {
+            const cleanEmail = normalizeEmail(fallbackEmail);
+            const cleanName = cleanEmail.split("@")[0];
+            try {
+              const data = await safeFetchJson("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: cleanName, email: cleanEmail })
+              });
+              if (data && data.success && data.token) {
+                setAuthToken(data.token);
+                setLoggedInUser({
+                  id: data.user._id || data.user.id || data.user.userId,
+                  _id: data.user._id || data.user.id,
+                  userId: data.user.userId || data.user._id,
+                  name: data.user.name || cleanName,
+                  email: data.user.email || cleanEmail,
+                  provider: "google",
+                  photo: data.user.photo || "",
+                  token: data.token
+                });
+                showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
+                fetchHistoryFromBackend();
+                closeAuth();
+                return;
+              }
+            } catch (e) { }
+            setLoggedInUser({
+              id: "google_" + Date.now(),
+              name: cleanName,
+              email: cleanEmail,
+              provider: "google"
+            });
+            showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
+            closeAuth();
+            return;
+          }
+          showToast(toastEl, "Google sign-in was cancelled.", true);
+          return;
+        }
+
+        // Handled case D: Other errors
+        console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
+        if (fbErr.code === "auth/operation-not-allowed") {
+          showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please use Email / Password signup above.", true);
+          return;
+        } else if (fbErr.code === "auth/network-request-failed" || (fbErr.message && fbErr.message.includes("ERR_NAME_NOT_RESOLVED"))) {
+          showToast(toastEl, "DNS / Network error reaching Google Authentication servers. Please check your internet connection.", true);
+          return;
+        } else {
+          showToast(toastEl, fbErr.message || "Google Sign-In failed. Please use Email & Password.", true);
+          return;
+        }
+      }
+
+      if (result && result.user) {
+        const gUser = result.user;
+        const email = normalizeEmail(gUser.email);
+        const name = gUser.displayName || email.split("@")[0];
+        const photo = gUser.photoURL || "";
+        let idToken = "";
+        try { idToken = await gUser.getIdToken(); } catch (e) { }
+
+        // Sync with MongoDB Backend /api/auth/google
+        const data = await safeFetchJson("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, photo, id_token: idToken })
+        });
+
+        if (data && data.success && data.token) {
+          setAuthToken(data.token);
+          setLoggedInUser({
+            id: data.user._id || data.user.id || data.user.userId,
+            _id: data.user._id || data.user.id,
+            userId: data.user.userId || data.user._id,
+            name: data.user.name || name,
+            email: data.user.email || email,
+            provider: "google",
+            photo: data.user.photo || photo,
+            token: data.token
+          });
+          showToast(toastEl, `Signed in as ${email}.`, false);
+          fetchHistoryFromBackend();
+          closeAuth();
+          return;
+        } else if (data && data.isOffline) {
+          setLoggedInUser({
+            id: "google_" + Date.now(),
+            name: name,
+            email: email,
+            provider: "google",
+            photo: photo
+          });
+          showToast(toastEl, `Signed in as ${email} (offline mode).`, false);
+          closeAuth();
+          return;
+        } else {
+          setLoggedInUser({
+            id: "google_" + Date.now(),
+            name: name,
+            email: email,
+            provider: "google",
+            photo: photo
+          });
+          showToast(toastEl, `Signed in as ${email}.`, false);
+          closeAuth();
+          return;
+        }
+      }
+    }
+
+    // 2. Fallback to Google Identity Services (GIS)
+    if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
+      showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection or ad-blocker.", true);
       return;
     }
 
-    isSigningIn = true;
-
-    const googleSignupBtn = document.getElementById("googleSignupBtn");
-    const googleLoginBtn = document.getElementById("googleLoginBtn");
-    if (googleSignupBtn) googleSignupBtn.disabled = true;
-    if (googleLoginBtn) googleLoginBtn.disabled = true;
+    if (!AUTH_CONFIG || !AUTH_CONFIG.GOOGLE_CLIENT_ID || AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")) {
+      showToast(toastEl, "Please configure your Google OAuth Client ID in AUTH_CONFIG.GOOGLE_CLIENT_ID to enable Google Sign-In.", true);
+      return;
+    }
 
     try {
-      const auth = getFirebaseAuth();
-      const helpers = getFirebaseAuthHelpers();
-
-      // 1. Try Firebase Auth Google Popup first (synchronous user gesture directly in handler)
-      if (auth && helpers && helpers.signInWithPopup && helpers.GoogleAuthProvider) {
-        const provider = new helpers.GoogleAuthProvider();
-        if (provider && provider.setCustomParameters) {
-          provider.setCustomParameters({ prompt: 'select_account' });
-        }
-
-        let result = null;
-        try {
-          result = await helpers.signInWithPopup(auth, provider);
-        } catch (fbErr) {
-          // Handled case A: User closed or cancelled popup
-          if (fbErr.code === "auth/popup-closed-by-user" || fbErr.code === "auth/cancelled-popup-request") {
-            console.info("Google Sign-In popup was closed by the user.");
-            return;
-          }
-
-          // Handled case B: Browser popup blocker blocked popup -> Automatically fallback to signInWithRedirect!
-          if (fbErr.code === "auth/popup-blocked") {
-            console.info("Google Sign-In popup was blocked by browser. Automatically switching to redirect mode...");
-            showToast(toastEl, "Popup blocked. Redirecting to Google Sign-In...", false);
-            if (helpers.signInWithRedirect) {
-              try {
-                await helpers.signInWithRedirect(auth, provider);
-                return;
-              } catch (redirErr) {
-                console.warn("Firebase signInWithRedirect fallback notice:", redirErr.message || redirErr);
-              }
-            }
-          }
-
-          // Handled case C: Domain not authorized in Firebase Console
-          if (fbErr.code === "auth/unauthorized-domain") {
-            console.info("Firebase notice: Domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).");
-            const fallbackEmail = prompt(
-              "Google popup was blocked or this domain is not whitelisted in Firebase Console.\nEnter your Google email address to sign in directly:",
-              "user@gmail.com"
-            );
-            if (fallbackEmail && isValidEmail(fallbackEmail.trim())) {
-              const cleanEmail = normalizeEmail(fallbackEmail);
-              const cleanName = cleanEmail.split("@")[0];
-              try {
-                const data = await safeFetchJson("/api/auth/google", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name: cleanName, email: cleanEmail })
-                });
-                if (data && data.success && data.token) {
-                  setAuthToken(data.token);
-                  setLoggedInUser({
-                    id: data.user._id || data.user.id || data.user.userId,
-                    _id: data.user._id || data.user.id,
-                    userId: data.user.userId || data.user._id,
-                    name: data.user.name || cleanName,
-                    email: data.user.email || cleanEmail,
-                    provider: "google",
-                    photo: data.user.photo || "",
-                    token: data.token
-                  });
-                  showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
-                  fetchHistoryFromBackend();
-                  closeAuth();
-                  return;
-                }
-              } catch (e) {}
-              setLoggedInUser({
-                id: "google_" + Date.now(),
-                name: cleanName,
-                email: cleanEmail,
-                provider: "google"
-              });
-              showToast(toastEl, `Signed in as ${cleanEmail}.`, false);
-              closeAuth();
-              return;
-            }
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
+        scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+        error_callback: (err) => {
+          console.warn("Google OAuth Error:", err);
+          showToast(toastEl, "Unable to connect to Google OAuth service. Please verify your Client ID and Authorized Origins.", true);
+        },
+        callback: async (tokenResponse) => {
+          if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)) {
             showToast(toastEl, "Google sign-in was cancelled.", true);
             return;
           }
 
-          // Handled case D: Other errors
-          console.warn("Firebase Google Sign-In notice:", fbErr.code || fbErr.message || fbErr);
-          if (fbErr.code === "auth/operation-not-allowed") {
-            showToast(toastEl, "Google Sign-In is not enabled in Firebase Console. Please use Email / Password signup above.", true);
-            return;
-          } else if (fbErr.code === "auth/network-request-failed" || (fbErr.message && fbErr.message.includes("ERR_NAME_NOT_RESOLVED"))) {
-            showToast(toastEl, "DNS / Network error reaching Google Authentication servers. Please check your internet connection.", true);
-            return;
+          let profile = null;
+          const accessToken = tokenResponse.access_token;
+
+          if (accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) {
+              console.warn("Client userinfo v3 fetch error:", e);
+            }
+          }
+
+          if ((!profile || !profile.email) && accessToken) {
+            try {
+              const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+                headers: { Authorization: "Bearer " + accessToken }
+              });
+              if (res.ok) profile = await res.json();
+            } catch (e) { }
+          }
+
+          if (profile && profile.email) {
+            const email = normalizeEmail(profile.email);
+            const name = profile.name || email.split("@")[0];
+            const photo = profile.picture || "";
+
+            // CRITICAL: Always sync with backend to get the real MongoDB _id.
+            // Never set a dummy id — that would orphan the session from resume history.
+            try {
+              const data = await safeFetchJson("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, email, photo })
+              });
+              if (data && data.success && data.token) {
+                setAuthToken(data.token);
+                setLoggedInUser({
+                  id: data.user._id || data.user.id || data.user.userId,
+                  _id: data.user._id || data.user.id,
+                  userId: data.user.userId || data.user._id,
+                  name: data.user.name || name,
+                  email: data.user.email || email,
+                  provider: "google",
+                  photo: data.user.photo || photo,
+                  token: data.token
+                });
+                showToast(toastEl, `Signed in as ${email}.`, false);
+                fetchHistoryFromBackend();
+                closeAuth();
+              } else {
+                showToast(toastEl, (data && data.message) || "Google sign-in failed. Please try again.", true);
+              }
+            } catch (syncErr) {
+              console.warn("GIS backend sync error:", syncErr);
+              showToast(toastEl, "Could not complete Google sign-in. Please check your connection.", true);
+            }
           } else {
-            showToast(toastEl, fbErr.message || "Google Sign-In failed. Please use Email & Password.", true);
-            return;
+            showToast(toastEl, "Could not retrieve Google profile. Please try again.", true);
           }
         }
-
-        if (result && result.user) {
-          const gUser = result.user;
-          const email = normalizeEmail(gUser.email);
-          const name = gUser.displayName || email.split("@")[0];
-          const photo = gUser.photoURL || "";
-          let idToken = "";
-          try { idToken = await gUser.getIdToken(); } catch(e){}
-
-          // Sync with MongoDB Backend /api/auth/google
-          const data = await safeFetchJson("/api/auth/google", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, email, photo, id_token: idToken })
-          });
-
-          if (data && data.success && data.token) {
-            setAuthToken(data.token);
-            setLoggedInUser({
-              id: data.user._id || data.user.id || data.user.userId,
-              _id: data.user._id || data.user.id,
-              userId: data.user.userId || data.user._id,
-              name: data.user.name || name,
-              email: data.user.email || email,
-              provider: "google",
-              photo: data.user.photo || photo,
-              token: data.token
-            });
-            showToast(toastEl, `Signed in as ${email}.`, false);
-            fetchHistoryFromBackend();
-            closeAuth();
-            return;
-          } else if (data && data.isOffline) {
-            setLoggedInUser({
-              id: "google_" + Date.now(),
-              name: name,
-              email: email,
-              provider: "google",
-              photo: photo
-            });
-            showToast(toastEl, `Signed in as ${email} (offline mode).`, false);
-            closeAuth();
-            return;
-          } else {
-            setLoggedInUser({
-              id: "google_" + Date.now(),
-              name: name,
-              email: email,
-              provider: "google",
-              photo: photo
-            });
-            showToast(toastEl, `Signed in as ${email}.`, false);
-            closeAuth();
-            return;
-          }
-        }
-      }
-
-      // 2. Fallback to Google Identity Services (GIS)
-      if (window.gsiScriptFailed || !window.google || !google.accounts || !google.accounts.oauth2) {
-        showToast(toastEl, "Google Sign-In service is unreachable. Please check your internet connection or ad-blocker.", true);
-        return;
-      }
-
-      if (!AUTH_CONFIG || !AUTH_CONFIG.GOOGLE_CLIENT_ID || AUTH_CONFIG.GOOGLE_CLIENT_ID.startsWith("YOUR_")) {
-        showToast(toastEl, "Please configure your Google OAuth Client ID in AUTH_CONFIG.GOOGLE_CLIENT_ID to enable Google Sign-In.", true);
-        return;
-      }
-
-      try {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
-          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
-          error_callback: (err) => {
-            console.warn("Google OAuth Error:", err);
-            showToast(toastEl, "Unable to connect to Google OAuth service. Please verify your Client ID and Authorized Origins.", true);
-          },
-          callback: async (tokenResponse) => {
-            if (!tokenResponse || (!tokenResponse.access_token && !tokenResponse.id_token)){
-              showToast(toastEl, "Google sign-in was cancelled.", true);
-              return;
-            }
-
-            let profile = null;
-            const accessToken = tokenResponse.access_token;
-
-            if (accessToken) {
-              try {
-                const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                  headers: { Authorization: "Bearer " + accessToken }
-                });
-                if (res.ok) profile = await res.json();
-              } catch (e) {
-                console.warn("Client userinfo v3 fetch error:", e);
-              }
-            }
-
-            if ((!profile || !profile.email) && accessToken) {
-              try {
-                const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-                  headers: { Authorization: "Bearer " + accessToken }
-                });
-                if (res.ok) profile = await res.json();
-              } catch (e) {}
-            }
-
-            if (profile && profile.email) {
-              const email = normalizeEmail(profile.email);
-              const name = profile.name || email.split("@")[0];
-              const photo = profile.picture || "";
-
-              // CRITICAL: Always sync with backend to get the real MongoDB _id.
-              // Never set a dummy id — that would orphan the session from resume history.
-              try {
-                const data = await safeFetchJson("/api/auth/google", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name, email, photo })
-                });
-                if (data && data.success && data.token) {
-                  setAuthToken(data.token);
-                  setLoggedInUser({
-                    id: data.user._id || data.user.id || data.user.userId,
-                    _id: data.user._id || data.user.id,
-                    userId: data.user.userId || data.user._id,
-                    name: data.user.name || name,
-                    email: data.user.email || email,
-                    provider: "google",
-                    photo: data.user.photo || photo,
-                    token: data.token
-                  });
-                  showToast(toastEl, `Signed in as ${email}.`, false);
-                  fetchHistoryFromBackend();
-                  closeAuth();
-                } else {
-                  showToast(toastEl, (data && data.message) || "Google sign-in failed. Please try again.", true);
-                }
-              } catch (syncErr) {
-                console.warn("GIS backend sync error:", syncErr);
-                showToast(toastEl, "Could not complete Google sign-in. Please check your connection.", true);
-              }
-            } else {
-              showToast(toastEl, "Could not retrieve Google profile. Please try again.", true);
-            }
-          }
-        });
-        client.requestAccessToken();
-      } catch (e){
-        console.warn("Google Sign-In GIS init error:", e);
-        showToast(toastEl, "Google Sign-In initialization failed. Please check your Client ID.", true);
-      }
-    } finally {
-      isSigningIn = false;
-      if (googleSignupBtn) googleSignupBtn.disabled = false;
-      if (googleLoginBtn) googleLoginBtn.disabled = false;
+      });
+      client.requestAccessToken();
+    } catch (e) {
+      console.warn("Google Sign-In GIS init error:", e);
+      showToast(toastEl, "Google Sign-In initialization failed. Please check your Client ID.", true);
     }
+  } finally {
+    isSigningIn = false;
+    if (googleSignupBtn) googleSignupBtn.disabled = false;
+    if (googleLoginBtn) googleLoginBtn.disabled = false;
   }
+}
 
-  // If this page was opened from a password-reset email link, jump
-  // straight to the "set new password" panel.
-  // ---- Password show/hide eye toggles ----
-  document.querySelectorAll(".pw-eye-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const input = document.getElementById(btn.dataset.target);
-      if (!input) return;
-      const showing = input.type === "text";
-      input.type = showing ? "password" : "text";
-      btn.textContent = showing ? "👁" : "🙈";
-      btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
-    });
+// If this page was opened from a password-reset email link, jump
+// straight to the "set new password" panel.
+// ---- Password show/hide eye toggles ----
+document.querySelectorAll(".pw-eye-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    btn.textContent = showing ? "👁" : "🙈";
+    btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
   });
+});
 
-  // ---- Resume History & User Activity (Source of truth: MongoDB Backend) ----
-  const AUTH_TOKEN_KEY = "ara_jwt_token_v1";
-  let unsyncedPendingAnalyses = [];
-  let userActivitiesList = [];
-  let userHistoryList = [];
+// ---- Resume History & User Activity (Source of truth: MongoDB Backend) ----
+const AUTH_TOKEN_KEY = "ara_jwt_token_v1";
+let unsyncedPendingAnalyses = [];
+let userActivitiesList = [];
+let userHistoryList = [];
 
-  function getAuthToken(){
-    try {
-      const stored = localStorage.getItem(AUTH_TOKEN_KEY);
-      if (stored) return stored;
-      if (currentUser && currentUser.token) return currentUser.token;
-      return null;
-    } catch(e){
-      return (currentUser && currentUser.token) || null;
-    }
+function getAuthToken() {
+  try {
+    const stored = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (stored) return stored;
+    if (currentUser && currentUser.token) return currentUser.token;
+    return null;
+  } catch (e) {
+    return (currentUser && currentUser.token) || null;
   }
-  function setAuthToken(token){ try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch(e){} }
-  function clearAuthToken(){ try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch(e){} }
+}
+function setAuthToken(token) { try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch (e) { } }
+function clearAuthToken() { try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) { } }
 
-  async function fetchActivityFromBackend(){
-    const token = getAuthToken();
-    if (!token || !currentUser) return;
-    try {
-      const data = await safeFetchJson("/api/activity", {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      if (data.success && Array.isArray(data.activities)){
-        userActivitiesList = data.activities;
-      }
-    } catch(err){
-      console.warn("Could not fetch activity from MongoDB backend:", err);
+async function fetchActivityFromBackend() {
+  const token = getAuthToken();
+  if (!token || !currentUser) return;
+  try {
+    const data = await safeFetchJson("/api/activity", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (data.success && Array.isArray(data.activities)) {
+      userActivitiesList = data.activities;
     }
+  } catch (err) {
+    console.warn("Could not fetch activity from MongoDB backend:", err);
   }
+}
 
-  async function fetchHistoryFromBackend(){
-    const token = getAuthToken();
-    if (!token){
+async function fetchHistoryFromBackend() {
+  const token = getAuthToken();
+  if (!token) {
+    userHistoryList = [];
+    renderHistory();
+    return;
+  }
+  try {
+    const data = await safeFetchJson("/api/history", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (data && data.success && Array.isArray(data.history)) {
+      userHistoryList = data.history;
+    } else {
       userHistoryList = [];
-      renderHistory();
-      return;
     }
+  } catch (err) {
+    console.warn("Could not fetch history from MongoDB backend:", err);
+    userHistoryList = [];
+  } finally {
+    renderHistory();
+  }
+}
+
+async function syncUnsyncedAnalysesToBackend() {
+  const token = getAuthToken();
+  if (!token || !unsyncedPendingAnalyses.length) return;
+  const toSync = [...unsyncedPendingAnalyses];
+  unsyncedPendingAnalyses = [];
+  for (const item of toSync) {
     try {
-      const data = await safeFetchJson("/api/history", {
-        headers: { "Authorization": "Bearer " + token }
+      await safeFetchJson("/api/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify(item.payload)
       });
-      if (data && data.success && Array.isArray(data.history)){
-        userHistoryList = data.history;
-      } else {
-        userHistoryList = [];
-      }
-    } catch(err){
-      console.warn("Could not fetch history from MongoDB backend:", err);
-      userHistoryList = [];
-    } finally {
-      renderHistory();
-    }
+    } catch (e) { }
   }
+  await fetchHistoryFromBackend();
+}
 
-  async function syncUnsyncedAnalysesToBackend(){
-    const token = getAuthToken();
-    if (!token || !unsyncedPendingAnalyses.length) return;
-    const toSync = [...unsyncedPendingAnalyses];
-    unsyncedPendingAnalyses = [];
-    for (const item of toSync){
-      try {
-        await safeFetchJson("/api/history", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify(item.payload)
-        });
-      } catch(e){}
-    }
-    await fetchHistoryFromBackend();
-  }
+async function saveHistoryEntry(email, filename, score, verdict) {
+  if (!email && currentUser) email = currentUser.email;
 
-  async function saveHistoryEntry(email, filename, score, verdict){
-    if (!email && currentUser) email = currentUser.email;
-    
-    const finalFilename = filename || pendingResumeFilename || "resume.pdf";
-    const ext = finalFilename.split(".").pop().toLowerCase();
-    const fileType = ["pdf", "docx", "txt"].includes(ext) ? ext : "pdf";
-    const analysisType = (analysisMode === "ats") ? "ATS Check" : "ATS with Role";
+  const finalFilename = filename || pendingResumeFilename || "resume.pdf";
+  const ext = finalFilename.split(".").pop().toLowerCase();
+  const fileType = ["pdf", "docx", "txt"].includes(ext) ? ext : "pdf";
+  const analysisType = (analysisMode === "ats") ? "ATS Check" : "ATS with Role";
 
-    const payload = {
-      fileName: finalFilename,
-      filename: finalFilename,
-      fileType: fileType,
-      analysisType: analysisType,
+  const payload = {
+    fileName: finalFilename,
+    filename: finalFilename,
+    fileType: fileType,
+    analysisType: analysisType,
+    atsScore: score,
+    score: score,
+    verdict: verdict,
+    targetJobRole: selectedTargetJobRole || "",
+    customJobRole: customJobRoleText || "",
+    hasJobDescription: hasUserJobDescription || false,
+    jobDescription: userJobDescriptionText || "",
+    fileData: pendingResumeFileData || "",
+    resumeText: pendingResumeText || "",
+    detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
+    missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
+    suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
+    analysisResult: {
+      verdict: verdict,
       atsScore: score,
       score: score,
-      verdict: verdict,
+      analysisType: analysisType,
       targetJobRole: selectedTargetJobRole || "",
       customJobRole: customJobRoleText || "",
       hasJobDescription: hasUserJobDescription || false,
       jobDescription: userJobDescriptionText || "",
-      fileData: pendingResumeFileData || "",
-      resumeText: pendingResumeText || "",
-      detectedSkills: (lastAnalysisData && lastAnalysisData.skills) ? lastAnalysisData.skills : [],
-      missingKeywords: (lastAnalysisData && lastAnalysisData.missing) ? lastAnalysisData.missing : [],
-      suggestions: (lastAnalysisData && lastAnalysisData.uniqueWeakPhrases) ? lastAnalysisData.uniqueWeakPhrases : [],
-      analysisResult: {
-        verdict: verdict,
-        atsScore: score,
-        score: score,
-        analysisType: analysisType,
-        targetJobRole: selectedTargetJobRole || "",
-        customJobRole: customJobRoleText || "",
-        hasJobDescription: hasUserJobDescription || false,
-        jobDescription: userJobDescriptionText || "",
-        experience: lastAnalysisData ? lastAnalysisData.experience : null,
-        education: lastAnalysisData ? lastAnalysisData.education : null,
-        projects: lastAnalysisData ? lastAnalysisData.projects : null,
-        skills: lastAnalysisData ? lastAnalysisData.skills : [],
-        missingKeywords: lastAnalysisData ? lastAnalysisData.missing : [],
-        suggestions: lastAnalysisData ? lastAnalysisData.uniqueWeakPhrases : [],
-        mode: analysisMode || "ats"
-      },
-      analysisResults: {
-        verdict: verdict,
-        score: score,
-        atsScore: score
-      },
+      experience: lastAnalysisData ? lastAnalysisData.experience : null,
+      education: lastAnalysisData ? lastAnalysisData.education : null,
+      projects: lastAnalysisData ? lastAnalysisData.projects : null,
+      skills: lastAnalysisData ? lastAnalysisData.skills : [],
+      missingKeywords: lastAnalysisData ? lastAnalysisData.missing : [],
+      suggestions: lastAnalysisData ? lastAnalysisData.uniqueWeakPhrases : [],
       mode: analysisMode || "ats"
-    };
-
-    // Add entry to local state immediately for instant feedback
-    const localEntry = {
-      id: "temp_" + Date.now(),
-      fileName: finalFilename,
-      filename: finalFilename,
-      fileType: fileType,
-      analysisType: analysisType,
-      atsScore: score,
-      score: score,
+    },
+    analysisResults: {
       verdict: verdict,
-      targetJobRole: selectedTargetJobRole || customJobRoleText || "",
-      hasJobDescription: hasUserJobDescription || false,
-      fileData: pendingResumeFileData || "",
-      resumeText: pendingResumeText || "",
-      uploadDate: new Date(),
-      analysisDate: new Date(),
-      date: new Date()
-    };
-    userHistoryList.unshift(localEntry);
-    renderHistory();
+      score: score,
+      atsScore: score
+    },
+    mode: analysisMode || "ats"
+  };
 
-    const token = getAuthToken();
-    if (token){
-      try {
-        await safeFetchJson("/api/history", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify(payload)
-        });
-        await fetchHistoryFromBackend();
-      } catch(err){
-        console.warn("Could not save history to MongoDB backend:", err);
-        unsyncedPendingAnalyses.push({ payload });
-      }
-    } else {
+  // Add entry to local state immediately for instant feedback
+  const localEntry = {
+    id: "temp_" + Date.now(),
+    fileName: finalFilename,
+    filename: finalFilename,
+    fileType: fileType,
+    analysisType: analysisType,
+    atsScore: score,
+    score: score,
+    verdict: verdict,
+    targetJobRole: selectedTargetJobRole || customJobRoleText || "",
+    hasJobDescription: hasUserJobDescription || false,
+    fileData: pendingResumeFileData || "",
+    resumeText: pendingResumeText || "",
+    uploadDate: new Date(),
+    analysisDate: new Date(),
+    date: new Date()
+  };
+  userHistoryList.unshift(localEntry);
+  renderHistory();
+
+  const token = getAuthToken();
+  if (token) {
+    try {
+      await safeFetchJson("/api/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify(payload)
+      });
+      await fetchHistoryFromBackend();
+    } catch (err) {
+      console.warn("Could not save history to MongoDB backend:", err);
       unsyncedPendingAnalyses.push({ payload });
     }
+  } else {
+    unsyncedPendingAnalyses.push({ payload });
   }
+}
 
-  async function deleteHistoryEntry(email, id){
-    if (!id) return;
-    // Optimistic delete locally
-    userHistoryList = userHistoryList.filter(e => (e.id !== id && e._id !== id && e.analysisId !== id && e.resumeId !== id));
-    renderHistory();
+async function deleteHistoryEntry(email, id) {
+  if (!id) return;
+  // Optimistic delete locally
+  userHistoryList = userHistoryList.filter(e => (e.id !== id && e._id !== id && e.analysisId !== id && e.resumeId !== id));
+  renderHistory();
 
-    const token = getAuthToken();
-    if (token){
-      try {
-        const res = await safeFetchJson("/api/history/" + encodeURIComponent(id), {
-          method: "DELETE",
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (res && res.success && Array.isArray(res.history)) {
-          userHistoryList = res.history;
-          renderHistory();
-        } else {
-          await fetchHistoryFromBackend();
-        }
-        showToast("Resume removed from history", "success");
-      } catch(err){
-        console.warn("Could not delete history from MongoDB backend:", err);
+  const token = getAuthToken();
+  if (token) {
+    try {
+      const res = await safeFetchJson("/api/history/" + encodeURIComponent(id), {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (res && res.success && Array.isArray(res.history)) {
+        userHistoryList = res.history;
+        renderHistory();
+      } else {
+        await fetchHistoryFromBackend();
       }
+      showToast("Resume removed from history", "success");
+    } catch (err) {
+      console.warn("Could not delete history from MongoDB backend:", err);
     }
   }
+}
 
-  function scoreColor(score){
-    if (score >= 80) return "#2e7d32";
-    if (score >= 60) return "#e07a5f";
-    if (score >= 40) return "#c9962c";
-    return "#b3261e";
+function scoreColor(score) {
+  if (score >= 80) return "#2e7d32";
+  if (score >= 60) return "#e07a5f";
+  if (score >= 40) return "#c9962c";
+  return "#b3261e";
+}
+
+function renderHistory() {
+  const listEl = document.getElementById("historyList");
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  const token = getAuthToken();
+  if (!currentUser && !token) {
+    listEl.innerHTML = '<div class="history-empty">Log in to see your resume history across all devices.</div>';
+    return;
   }
+  const entries = userHistoryList || [];
+  if (!entries.length) {
+    listEl.innerHTML = '<div class="history-empty">No resume analysis history found.</div>';
+    return;
+  }
+  entries.forEach(entry => {
+    const row = document.createElement("div");
+    row.className = "history-item";
 
-  function renderHistory(){
-    const listEl = document.getElementById("historyList");
-    if (!listEl) return;
-    listEl.innerHTML = "";
-    const token = getAuthToken();
-    if (!currentUser && !token){
-      listEl.innerHTML = '<div class="history-empty">Log in to see your resume history across all devices.</div>';
-      return;
-    }
-    const entries = userHistoryList || [];
-    if (!entries.length){
-      listEl.innerHTML = '<div class="history-empty">No resume analysis history found.</div>';
-      return;
-    }
-    entries.forEach(entry => {
-      const row = document.createElement("div");
-      row.className = "history-item";
-      
-      const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
-      const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
-      const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-      
-      const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
-      const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "—";
-      const statusText = entry.verdict || entry.status || "Analyzed";
-      const typeText = entry.analysisType || "Resume Analysis";
-      const idVal = entry.id || entry._id || entry.analysisId;
+    const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
+    const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
+    const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
-      row.setAttribute("data-id", idVal || "");
-      row.innerHTML = `
+    const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
+    const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "—";
+    const statusText = entry.verdict || entry.status || "Analyzed";
+    const typeText = entry.analysisType || "Resume Analysis";
+    const idVal = entry.id || entry._id || entry.analysisId;
+
+    row.setAttribute("data-id", idVal || "");
+    row.innerHTML = `
         <div class="history-item-score" style="background:${scoreColor(scoreVal || 0)}" title="ATS Score">${scoreDisplay}</div>
         <div class="history-item-info">
           <div class="history-item-name" title="${escapeHtml(fileNameStr)}">${escapeHtml(fileNameStr)}</div>
@@ -6000,699 +6000,699 @@
           </button>
         </div>
       `;
-      listEl.appendChild(row);
+    listEl.appendChild(row);
+  });
+}
+
+async function loadHistoricalAnalysisView(idVal) {
+  if (!idVal) return;
+  const token = getAuthToken();
+  if (!token) return;
+  try {
+    showLoading("Loading saved analysis result...");
+    await paintFrame();
+    const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+      headers: { "Authorization": "Bearer " + token }
     });
-  }
+    hideLoading();
+    if (res && res.success && res.analysis) {
+      const item = res.analysis;
+      const resultData = item.analysisResult || {};
+      const extracted = item.extractedData || {};
 
-  async function loadHistoricalAnalysisView(idVal){
-    if (!idVal) return;
-    const token = getAuthToken();
-    if (!token) return;
-    try {
-      showLoading("Loading saved analysis result...");
-      await paintFrame();
-      const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      hideLoading();
-      if (res && res.success && res.analysis) {
-        const item = res.analysis;
-        const resultData = item.analysisResult || {};
-        const extracted = item.extractedData || {};
-        
-        const score = item.atsScore || resultData.atsScore || resultData.score || 0;
-        const verdict = resultData.verdict || "Analyzed";
-        const color = scoreColor(score);
-        
-        renderATSScore(score, color, verdict);
+      const score = item.atsScore || resultData.atsScore || resultData.score || 0;
+      const verdict = resultData.verdict || "Analyzed";
+      const color = scoreColor(score);
 
-        const skills = extracted.skills || resultData.detectedSkills || [];
-        const missing = resultData.missingKeywords || [];
-        
-        lastAnalysisData = {
-          filename: item.fileName || "resume.pdf",
-          name: extracted.name || item.name || "User",
-          email: extracted.email || item.email || "Not found",
-          phone: extracted.phone || "Not found",
-          skills: skills,
-          missing: missing,
-          score: score,
-          verdict: verdict,
-          experience: extracted.experience ? (Array.isArray(extracted.experience) ? extracted.experience.join("\n") : extracted.experience) : "Loaded from history",
-          education: extracted.education ? (Array.isArray(extracted.education) ? extracted.education.join("\n") : extracted.education) : "Loaded from history"
-        };
+      renderATSScore(score, color, verdict);
 
-        const modeVal = item.mode || resultData.mode || (item.analysisType && item.analysisType.includes("ATS") ? "ats" : "normal");
-        analysisMode = modeVal;
-        if (item.resumeText) {
-          pendingResumeText = item.resumeText;
-          pendingResumeFilename = item.fileName || item.filename || "resume.pdf";
-        }
+      const skills = extracted.skills || resultData.detectedSkills || [];
+      const missing = resultData.missingKeywords || [];
 
-        if (typeof closeHistory === "function") closeHistory();
-        if (typeof closeResumePreviewModal === "function") closeResumePreviewModal();
-        const resultsEl = document.getElementById("results");
-        if (resultsEl) {
-          resultsEl.dataset.mode = modeVal;
-          resultsEl.style.display = "block";
-          resultsEl.scrollIntoView({ behavior: "smooth" });
-        }
-        updateReportTabState(modeVal);
-        showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
-      } else {
-        showToast("Could not load analysis details", "error");
+      lastAnalysisData = {
+        filename: item.fileName || "resume.pdf",
+        name: extracted.name || item.name || "User",
+        email: extracted.email || item.email || "Not found",
+        phone: extracted.phone || "Not found",
+        skills: skills,
+        missing: missing,
+        score: score,
+        verdict: verdict,
+        experience: extracted.experience ? (Array.isArray(extracted.experience) ? extracted.experience.join("\n") : extracted.experience) : "Loaded from history",
+        education: extracted.education ? (Array.isArray(extracted.education) ? extracted.education.join("\n") : extracted.education) : "Loaded from history"
+      };
+
+      const modeVal = item.mode || resultData.mode || (item.analysisType && item.analysisType.includes("ATS") ? "ats" : "normal");
+      analysisMode = modeVal;
+      if (item.resumeText) {
+        pendingResumeText = item.resumeText;
+        pendingResumeFilename = item.fileName || item.filename || "resume.pdf";
       }
-    } catch(err){
+
+      if (typeof closeHistory === "function") closeHistory();
+      if (typeof closeResumePreviewModal === "function") closeResumePreviewModal();
+      const resultsEl = document.getElementById("results");
+      if (resultsEl) {
+        resultsEl.dataset.mode = modeVal;
+        resultsEl.style.display = "block";
+        resultsEl.scrollIntoView({ behavior: "smooth" });
+      }
+      updateReportTabState(modeVal);
+      showToast("Loaded analysis for " + (item.fileName || "resume"), "success");
+    } else {
+      showToast("Could not load analysis details", "error");
+    }
+  } catch (err) {
+    hideLoading();
+    console.warn("Failed to load historical analysis:", err);
+    showToast("Error loading saved analysis", "error");
+  }
+}
+
+// --- Resume Preview Modal & Download Logic ---
+let currentPreviewId = null;
+let currentPreviewFileName = "resume.pdf";
+const resumePreviewModal = document.getElementById("resumePreviewModal");
+const resumePreviewCloseBtn = document.getElementById("resumePreviewCloseBtn");
+const previewDownloadBtn = document.getElementById("previewDownloadBtn");
+const previewOpenAnalysisBtn = document.getElementById("previewOpenAnalysisBtn");
+const tabBtnContent = document.getElementById("tabBtnContent");
+const tabBtnDetails = document.getElementById("tabBtnDetails");
+const paneContent = document.getElementById("paneContent");
+const paneDetails = document.getElementById("paneDetails");
+
+function closeResumePreviewModal() {
+  if (resumePreviewModal) {
+    resumePreviewModal.classList.remove("active");
+  }
+}
+
+async function downloadHistoricalResume(idVal, fileName) {
+  if (!idVal) {
+    showToast("Resume ID not found", "error");
+    return;
+  }
+  const token = getAuthToken();
+  const downloadName = fileName || "resume.pdf";
+
+  // 1. Instant client download if original File object is in memory
+  if (window.currentOriginalResumeFile && (window.currentOriginalResumeFile.name === downloadName || !fileName)) {
+    const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = blobUrl;
+    a.download = window.currentOriginalResumeFile.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1500);
+    showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
+    return;
+  }
+
+  // 2. Check sessionStorage for cached original base64
+  const cachedData = sessionStorage.getItem("original_resume_" + downloadName) ||
+    (sessionStorage.getItem("latest_original_resume_name") === downloadName ? sessionStorage.getItem("latest_original_resume_data") : null);
+  if (cachedData && cachedData.startsWith("data:")) {
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = cachedData;
+    a.download = downloadName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+    showToast(`Downloaded original resume: ${downloadName}`, "success");
+    return;
+  }
+
+  // 3. Instant client download if original base64 file data is in userHistoryList
+  const entry = (userHistoryList || []).find(e => (e.id || e._id || e.resumeId || e.analysisId) === idVal || e.fileName === downloadName || e.filename === downloadName);
+  if (entry && entry.fileData && entry.fileData.startsWith("data:")) {
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = entry.fileData;
+    a.download = downloadName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+    showToast(`Downloaded original resume: ${downloadName}`, "success");
+    return;
+  }
+
+  // 4. Fetch authenticated original file from server
+  try {
+    showLoading("Downloading original resume...");
+    const downloadUrl = "/api/history/download/" + encodeURIComponent(idVal);
+    const res = await fetch(downloadUrl, {
+      headers: token ? { "Authorization": "Bearer " + token } : {}
+    });
+
+    if (res.ok) {
+      const contentType = res.headers.get("Content-Type") || "";
+      // If server sent text fallback for legacy entry without file, generate styled PDF
+      if (contentType.includes("text/plain") && (downloadName.endsWith(".pdf") || downloadName.endsWith(".docx"))) {
+        const rawText = await res.text();
+        hideLoading();
+        fallbackDownloadResumePdf(idVal, downloadName, rawText);
+        return;
+      }
+
+      const blob = await res.blob();
       hideLoading();
-      console.warn("Failed to load historical analysis:", err);
-      showToast("Error loading saved analysis", "error");
-    }
-  }
 
-  // --- Resume Preview Modal & Download Logic ---
-  let currentPreviewId = null;
-  let currentPreviewFileName = "resume.pdf";
-  const resumePreviewModal = document.getElementById("resumePreviewModal");
-  const resumePreviewCloseBtn = document.getElementById("resumePreviewCloseBtn");
-  const previewDownloadBtn = document.getElementById("previewDownloadBtn");
-  const previewOpenAnalysisBtn = document.getElementById("previewOpenAnalysisBtn");
-  const tabBtnContent = document.getElementById("tabBtnContent");
-  const tabBtnDetails = document.getElementById("tabBtnDetails");
-  const paneContent = document.getElementById("paneContent");
-  const paneDetails = document.getElementById("paneDetails");
+      let targetFilename = downloadName;
+      const disposition = res.headers.get("Content-Disposition");
+      if (disposition && disposition.includes("filename=")) {
+        const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+        if (match && match[1]) targetFilename = match[1];
+      }
 
-  function closeResumePreviewModal(){
-    if (resumePreviewModal) {
-      resumePreviewModal.classList.remove("active");
-    }
-  }
-
-  async function downloadHistoricalResume(idVal, fileName){
-    if (!idVal) {
-      showToast("Resume ID not found", "error");
-      return;
-    }
-    const token = getAuthToken();
-    const downloadName = fileName || "resume.pdf";
-
-    // 1. Instant client download if original File object is in memory
-    if (window.currentOriginalResumeFile && (window.currentOriginalResumeFile.name === downloadName || !fileName)) {
-      const blobUrl = window.URL.createObjectURL(window.currentOriginalResumeFile);
+      const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.style.display = "none";
       a.href = blobUrl;
-      a.download = window.currentOriginalResumeFile.name;
+      a.download = targetFilename;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
         window.URL.revokeObjectURL(blobUrl);
         if (a.parentNode) a.parentNode.removeChild(a);
       }, 1500);
-      showToast(`Downloaded original resume: ${window.currentOriginalResumeFile.name}`, "success");
+
+      showToast(`Downloaded ${targetFilename}`, "success");
+      if (typeof logUserAction === "function") {
+        logUserAction("download resume", `User downloaded resume: ${targetFilename}`);
+      }
       return;
     }
+    hideLoading();
+  } catch (err) {
+    hideLoading();
+    console.warn("Download request error, falling back to styled PDF generator:", err);
+  }
 
-    // 2. Check sessionStorage for cached original base64
-    const cachedData = sessionStorage.getItem("original_resume_" + downloadName) || 
-      (sessionStorage.getItem("latest_original_resume_name") === downloadName ? sessionStorage.getItem("latest_original_resume_data") : null);
-    if (cachedData && cachedData.startsWith("data:")) {
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = cachedData;
-      a.download = downloadName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
-      showToast(`Downloaded original resume: ${downloadName}`, "success");
-      return;
-    }
+  fallbackDownloadResumePdf(idVal, downloadName);
+}
 
-    // 3. Instant client download if original base64 file data is in userHistoryList
-    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.resumeId || e.analysisId) === idVal || e.fileName === downloadName || e.filename === downloadName);
-    if (entry && entry.fileData && entry.fileData.startsWith("data:")) {
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = entry.fileData;
-      a.download = downloadName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
-      showToast(`Downloaded original resume: ${downloadName}`, "success");
-      return;
-    }
-
-    // 4. Fetch authenticated original file from server
+async function fallbackDownloadResumePdf(idVal, downloadName, passedText) {
+  const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal);
+  let fullAnalysis = null;
+  const token = getAuthToken();
+  if (token) {
     try {
-      showLoading("Downloading original resume...");
-      const downloadUrl = "/api/history/download/" + encodeURIComponent(idVal);
-      const res = await fetch(downloadUrl, {
-        headers: token ? { "Authorization": "Bearer " + token } : {}
+      const data = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+        headers: { "Authorization": "Bearer " + token }
       });
-
-      if (res.ok) {
-        const contentType = res.headers.get("Content-Type") || "";
-        // If server sent text fallback for legacy entry without file, generate styled PDF
-        if (contentType.includes("text/plain") && (downloadName.endsWith(".pdf") || downloadName.endsWith(".docx"))) {
-          const rawText = await res.text();
-          hideLoading();
-          fallbackDownloadResumePdf(idVal, downloadName, rawText);
-          return;
-        }
-
-        const blob = await res.blob();
-        hideLoading();
-
-        let targetFilename = downloadName;
-        const disposition = res.headers.get("Content-Disposition");
-        if (disposition && disposition.includes("filename=")) {
-          const match = disposition.match(/filename=["']?([^"';]+)["']?/);
-          if (match && match[1]) targetFilename = match[1];
-        }
-
-        const blobUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = blobUrl;
-        a.download = targetFilename;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          window.URL.revokeObjectURL(blobUrl);
-          if (a.parentNode) a.parentNode.removeChild(a);
-        }, 1500);
-
-        showToast(`Downloaded ${targetFilename}`, "success");
-        if (typeof logUserAction === "function") {
-          logUserAction("download resume", `User downloaded resume: ${targetFilename}`);
-        }
-        return;
+      if (data && data.success && data.analysis) {
+        fullAnalysis = data.analysis;
       }
-      hideLoading();
-    } catch(err){
-      hideLoading();
-      console.warn("Download request error, falling back to styled PDF generator:", err);
-    }
-
-    fallbackDownloadResumePdf(idVal, downloadName);
+    } catch (e) { }
   }
 
-  async function fallbackDownloadResumePdf(idVal, downloadName, passedText){
-    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal);
-    let fullAnalysis = null;
-    const token = getAuthToken();
-    if (token) {
-      try {
-        const data = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (data && data.success && data.analysis) {
-          fullAnalysis = data.analysis;
-        }
-      } catch(e){}
-    }
+  const ext = (fullAnalysis && fullAnalysis.extractedData) || (entry && entry.extractedData) || {};
+  const resData = (fullAnalysis && fullAnalysis.analysisResult) || {};
+  const textContent = passedText || (fullAnalysis && fullAnalysis.resumeText) || (entry && entry.resumeText) || "";
+  const candidateName = ext.name || fullAnalysis?.name || entry?.name || "Candidate";
+  const candidateEmail = ext.email || fullAnalysis?.email || entry?.email || "";
+  const candidatePhone = ext.phone || "";
+  const scoreVal = entry?.atsScore || fullAnalysis?.atsScore || resData?.atsScore || 0;
 
-    const ext = (fullAnalysis && fullAnalysis.extractedData) || (entry && entry.extractedData) || {};
-    const resData = (fullAnalysis && fullAnalysis.analysisResult) || {};
-    const textContent = passedText || (fullAnalysis && fullAnalysis.resumeText) || (entry && entry.resumeText) || "";
-    const candidateName = ext.name || fullAnalysis?.name || entry?.name || "Candidate";
-    const candidateEmail = ext.email || fullAnalysis?.email || entry?.email || "";
-    const candidatePhone = ext.phone || "";
-    const scoreVal = entry?.atsScore || fullAnalysis?.atsScore || resData?.atsScore || 0;
+  const safePdfName = (downloadName || `${candidateName.replace(/\s+/g, "_")}_Resume.pdf`).replace(/\.txt$/i, ".pdf");
 
-    const safePdfName = (downloadName || `${candidateName.replace(/\s+/g, "_")}_Resume.pdf`).replace(/\.txt$/i, ".pdf");
+  if (window.jspdf && window.jspdf.jsPDF) {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 45;
+      const maxLineWidth = pageWidth - margin * 2;
+      let y = 52;
 
-    if (window.jspdf && window.jspdf.jsPDF) {
-      try {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ unit: "pt", format: "a4" });
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const margin = 45;
-        const maxLineWidth = pageWidth - margin * 2;
-        let y = 52;
+      // Top Accent Stripe
+      doc.setFillColor(129, 0, 26);
+      doc.rect(0, 0, pageWidth, 6, "F");
 
-        // Top Accent Stripe
-        doc.setFillColor(129, 0, 26);
-        doc.rect(0, 0, pageWidth, 6, "F");
+      // Candidate Name Title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59);
+      doc.text(candidateName, margin, y);
+      y += 19;
 
-        // Candidate Name Title
+      // Contact info bar
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.5);
+      doc.setTextColor(100, 116, 139);
+      const contactParts = [candidateEmail, candidatePhone, `ATS Match Score: ${scoreVal}/100`].filter(Boolean);
+      doc.text(contactParts.join("   |   "), margin, y);
+      y += 14;
+
+      // Divider line
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(1.2);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 24;
+
+      // Skills Section
+      const skills = ext.skills || resData.detectedSkills || [];
+      if (skills.length) {
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.setTextColor(30, 41, 59);
-        doc.text(candidateName, margin, y);
-        y += 19;
+        doc.setFontSize(12);
+        doc.setTextColor(129, 0, 26);
+        doc.text("CORE SKILLS & EXPERTISE", margin, y);
+        y += 15;
 
-        // Contact info bar
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10.5);
-        doc.setTextColor(100, 116, 139);
-        const contactParts = [candidateEmail, candidatePhone, `ATS Match Score: ${scoreVal}/100`].filter(Boolean);
-        doc.text(contactParts.join("   |   "), margin, y);
-        y += 14;
-
-        // Divider line
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(1.2);
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 24;
-
-        // Skills Section
-        const skills = ext.skills || resData.detectedSkills || [];
-        if (skills.length) {
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(12);
-          doc.setTextColor(129, 0, 26);
-          doc.text("CORE SKILLS & EXPERTISE", margin, y);
-          y += 15;
-
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(51, 65, 85);
-          const skillsText = doc.splitTextToSize(skills.join("   •   "), maxLineWidth);
-          doc.text(skillsText, margin, y);
-          y += skillsText.length * 14 + 18;
-        }
-
-        // Experience Section
-        const exp = ext.experience ? (Array.isArray(ext.experience) ? ext.experience.join("\n") : ext.experience) : "";
-        if (exp && exp.trim()) {
-          if (y > 680) { doc.addPage(); y = 50; }
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(12);
-          doc.setTextColor(129, 0, 26);
-          doc.text("PROFESSIONAL EXPERIENCE", margin, y);
-          y += 15;
-
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(51, 65, 85);
-          const expLines = doc.splitTextToSize(exp, maxLineWidth);
-          doc.text(expLines, margin, y);
-          y += expLines.length * 14 + 18;
-        }
-
-        // Education Section
-        const edu = ext.education ? (Array.isArray(ext.education) ? ext.education.join("\n") : ext.education) : "";
-        if (edu && edu.trim()) {
-          if (y > 700) { doc.addPage(); y = 50; }
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(12);
-          doc.setTextColor(129, 0, 26);
-          doc.text("EDUCATION & QUALIFICATIONS", margin, y);
-          y += 15;
-
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(51, 65, 85);
-          const eduLines = doc.splitTextToSize(edu, maxLineWidth);
-          doc.text(eduLines, margin, y);
-          y += eduLines.length * 14 + 18;
-        }
-
-        // If structured sections were minimal, print the clean text content with pagination
-        if ((!skills.length && !exp) && textContent && textContent.trim()) {
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(12);
-          doc.setTextColor(129, 0, 26);
-          doc.text("RESUME CONTENT", margin, y);
-          y += 15;
-
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(9.5);
-          doc.setTextColor(51, 65, 85);
-          const fullLines = doc.splitTextToSize(textContent, maxLineWidth);
-          for (let i = 0; i < fullLines.length; i++) {
-            if (y > 760) {
-              doc.addPage();
-              y = 50;
-            }
-            doc.text(fullLines[i], margin, y);
-            y += 13.5;
-          }
-        }
-
-        doc.save(safePdfName);
-        showToast(`Downloaded formatted resume: ${safePdfName}`, "success");
-        return;
-      } catch (pdfErr) {
-        console.warn("jsPDF generation failed, falling back to formatted text:", pdfErr);
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        const skillsText = doc.splitTextToSize(skills.join("   •   "), maxLineWidth);
+        doc.text(skillsText, margin, y);
+        y += skillsText.length * 14 + 18;
       }
-    }
 
-    // Text fallback if jsPDF is unavailable
-    const fallbackContent = textContent || `${candidateName}\n${candidateEmail}\nATS Score: ${scoreVal}`;
-    const blob = new Blob([fallbackContent], { type: "text/plain;charset=utf-8" });
-    const blobUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = (downloadName || "resume.txt").replace(/\.pdf$/i, ".txt");
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
-      if (a.parentNode) a.parentNode.removeChild(a);
-    }, 1200);
-    showToast(`Downloaded resume as ${a.download}`, "success");
+      // Experience Section
+      const exp = ext.experience ? (Array.isArray(ext.experience) ? ext.experience.join("\n") : ext.experience) : "";
+      if (exp && exp.trim()) {
+        if (y > 680) { doc.addPage(); y = 50; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(129, 0, 26);
+        doc.text("PROFESSIONAL EXPERIENCE", margin, y);
+        y += 15;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        const expLines = doc.splitTextToSize(exp, maxLineWidth);
+        doc.text(expLines, margin, y);
+        y += expLines.length * 14 + 18;
+      }
+
+      // Education Section
+      const edu = ext.education ? (Array.isArray(ext.education) ? ext.education.join("\n") : ext.education) : "";
+      if (edu && edu.trim()) {
+        if (y > 700) { doc.addPage(); y = 50; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(129, 0, 26);
+        doc.text("EDUCATION & QUALIFICATIONS", margin, y);
+        y += 15;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        const eduLines = doc.splitTextToSize(edu, maxLineWidth);
+        doc.text(eduLines, margin, y);
+        y += eduLines.length * 14 + 18;
+      }
+
+      // If structured sections were minimal, print the clean text content with pagination
+      if ((!skills.length && !exp) && textContent && textContent.trim()) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(129, 0, 26);
+        doc.text("RESUME CONTENT", margin, y);
+        y += 15;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(51, 65, 85);
+        const fullLines = doc.splitTextToSize(textContent, maxLineWidth);
+        for (let i = 0; i < fullLines.length; i++) {
+          if (y > 760) {
+            doc.addPage();
+            y = 50;
+          }
+          doc.text(fullLines[i], margin, y);
+          y += 13.5;
+        }
+      }
+
+      doc.save(safePdfName);
+      showToast(`Downloaded formatted resume: ${safePdfName}`, "success");
+      return;
+    } catch (pdfErr) {
+      console.warn("jsPDF generation failed, falling back to formatted text:", pdfErr);
+    }
   }
 
-  async function openResumePreviewModal(idVal){
-    if (!idVal) return;
-    currentPreviewId = idVal;
+  // Text fallback if jsPDF is unavailable
+  const fallbackContent = textContent || `${candidateName}\n${candidateEmail}\nATS Score: ${scoreVal}`;
+  const blob = new Blob([fallbackContent], { type: "text/plain;charset=utf-8" });
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = (downloadName || "resume.txt").replace(/\.pdf$/i, ".txt");
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    window.URL.revokeObjectURL(blobUrl);
+    if (a.parentNode) a.parentNode.removeChild(a);
+  }, 1200);
+  showToast(`Downloaded resume as ${a.download}`, "success");
+}
 
-    const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal) || {};
-    const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
-    currentPreviewFileName = fileNameStr;
+async function openResumePreviewModal(idVal) {
+  if (!idVal) return;
+  currentPreviewId = idVal;
 
-    const previewFileName = document.getElementById("previewFileName");
-    const previewScoreBadge = document.getElementById("previewScoreBadge");
-    const previewMeta = document.getElementById("previewMeta");
-    const previewResumeText = document.getElementById("previewResumeText");
-    const previewCandidateInfo = document.getElementById("previewCandidateInfo");
-    const previewSkillsList = document.getElementById("previewSkillsList");
-    const previewMissingList = document.getElementById("previewMissingList");
+  const entry = (userHistoryList || []).find(e => (e.id || e._id || e.analysisId) === idVal) || {};
+  const fileNameStr = entry.fileName || entry.filename || "resume.pdf";
+  currentPreviewFileName = fileNameStr;
 
-    const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
-    const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "--";
-    const statusText = entry.verdict || entry.status || "Analyzed";
-    const typeText = entry.analysisType || "Resume Analysis";
-    const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
-    const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const previewFileName = document.getElementById("previewFileName");
+  const previewScoreBadge = document.getElementById("previewScoreBadge");
+  const previewMeta = document.getElementById("previewMeta");
+  const previewResumeText = document.getElementById("previewResumeText");
+  const previewCandidateInfo = document.getElementById("previewCandidateInfo");
+  const previewSkillsList = document.getElementById("previewSkillsList");
+  const previewMissingList = document.getElementById("previewMissingList");
 
-    if (previewFileName) previewFileName.textContent = fileNameStr;
-    if (previewScoreBadge) {
-      previewScoreBadge.textContent = scoreDisplay;
-      previewScoreBadge.style.background = scoreColor(scoreVal || 0);
-    }
-    if (previewMeta) {
-      previewMeta.innerHTML = `<span style="font-weight:600; color:var(--accent);">${escapeHtml(statusText)}</span> &bull; <span>${escapeHtml(typeText)}</span> &bull; <span>${dateLabel}</span>`;
-    }
+  const scoreVal = (entry.atsScore !== undefined && entry.atsScore !== null) ? entry.atsScore : (entry.score !== undefined ? entry.score : null);
+  const scoreDisplay = scoreVal !== null ? `${scoreVal}` : "--";
+  const statusText = entry.verdict || entry.status || "Analyzed";
+  const typeText = entry.analysisType || "Resume Analysis";
+  const uploadDateObj = new Date(entry.uploadDate || entry.date || Date.now());
+  const dateLabel = isNaN(uploadDateObj.getTime()) ? "Recently" : uploadDateObj.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
-    // Reset tabs
-    if (tabBtnContent && tabBtnDetails && paneContent && paneDetails) {
-      tabBtnContent.classList.add("active");
-      tabBtnDetails.classList.remove("active");
-      paneContent.style.display = "block";
-      paneDetails.style.display = "none";
-    }
+  if (previewFileName) previewFileName.textContent = fileNameStr;
+  if (previewScoreBadge) {
+    previewScoreBadge.textContent = scoreDisplay;
+    previewScoreBadge.style.background = scoreColor(scoreVal || 0);
+  }
+  if (previewMeta) {
+    previewMeta.innerHTML = `<span style="font-weight:600; color:var(--accent);">${escapeHtml(statusText)}</span> &bull; <span>${escapeHtml(typeText)}</span> &bull; <span>${dateLabel}</span>`;
+  }
 
-    if (previewResumeText) {
-      previewResumeText.innerHTML = '<div style="text-align:center; padding:32px; color:#64748b;"><div class="spinner" style="display:inline-block; width:22px; height:22px; border:2.5px solid #cbd5e1; border-top-color:var(--accent, #81001a); border-radius:50%; animation:spin 0.8s linear infinite; margin-right:8px; vertical-align:middle;"></div> Loading resume document...</div>';
-    }
+  // Reset tabs
+  if (tabBtnContent && tabBtnDetails && paneContent && paneDetails) {
+    tabBtnContent.classList.add("active");
+    tabBtnDetails.classList.remove("active");
+    paneContent.style.display = "block";
+    paneDetails.style.display = "none";
+  }
 
-    if (resumePreviewModal) {
-      resumePreviewModal.classList.add("active");
-    }
+  if (previewResumeText) {
+    previewResumeText.innerHTML = '<div style="text-align:center; padding:32px; color:#64748b;"><div class="spinner" style="display:inline-block; width:22px; height:22px; border:2.5px solid #cbd5e1; border-top-color:var(--accent, #81001a); border-radius:50%; animation:spin 0.8s linear infinite; margin-right:8px; vertical-align:middle;"></div> Loading resume document...</div>';
+  }
 
-    const token = getAuthToken();
-    let analysisData = null;
-    if (token) {
-      try {
-        const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        if (res && res.success && res.analysis) {
-          analysisData = res.analysis;
-        }
-      } catch(err){
-        console.warn("Could not fetch detailed resume analysis for preview:", err);
+  if (resumePreviewModal) {
+    resumePreviewModal.classList.add("active");
+  }
+
+  const token = getAuthToken();
+  let analysisData = null;
+  if (token) {
+    try {
+      const res = await safeFetchJson("/api/user/resume-analysis/" + encodeURIComponent(idVal), {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (res && res.success && res.analysis) {
+        analysisData = res.analysis;
       }
+    } catch (err) {
+      console.warn("Could not fetch detailed resume analysis for preview:", err);
     }
+  }
 
-    // Populate resume text
-    const textContent = (analysisData && analysisData.resumeText) || entry.resumeText || "";
-    if (previewResumeText) {
-      if (textContent && textContent.trim()) {
-        previewResumeText.textContent = textContent;
+  // Populate resume text
+  const textContent = (analysisData && analysisData.resumeText) || entry.resumeText || "";
+  if (previewResumeText) {
+    if (textContent && textContent.trim()) {
+      previewResumeText.textContent = textContent;
+    } else {
+      const ext = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
+      const resResult = (analysisData && analysisData.analysisResult) || {};
+      if (ext.name || ext.skills || resResult.detectedSkills) {
+        const lines = [
+          `======================================================`,
+          `CANDIDATE: ${ext.name || "Candidate"}`,
+          `EMAIL: ${ext.email || "N/A"}   |   PHONE: ${ext.phone || "N/A"}`,
+          `======================================================`,
+          "",
+          "--- DETECTED SKILLS ---",
+          (ext.skills || resResult.detectedSkills || []).join(", ") || "None recorded",
+          "",
+          "--- EXPERIENCE ---",
+          Array.isArray(ext.experience) ? ext.experience.join("\n") : (ext.experience || "Not parsed"),
+          "",
+          "--- EDUCATION ---",
+          Array.isArray(ext.education) ? ext.education.join("\n") : (ext.education || "Not parsed"),
+          "",
+          "--- ATS ANALYSIS SUMMARY ---",
+          `ATS Score: ${scoreDisplay}/100`,
+          `Verdict: ${statusText}`,
+          `Missing Keywords: ${(resResult.missingKeywords || []).join(", ") || "None"}`
+        ];
+        previewResumeText.textContent = lines.join("\n");
       } else {
-        const ext = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
-        const resResult = (analysisData && analysisData.analysisResult) || {};
-        if (ext.name || ext.skills || resResult.detectedSkills) {
-          const lines = [
-            `======================================================`,
-            `CANDIDATE: ${ext.name || "Candidate"}`,
-            `EMAIL: ${ext.email || "N/A"}   |   PHONE: ${ext.phone || "N/A"}`,
-            `======================================================`,
-            "",
-            "--- DETECTED SKILLS ---",
-            (ext.skills || resResult.detectedSkills || []).join(", ") || "None recorded",
-            "",
-            "--- EXPERIENCE ---",
-            Array.isArray(ext.experience) ? ext.experience.join("\n") : (ext.experience || "Not parsed"),
-            "",
-            "--- EDUCATION ---",
-            Array.isArray(ext.education) ? ext.education.join("\n") : (ext.education || "Not parsed"),
-            "",
-            "--- ATS ANALYSIS SUMMARY ---",
-            `ATS Score: ${scoreDisplay}/100`,
-            `Verdict: ${statusText}`,
-            `Missing Keywords: ${(resResult.missingKeywords || []).join(", ") || "None"}`
-          ];
-          previewResumeText.textContent = lines.join("\n");
-        } else {
-          previewResumeText.innerHTML = '<div style="color:#64748b; font-style:italic; padding:30px; text-align:center;">Resume document text is not cached for this record.<br><br>Click <strong>Download Resume</strong> to fetch file or <strong>Open Full Analysis</strong> to see scoring.</div>';
-        }
+        previewResumeText.innerHTML = '<div style="color:#64748b; font-style:italic; padding:30px; text-align:center;">Resume document text is not cached for this record.<br><br>Click <strong>Download Resume</strong> to fetch file or <strong>Open Full Analysis</strong> to see scoring.</div>';
       }
     }
+  }
 
-    // Populate details tab
-    const extData = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
-    const resData = (analysisData && analysisData.analysisResult) || {};
-    const candidateName = extData.name || analysisData?.name || entry?.name || "Candidate";
-    const candidateEmail = extData.email || analysisData?.email || entry?.email || "Not specified";
-    const candidatePhone = extData.phone || "Not specified";
+  // Populate details tab
+  const extData = (analysisData && analysisData.extractedData) || (entry && entry.extractedData) || {};
+  const resData = (analysisData && analysisData.analysisResult) || {};
+  const candidateName = extData.name || analysisData?.name || entry?.name || "Candidate";
+  const candidateEmail = extData.email || analysisData?.email || entry?.email || "Not specified";
+  const candidatePhone = extData.phone || "Not specified";
 
-    if (previewCandidateInfo) {
-      previewCandidateInfo.innerHTML = `
+  if (previewCandidateInfo) {
+    previewCandidateInfo.innerHTML = `
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:10px; font-size:12.5px;">
           <div><strong style="color:var(--ink);">Name:</strong> ${escapeHtml(candidateName)}</div>
           <div><strong style="color:var(--ink);">Email:</strong> ${escapeHtml(candidateEmail)}</div>
           <div><strong style="color:var(--ink);">Phone:</strong> ${escapeHtml(candidatePhone)}</div>
         </div>
       `;
-    }
-
-    const skills = extData.skills || resData.detectedSkills || entry.detectedSkills || [];
-    if (previewSkillsList) {
-      if (skills && skills.length) {
-        previewSkillsList.innerHTML = skills.map(s => `<span class="preview-tag preview-skill-tag" style="display:inline-block; background:#e0f2fe; color:#0369a1; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">${escapeHtml(s)}</span>`).join("");
-      } else {
-        previewSkillsList.innerHTML = '<span style="color:#888; font-size:12px; font-style:italic;">No detected skills extracted</span>';
-      }
-    }
-
-    const missing = resData.missingKeywords || entry.missingKeywords || [];
-    if (previewMissingList) {
-      if (missing && missing.length) {
-        previewMissingList.innerHTML = missing.map(m => `<span class="preview-tag preview-missing-tag" style="display:inline-block; background:#fee2e2; color:#b91c1c; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">+ ${escapeHtml(m)}</span>`).join("");
-      } else {
-        previewMissingList.innerHTML = '<span style="color:#059669; font-size:12px; font-weight:600;">✓ No missing keywords identified! Excellent match.</span>';
-      }
-    }
   }
 
-  // Preview Modal Tabs and Button Listeners
-  if (tabBtnContent && tabBtnDetails) {
-    tabBtnContent.addEventListener("click", () => {
-      tabBtnContent.classList.add("active");
-      tabBtnDetails.classList.remove("active");
-      if (paneContent) paneContent.style.display = "block";
-      if (paneDetails) paneDetails.style.display = "none";
-    });
-    tabBtnDetails.addEventListener("click", () => {
-      tabBtnDetails.classList.add("active");
-      tabBtnContent.classList.remove("active");
-      if (paneContent) paneContent.style.display = "none";
-      if (paneDetails) paneDetails.style.display = "block";
-    });
-  }
-
-  if (previewDownloadBtn) {
-    previewDownloadBtn.addEventListener("click", () => {
-      if (currentPreviewId) {
-        downloadHistoricalResume(currentPreviewId, currentPreviewFileName);
-      }
-    });
-  }
-
-  if (previewOpenAnalysisBtn) {
-    previewOpenAnalysisBtn.addEventListener("click", () => {
-      const targetId = currentPreviewId;
-      closeResumePreviewModal();
-      if (targetId) {
-        loadHistoricalAnalysisView(targetId);
-      }
-    });
-  }
-
-  if (resumePreviewCloseBtn) {
-    resumePreviewCloseBtn.addEventListener("click", closeResumePreviewModal);
-  }
-
-  if (resumePreviewModal) {
-    resumePreviewModal.addEventListener("click", (e) => {
-      if (e.target === resumePreviewModal) {
-        closeResumePreviewModal();
-      }
-    });
-  }
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (resumePreviewModal && resumePreviewModal.classList.contains("active")) {
-        closeResumePreviewModal();
-      }
-    }
-  });
-
-  document.getElementById("historyList").addEventListener("click", (e) => {
-    const deleteBtn = e.target.closest(".history-delete-btn");
-    if (deleteBtn) {
-      e.stopPropagation();
-      const id = deleteBtn.dataset.id;
-      deleteHistoryEntry(currentUser ? currentUser.email : null, id);
-      return;
-    }
-    const downloadBtn = e.target.closest(".history-download-btn");
-    if (downloadBtn) {
-      e.stopPropagation();
-      const id = downloadBtn.dataset.id;
-      const fn = downloadBtn.dataset.filename || "resume.pdf";
-      downloadHistoricalResume(id, fn);
-      return;
-    }
-    const viewBtn = e.target.closest(".history-view-btn");
-    if (viewBtn) {
-      e.stopPropagation();
-      const id = viewBtn.dataset.id;
-      openResumePreviewModal(id);
-      return;
-    }
-    const itemRow = e.target.closest(".history-item");
-    if (itemRow) {
-      const delBtn = itemRow.querySelector(".history-delete-btn");
-      const id = itemRow.dataset.id || (delBtn ? delBtn.dataset.id : null);
-      if (id) {
-        openResumePreviewModal(id);
-      }
-    }
-  });
-
-  const historyModal = document.getElementById("historyModal");
-  async function openHistory(){
-    if (!historyModal) return;
-    historyModal.classList.add("active");
-    renderHistory();
-    if (sessionRestorePromise) {
-      try { await sessionRestorePromise; } catch(e){}
-    }
-    await fetchHistoryFromBackend();
-    if (typeof logUserAction === "function") {
-      logUserAction("view history", "User opened resume history");
-    }
-  }
-  function closeHistory(){ if (historyModal) historyModal.classList.remove("active"); }
-
-  const historyBtn = document.getElementById("historyBtn");
-  if (historyBtn) {
-    historyBtn.addEventListener("click", () => {
-      const pdd = document.getElementById("profileDropdown");
-      if (pdd) pdd.classList.remove("open");
-      openHistory();
-    });
-  }
-
-  const navHistoryBtn = document.getElementById("navHistoryBtn");
-  if (navHistoryBtn) {
-    navHistoryBtn.addEventListener("click", () => {
-      const pdd = document.getElementById("profileDropdown");
-      if (pdd) pdd.classList.remove("open");
-      openHistory();
-    });
-  }
-  document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
-  if (historyModal) {
-    historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
-  }
-
-  // ---- User Dashboard System ----
-  async function fetchDashboardDataFromBackend() {
-    const token = getAuthToken();
-    if (!token) return null;
-    try {
-      const data = await safeFetchJson("/api/user/dashboard", {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      if (data && data.success) {
-        return data;
-      }
-    } catch(err) {
-      console.warn("Could not fetch dashboard data from MongoDB backend:", err);
-    }
-    return null;
-  }
-
-  function renderDashboardData(data) {
-    if (!data) return;
-    const u = data.user || {};
-    const s = data.stats || {};
-
-    // 1. User Information
-    const dashName = document.getElementById("dashUserName");
-    const dashEmail = document.getElementById("dashUserEmail");
-    const dashProvider = document.getElementById("dashUserProvider");
-    const dashCreated = document.getElementById("dashUserCreated");
-    const dashLastLogin = document.getElementById("dashUserLastLogin");
-
-    if (dashName) dashName.textContent = u.name || (currentUser ? currentUser.name : "User");
-    if (dashEmail) dashEmail.textContent = u.email || (currentUser ? currentUser.email : "—");
-    if (dashProvider) dashProvider.textContent = u.provider || "email";
-    if (dashCreated) dashCreated.textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—";
-    if (dashLastLogin) dashLastLogin.textContent = u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "—";
-
-    // Avatar
-    const dashInitials = document.getElementById("dashAvatarInitials");
-    const dashImg = document.getElementById("dashAvatarImg");
-    if (dashInitials && dashImg) {
-      const resolvedDashPhoto = resolveAvatarUrl(u.photo);
-      applyAvatarToElement(dashImg, dashInitials, resolvedDashPhoto);
-      if (!resolvedDashPhoto) {
-        dashInitials.textContent = (u.name || "U").trim().charAt(0).toUpperCase();
-      }
-    }
-
-    // 2. Metrics Cards
-    const totalEl = document.getElementById("dashStatTotalResumes");
-    const latestScoreEl = document.getElementById("dashStatLatestScore");
-    const highestScoreEl = document.getElementById("dashStatHighestScore");
-    const avgScoreEl = document.getElementById("dashStatAvgScore");
-
-    if (totalEl) totalEl.textContent = s.totalResumes !== undefined ? s.totalResumes : 0;
-    if (latestScoreEl) latestScoreEl.textContent = s.latestScore !== null ? s.latestScore : "—";
-    if (highestScoreEl) highestScoreEl.textContent = s.highestScore !== null ? s.highestScore : "—";
-    if (avgScoreEl) avgScoreEl.textContent = s.avgScore !== null ? s.avgScore : "—";
-
-    // 3. Latest Uploaded Resume
-    const latestBox = document.getElementById("dashLatestUploadBox");
-    const latestFileName = document.getElementById("dashLatestFileName");
-    const latestFileType = document.getElementById("dashLatestFileType");
-    const latestFileDate = document.getElementById("dashLatestFileDate");
-
-    if (s.latestUpload) {
-      if (latestBox) latestBox.style.display = "block";
-      if (latestFileName) latestFileName.textContent = s.latestUpload.fileName || "resume.pdf";
-      if (latestFileType) latestFileType.textContent = (s.latestUpload.fileType || "PDF").toUpperCase();
-      if (latestFileDate) latestFileDate.textContent = s.latestUpload.uploadDate ? new Date(s.latestUpload.uploadDate).toLocaleString() : "—";
+  const skills = extData.skills || resData.detectedSkills || entry.detectedSkills || [];
+  if (previewSkillsList) {
+    if (skills && skills.length) {
+      previewSkillsList.innerHTML = skills.map(s => `<span class="preview-tag preview-skill-tag" style="display:inline-block; background:#e0f2fe; color:#0369a1; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">${escapeHtml(s)}</span>`).join("");
     } else {
-      if (latestBox) latestBox.style.display = "none";
+      previewSkillsList.innerHTML = '<span style="color:#888; font-size:12px; font-style:italic;">No detected skills extracted</span>';
     }
+  }
 
-    // 4. Recent Resume Analyses
-    const analysesContainer = document.getElementById("dashRecentAnalysesList");
-    if (analysesContainer) {
-      const analyses = data.recentAnalyses || [];
-      if (!analyses.length) {
-        analysesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No resume analyses found yet. Upload a resume to get started!</div>';
-      } else {
-        analysesContainer.innerHTML = analyses.map(item => `
+  const missing = resData.missingKeywords || entry.missingKeywords || [];
+  if (previewMissingList) {
+    if (missing && missing.length) {
+      previewMissingList.innerHTML = missing.map(m => `<span class="preview-tag preview-missing-tag" style="display:inline-block; background:#fee2e2; color:#b91c1c; padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600; margin:2px;">+ ${escapeHtml(m)}</span>`).join("");
+    } else {
+      previewMissingList.innerHTML = '<span style="color:#059669; font-size:12px; font-weight:600;">✓ No missing keywords identified! Excellent match.</span>';
+    }
+  }
+}
+
+// Preview Modal Tabs and Button Listeners
+if (tabBtnContent && tabBtnDetails) {
+  tabBtnContent.addEventListener("click", () => {
+    tabBtnContent.classList.add("active");
+    tabBtnDetails.classList.remove("active");
+    if (paneContent) paneContent.style.display = "block";
+    if (paneDetails) paneDetails.style.display = "none";
+  });
+  tabBtnDetails.addEventListener("click", () => {
+    tabBtnDetails.classList.add("active");
+    tabBtnContent.classList.remove("active");
+    if (paneContent) paneContent.style.display = "none";
+    if (paneDetails) paneDetails.style.display = "block";
+  });
+}
+
+if (previewDownloadBtn) {
+  previewDownloadBtn.addEventListener("click", () => {
+    if (currentPreviewId) {
+      downloadHistoricalResume(currentPreviewId, currentPreviewFileName);
+    }
+  });
+}
+
+if (previewOpenAnalysisBtn) {
+  previewOpenAnalysisBtn.addEventListener("click", () => {
+    const targetId = currentPreviewId;
+    closeResumePreviewModal();
+    if (targetId) {
+      loadHistoricalAnalysisView(targetId);
+    }
+  });
+}
+
+if (resumePreviewCloseBtn) {
+  resumePreviewCloseBtn.addEventListener("click", closeResumePreviewModal);
+}
+
+if (resumePreviewModal) {
+  resumePreviewModal.addEventListener("click", (e) => {
+    if (e.target === resumePreviewModal) {
+      closeResumePreviewModal();
+    }
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (resumePreviewModal && resumePreviewModal.classList.contains("active")) {
+      closeResumePreviewModal();
+    }
+  }
+});
+
+document.getElementById("historyList").addEventListener("click", (e) => {
+  const deleteBtn = e.target.closest(".history-delete-btn");
+  if (deleteBtn) {
+    e.stopPropagation();
+    const id = deleteBtn.dataset.id;
+    deleteHistoryEntry(currentUser ? currentUser.email : null, id);
+    return;
+  }
+  const downloadBtn = e.target.closest(".history-download-btn");
+  if (downloadBtn) {
+    e.stopPropagation();
+    const id = downloadBtn.dataset.id;
+    const fn = downloadBtn.dataset.filename || "resume.pdf";
+    downloadHistoricalResume(id, fn);
+    return;
+  }
+  const viewBtn = e.target.closest(".history-view-btn");
+  if (viewBtn) {
+    e.stopPropagation();
+    const id = viewBtn.dataset.id;
+    openResumePreviewModal(id);
+    return;
+  }
+  const itemRow = e.target.closest(".history-item");
+  if (itemRow) {
+    const delBtn = itemRow.querySelector(".history-delete-btn");
+    const id = itemRow.dataset.id || (delBtn ? delBtn.dataset.id : null);
+    if (id) {
+      openResumePreviewModal(id);
+    }
+  }
+});
+
+const historyModal = document.getElementById("historyModal");
+async function openHistory() {
+  if (!historyModal) return;
+  historyModal.classList.add("active");
+  renderHistory();
+  if (sessionRestorePromise) {
+    try { await sessionRestorePromise; } catch (e) { }
+  }
+  await fetchHistoryFromBackend();
+  if (typeof logUserAction === "function") {
+    logUserAction("view history", "User opened resume history");
+  }
+}
+function closeHistory() { if (historyModal) historyModal.classList.remove("active"); }
+
+const historyBtn = document.getElementById("historyBtn");
+if (historyBtn) {
+  historyBtn.addEventListener("click", () => {
+    const pdd = document.getElementById("profileDropdown");
+    if (pdd) pdd.classList.remove("open");
+    openHistory();
+  });
+}
+
+const navHistoryBtn = document.getElementById("navHistoryBtn");
+if (navHistoryBtn) {
+  navHistoryBtn.addEventListener("click", () => {
+    const pdd = document.getElementById("profileDropdown");
+    if (pdd) pdd.classList.remove("open");
+    openHistory();
+  });
+}
+document.getElementById("historyCloseBtn").addEventListener("click", closeHistory);
+if (historyModal) {
+  historyModal.addEventListener("click", (e) => { if (e.target === historyModal) closeHistory(); });
+}
+
+// ---- User Dashboard System ----
+async function fetchDashboardDataFromBackend() {
+  const token = getAuthToken();
+  if (!token) return null;
+  try {
+    const data = await safeFetchJson("/api/user/dashboard", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (data && data.success) {
+      return data;
+    }
+  } catch (err) {
+    console.warn("Could not fetch dashboard data from MongoDB backend:", err);
+  }
+  return null;
+}
+
+function renderDashboardData(data) {
+  if (!data) return;
+  const u = data.user || {};
+  const s = data.stats || {};
+
+  // 1. User Information
+  const dashName = document.getElementById("dashUserName");
+  const dashEmail = document.getElementById("dashUserEmail");
+  const dashProvider = document.getElementById("dashUserProvider");
+  const dashCreated = document.getElementById("dashUserCreated");
+  const dashLastLogin = document.getElementById("dashUserLastLogin");
+
+  if (dashName) dashName.textContent = u.name || (currentUser ? currentUser.name : "User");
+  if (dashEmail) dashEmail.textContent = u.email || (currentUser ? currentUser.email : "—");
+  if (dashProvider) dashProvider.textContent = u.provider || "email";
+  if (dashCreated) dashCreated.textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—";
+  if (dashLastLogin) dashLastLogin.textContent = u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "—";
+
+  // Avatar
+  const dashInitials = document.getElementById("dashAvatarInitials");
+  const dashImg = document.getElementById("dashAvatarImg");
+  if (dashInitials && dashImg) {
+    const resolvedDashPhoto = resolveAvatarUrl(u.photo);
+    applyAvatarToElement(dashImg, dashInitials, resolvedDashPhoto);
+    if (!resolvedDashPhoto) {
+      dashInitials.textContent = (u.name || "U").trim().charAt(0).toUpperCase();
+    }
+  }
+
+  // 2. Metrics Cards
+  const totalEl = document.getElementById("dashStatTotalResumes");
+  const latestScoreEl = document.getElementById("dashStatLatestScore");
+  const highestScoreEl = document.getElementById("dashStatHighestScore");
+  const avgScoreEl = document.getElementById("dashStatAvgScore");
+
+  if (totalEl) totalEl.textContent = s.totalResumes !== undefined ? s.totalResumes : 0;
+  if (latestScoreEl) latestScoreEl.textContent = s.latestScore !== null ? s.latestScore : "—";
+  if (highestScoreEl) highestScoreEl.textContent = s.highestScore !== null ? s.highestScore : "—";
+  if (avgScoreEl) avgScoreEl.textContent = s.avgScore !== null ? s.avgScore : "—";
+
+  // 3. Latest Uploaded Resume
+  const latestBox = document.getElementById("dashLatestUploadBox");
+  const latestFileName = document.getElementById("dashLatestFileName");
+  const latestFileType = document.getElementById("dashLatestFileType");
+  const latestFileDate = document.getElementById("dashLatestFileDate");
+
+  if (s.latestUpload) {
+    if (latestBox) latestBox.style.display = "block";
+    if (latestFileName) latestFileName.textContent = s.latestUpload.fileName || "resume.pdf";
+    if (latestFileType) latestFileType.textContent = (s.latestUpload.fileType || "PDF").toUpperCase();
+    if (latestFileDate) latestFileDate.textContent = s.latestUpload.uploadDate ? new Date(s.latestUpload.uploadDate).toLocaleString() : "—";
+  } else {
+    if (latestBox) latestBox.style.display = "none";
+  }
+
+  // 4. Recent Resume Analyses
+  const analysesContainer = document.getElementById("dashRecentAnalysesList");
+  if (analysesContainer) {
+    const analyses = data.recentAnalyses || [];
+    if (!analyses.length) {
+      analysesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No resume analyses found yet. Upload a resume to get started!</div>';
+    } else {
+      analysesContainer.innerHTML = analyses.map(item => `
           <div class="history-item" style="padding:12px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
             <div>
               <div style="font-weight:700; font-size:14px; color:var(--ink);">${escapeHtml(item.fileName || item.filename)}</div>
@@ -6707,145 +6707,145 @@
             </div>
           </div>
         `).join("");
-      }
     }
+  }
 
-    // 5. Recent User Activities Feed
-    const activitiesContainer = document.getElementById("dashRecentActivitiesList");
-    if (activitiesContainer) {
-      const acts = data.recentActivities || [];
-      if (!acts.length) {
-        activitiesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No activities recorded yet.</div>';
-      } else {
-        activitiesContainer.innerHTML = acts.map(act => `
+  // 5. Recent User Activities Feed
+  const activitiesContainer = document.getElementById("dashRecentActivitiesList");
+  if (activitiesContainer) {
+    const acts = data.recentActivities || [];
+    if (!acts.length) {
+      activitiesContainer.innerHTML = '<div style="padding:16px; text-align:center; color:#888; font-size:13px;">No activities recorded yet.</div>';
+    } else {
+      activitiesContainer.innerHTML = acts.map(act => `
           <div class="activity-item" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; justify-content:space-between;">
             <div>
               <span style="display:inline-block; font-size:11px; text-transform:uppercase; font-weight:700; background:#e8f4fd; color:#1976d2; padding:2px 6px; border-radius:4px; margin-right:8px;">${escapeHtml(act.action)}</span>
               <span style="font-size:13px; color:var(--ink);">${escapeHtml(act.description)}</span>
             </div>
-            <div style="font-size:11px; color:#888; white-space:nowrap; margin-left:12px;">${new Date(act.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+            <div style="font-size:11px; color:#888; white-space:nowrap; margin-left:12px;">${new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
           </div>
         `).join("");
-      }
     }
   }
+}
 
-  const dashboardModal = document.getElementById("dashboardModal");
-  async function openDashboard() {
-    if (!dashboardModal) return;
-    dashboardModal.classList.add("active");
-    if (sessionRestorePromise) {
-      try { await sessionRestorePromise; } catch(e){}
-    }
-    const data = await fetchDashboardDataFromBackend();
-    if (data) {
-      renderDashboardData(data);
-    }
+const dashboardModal = document.getElementById("dashboardModal");
+async function openDashboard() {
+  if (!dashboardModal) return;
+  dashboardModal.classList.add("active");
+  if (sessionRestorePromise) {
+    try { await sessionRestorePromise; } catch (e) { }
   }
-
-  function closeDashboard() {
-    if (dashboardModal) dashboardModal.classList.remove("active");
+  const data = await fetchDashboardDataFromBackend();
+  if (data) {
+    renderDashboardData(data);
   }
+}
 
-  const navDashboardBtn = document.getElementById("navDashboardBtn");
-  if (navDashboardBtn) navDashboardBtn.addEventListener("click", openDashboard);
+function closeDashboard() {
+  if (dashboardModal) dashboardModal.classList.remove("active");
+}
 
-  const dropdownDashboardBtn = document.getElementById("dropdownDashboardBtn");
-  if (dropdownDashboardBtn) {
-    dropdownDashboardBtn.addEventListener("click", () => {
-      const pdd = document.getElementById("profileDropdown");
-      if (pdd) pdd.classList.remove("open");
-      openDashboard();
+const navDashboardBtn = document.getElementById("navDashboardBtn");
+if (navDashboardBtn) navDashboardBtn.addEventListener("click", openDashboard);
+
+const dropdownDashboardBtn = document.getElementById("dropdownDashboardBtn");
+if (dropdownDashboardBtn) {
+  dropdownDashboardBtn.addEventListener("click", () => {
+    const pdd = document.getElementById("profileDropdown");
+    if (pdd) pdd.classList.remove("open");
+    openDashboard();
+  });
+}
+
+const dashboardCloseBtn = document.getElementById("dashboardCloseBtn");
+if (dashboardCloseBtn) dashboardCloseBtn.addEventListener("click", closeDashboard);
+
+if (dashboardModal) {
+  dashboardModal.addEventListener("click", (e) => {
+    if (e.target === dashboardModal) closeDashboard();
+  });
+}
+
+const profileSupportBtn = document.getElementById("profileSupportBtn");
+if (profileSupportBtn) {
+  profileSupportBtn.addEventListener("click", () => {
+    const pdd = document.getElementById("profileDropdown");
+    if (pdd) pdd.classList.remove("open");
+    openSupport();
+  });
+}
+
+// ---- Support Session & Ticket System ----
+const SUPPORT_TICKETS_KEY = "ara_support_tickets_v1";
+
+function loadSupportTickets() {
+  try {
+    const raw = localStorage.getItem(SUPPORT_TICKETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function saveSupportTickets(tickets) {
+  try { localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(tickets)); } catch (e) { }
+}
+
+async function deleteSupportTicket(ticketId) {
+  if (!ticketId) return;
+  const currentTickets = loadSupportTickets();
+  const updatedTickets = currentTickets.filter(t => (t.id || t.ticketId) !== ticketId);
+  saveSupportTickets(updatedTickets);
+  renderSupportTickets();
+
+  // Call backend API to delete from database and log activity
+  try {
+    const userEmail = currentUser ? currentUser.email : (currentTickets.find(t => (t.id || t.ticketId) === ticketId)?.email || "");
+    await safeFetchJson(`/api/support/${encodeURIComponent(ticketId)}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-email": userEmail
+      },
+      body: JSON.stringify({ ticketId: ticketId, email: userEmail })
     });
+  } catch (err) {
+    console.warn("Support ticket backend deletion notice:", err);
   }
+}
 
-  const dashboardCloseBtn = document.getElementById("dashboardCloseBtn");
-  if (dashboardCloseBtn) dashboardCloseBtn.addEventListener("click", closeDashboard);
+function renderSupportTickets() {
+  const tickets = loadSupportTickets();
+  const wrap = document.getElementById("supportTicketsWrap");
+  const listEl = document.getElementById("supportTicketsList");
+  const badgeEl = document.getElementById("supportFabBadge");
 
-  if (dashboardModal) {
-    dashboardModal.addEventListener("click", (e) => {
-      if (e.target === dashboardModal) closeDashboard();
-    });
-  }
-
-  const profileSupportBtn = document.getElementById("profileSupportBtn");
-  if (profileSupportBtn){
-    profileSupportBtn.addEventListener("click", () => {
-      const pdd = document.getElementById("profileDropdown");
-      if (pdd) pdd.classList.remove("open");
-      openSupport();
-    });
-  }
-
-  // ---- Support Session & Ticket System ----
-  const SUPPORT_TICKETS_KEY = "ara_support_tickets_v1";
-
-  function loadSupportTickets(){
-    try {
-      const raw = localStorage.getItem(SUPPORT_TICKETS_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e){ return []; }
-  }
-
-  function saveSupportTickets(tickets){
-    try { localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(tickets)); } catch (e){}
-  }
-
-  async function deleteSupportTicket(ticketId){
-    if (!ticketId) return;
-    const currentTickets = loadSupportTickets();
-    const updatedTickets = currentTickets.filter(t => (t.id || t.ticketId) !== ticketId);
-    saveSupportTickets(updatedTickets);
-    renderSupportTickets();
-
-    // Call backend API to delete from database and log activity
-    try {
-      const userEmail = currentUser ? currentUser.email : (currentTickets.find(t => (t.id || t.ticketId) === ticketId)?.email || "");
-      await safeFetchJson(`/api/support/${encodeURIComponent(ticketId)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-email": userEmail
-        },
-        body: JSON.stringify({ ticketId: ticketId, email: userEmail })
-      });
-    } catch (err) {
-      console.warn("Support ticket backend deletion notice:", err);
+  if (badgeEl) {
+    if (tickets.length > 0) {
+      badgeEl.textContent = tickets.length;
+      badgeEl.style.display = "inline-block";
+    } else {
+      badgeEl.style.display = "none";
     }
   }
 
-  function renderSupportTickets(){
-    const tickets = loadSupportTickets();
-    const wrap = document.getElementById("supportTicketsWrap");
-    const listEl = document.getElementById("supportTicketsList");
-    const badgeEl = document.getElementById("supportFabBadge");
+  if (!listEl || !wrap) return;
 
-    if (badgeEl){
-      if (tickets.length > 0){
-        badgeEl.textContent = tickets.length;
-        badgeEl.style.display = "inline-block";
-      } else {
-        badgeEl.style.display = "none";
-      }
-    }
-
-    if (!listEl || !wrap) return;
-
-    if (!tickets.length){
-      wrap.style.display = "none";
-      listEl.innerHTML = "";
-      return;
-    }
-
-    wrap.style.display = "block";
+  if (!tickets.length) {
+    wrap.style.display = "none";
     listEl.innerHTML = "";
+    return;
+  }
 
-    tickets.slice(0, 15).forEach(t => {
-      const item = document.createElement("div");
-      item.className = "support-ticket-item";
-      const ticketId = t.id || t.ticketId || "";
-      const dateStr = new Date(t.date || t.createdAt || Date.now()).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-      item.innerHTML = `
+  wrap.style.display = "block";
+  listEl.innerHTML = "";
+
+  tickets.slice(0, 15).forEach(t => {
+    const item = document.createElement("div");
+    item.className = "support-ticket-item";
+    const ticketId = t.id || t.ticketId || "";
+    const dateStr = new Date(t.date || t.createdAt || Date.now()).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    item.innerHTML = `
         <div class="support-ticket-head">
           <span class="support-ticket-id">${escapeHtml(ticketId)}</span>
           <div class="support-ticket-head-right">
@@ -6863,105 +6863,105 @@
         <div class="support-ticket-msg">${escapeHtml(t.message || "")}</div>
         <div class="support-ticket-time">${escapeHtml(dateStr)} &bull; ${escapeHtml(t.email || "")}</div>
       `;
-      listEl.appendChild(item);
+    listEl.appendChild(item);
+  });
+}
+
+const supportModal = document.getElementById("supportModal");
+const supportFabBtn = document.getElementById("supportFabBtn");
+const supportCloseBtn = document.getElementById("supportCloseBtn");
+const supportForm = document.getElementById("supportForm");
+const supportToast = document.getElementById("supportToast");
+
+async function syncSupportTicketsFromBackend() {
+  if (!currentUser || !currentUser.email) return;
+  try {
+    const res = await safeFetchJson(`/api/support?email=${encodeURIComponent(currentUser.email)}`);
+    if (res && res.success && Array.isArray(res.tickets) && res.tickets.length > 0) {
+      const local = loadSupportTickets();
+      const map = new Map();
+      res.tickets.forEach(t => map.set(t.id || t.ticketId, t));
+      local.forEach(t => {
+        const tid = t.id || t.ticketId;
+        if (tid && !map.has(tid)) map.set(tid, t);
+      });
+      const merged = Array.from(map.values()).sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+      saveSupportTickets(merged);
+      renderSupportTickets();
+    }
+  } catch (e) {
+    // Handled silently: local storage remains intact if backend is offline or static
+  }
+}
+
+function openSupport() {
+  if (currentUser) {
+    const nameInput = document.getElementById("supportName");
+    const emailInput = document.getElementById("supportEmail");
+    if (nameInput) nameInput.value = currentUser.name || "";
+    if (emailInput) emailInput.value = currentUser.email || "";
+    syncSupportTicketsFromBackend();
+  }
+  renderSupportTickets();
+  supportModal.classList.add("active");
+}
+function closeSupport() { supportModal.classList.remove("active"); }
+
+if (supportFabBtn) supportFabBtn.addEventListener("click", openSupport);
+if (supportCloseBtn) supportCloseBtn.addEventListener("click", closeSupport);
+if (supportModal) supportModal.addEventListener("click", (e) => { if (e.target === supportModal) closeSupport(); });
+
+const supportTicketsListEl = document.getElementById("supportTicketsList");
+if (supportTicketsListEl) {
+  supportTicketsListEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".support-delete-btn");
+    if (btn) {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      deleteSupportTicket(id);
+    }
+  });
+}
+
+if (supportForm) {
+  supportForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("supportName").value.trim();
+    const email = normalizeEmail(document.getElementById("supportEmail").value);
+    const message = document.getElementById("supportMessage").value.trim();
+
+    if (!isValidEmail(email)) {
+      showToast(supportToast, "Please enter a valid email address.", true);
+      return;
+    }
+    if (!message) {
+      showToast(supportToast, "Please describe what you need help with.", true);
+      return;
+    }
+
+    const ticketId = "#SUP-" + Math.floor(1000 + Math.random() * 9000);
+    const tickets = loadSupportTickets();
+    tickets.unshift({
+      id: ticketId,
+      name: name,
+      email: email,
+      message: message,
+      date: new Date().toISOString(),
+      status: "Active & Sent to Support"
     });
-  }
-
-  const supportModal = document.getElementById("supportModal");
-  const supportFabBtn = document.getElementById("supportFabBtn");
-  const supportCloseBtn = document.getElementById("supportCloseBtn");
-  const supportForm = document.getElementById("supportForm");
-  const supportToast = document.getElementById("supportToast");
-
-  async function syncSupportTicketsFromBackend(){
-    if (!currentUser || !currentUser.email) return;
-    try {
-      const res = await safeFetchJson(`/api/support?email=${encodeURIComponent(currentUser.email)}`);
-      if (res && res.success && Array.isArray(res.tickets) && res.tickets.length > 0){
-        const local = loadSupportTickets();
-        const map = new Map();
-        res.tickets.forEach(t => map.set(t.id || t.ticketId, t));
-        local.forEach(t => {
-          const tid = t.id || t.ticketId;
-          if (tid && !map.has(tid)) map.set(tid, t);
-        });
-        const merged = Array.from(map.values()).sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
-        saveSupportTickets(merged);
-        renderSupportTickets();
-      }
-    } catch (e){
-      // Handled silently: local storage remains intact if backend is offline or static
-    }
-  }
-
-  function openSupport(){
-    if (currentUser){
-      const nameInput = document.getElementById("supportName");
-      const emailInput = document.getElementById("supportEmail");
-      if (nameInput) nameInput.value = currentUser.name || "";
-      if (emailInput) emailInput.value = currentUser.email || "";
-      syncSupportTicketsFromBackend();
-    }
+    saveSupportTickets(tickets);
     renderSupportTickets();
-    supportModal.classList.add("active");
-  }
-  function closeSupport(){ supportModal.classList.remove("active"); }
 
-  if (supportFabBtn) supportFabBtn.addEventListener("click", openSupport);
-  if (supportCloseBtn) supportCloseBtn.addEventListener("click", closeSupport);
-  if (supportModal) supportModal.addEventListener("click", (e) => { if (e.target === supportModal) closeSupport(); });
-
-  const supportTicketsListEl = document.getElementById("supportTicketsList");
-  if (supportTicketsListEl) {
-    supportTicketsListEl.addEventListener("click", (e) => {
-      const btn = e.target.closest(".support-delete-btn");
-      if (btn) {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        deleteSupportTicket(id);
-      }
-    });
-  }
-
-  if (supportForm){
-    supportForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const name = document.getElementById("supportName").value.trim();
-      const email = normalizeEmail(document.getElementById("supportEmail").value);
-      const message = document.getElementById("supportMessage").value.trim();
-
-      if (!isValidEmail(email)){
-        showToast(supportToast, "Please enter a valid email address.", true);
-        return;
-      }
-      if (!message){
-        showToast(supportToast, "Please describe what you need help with.", true);
-        return;
-      }
-
-      const ticketId = "#SUP-" + Math.floor(1000 + Math.random() * 9000);
-      const tickets = loadSupportTickets();
-      tickets.unshift({
-        id: ticketId,
+    safeFetchJson("/api/support", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticketId: ticketId,
         name: name,
         email: email,
-        message: message,
-        date: new Date().toISOString(),
-        status: "Active & Sent to Support"
-      });
-      saveSupportTickets(tickets);
-      renderSupportTickets();
-
-      safeFetchJson("/api/support", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ticketId: ticketId,
-          name: name,
-          email: email,
-          message: message
-        })
+        message: message
       })
+    })
       .then(data => {
         if (data && data.success) {
           console.log("Support message sent via backend API");
@@ -6971,289 +6971,289 @@
       })
       .catch(err => console.error("Support message backend FAILED:", err));
 
-      showToast(supportToast, `Support session ${ticketId} created! Notification sent to support team.`, false);
-      setTimeout(() => {
-        supportForm.reset();
-        closeSupport();
-      }, 1600);
-    });
+    showToast(supportToast, `Support session ${ticketId} created! Notification sent to support team.`, false);
+    setTimeout(() => {
+      supportForm.reset();
+      closeSupport();
+    }, 1600);
+  });
+}
+
+renderSupportTickets();
+
+// ---- ATS Score Display Controller (clean, non-video) ----
+let currentScoreAnim = null;
+function renderATSScore(finalScore, color, verdictText) {
+  if (currentScoreAnim) {
+    clearInterval(currentScoreAnim);
+    currentScoreAnim = null;
   }
 
-  renderSupportTickets();
+  const duration = 900; // total animation time in ms
+  const steps = 30;
+  const intervalTime = duration / steps;
 
-  // ---- ATS Score Display Controller (clean, non-video) ----
-  let currentScoreAnim = null;
-  function renderATSScore(finalScore, color, verdictText){
-    if (currentScoreAnim){
+  const numberEl = document.getElementById("atsNumber");
+  const verdictEl = document.getElementById("atsVerdict");
+  const fillCircle = document.getElementById("gaugeFillCircle");
+
+  if (verdictEl) {
+    verdictEl.textContent = verdictText || "Analysis Complete";
+    verdictEl.style.color = color || "var(--accent-2)";
+  }
+  if (fillCircle) fillCircle.style.stroke = color || "var(--accent)";
+
+  const totalDash = 427; // stroke-dasharray (r=68)
+  let currentStep = 0;
+
+  currentScoreAnim = setInterval(() => {
+    currentStep++;
+    const progress = Math.min(1, currentStep / steps);
+
+    // Smooth ease-out cubic
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+    const currentScore = Math.round(easedProgress * finalScore);
+
+    if (numberEl) numberEl.textContent = currentScore;
+
+    const fillOffset = totalDash - (totalDash * (easedProgress * finalScore / 100));
+    if (fillCircle) fillCircle.style.strokeDashoffset = fillOffset;
+
+    if (progress >= 1) {
       clearInterval(currentScoreAnim);
       currentScoreAnim = null;
     }
+  }, intervalTime);
+}
 
-    const duration = 900; // total animation time in ms
-    const steps = 30;
-    const intervalTime = duration / steps;
 
-    const numberEl = document.getElementById("atsNumber");
-    const verdictEl = document.getElementById("atsVerdict");
-    const fillCircle = document.getElementById("gaugeFillCircle");
 
-    if (verdictEl){
-      verdictEl.textContent = verdictText || "Analysis Complete";
-      verdictEl.style.color = color || "var(--accent-2)";
-    }
-    if (fillCircle) fillCircle.style.stroke = color || "var(--accent)";
 
-    const totalDash = 427; // stroke-dasharray (r=68)
-    let currentStep = 0;
 
-    currentScoreAnim = setInterval(() => {
-      currentStep++;
-      const progress = Math.min(1, currentStep / steps);
-
-      // Smooth ease-out cubic
-      const easedProgress = 1 - Math.pow(1 - progress, 3);
-      const currentScore = Math.round(easedProgress * finalScore);
-
-      if (numberEl) numberEl.textContent = currentScore;
-
-      const fillOffset = totalDash - (totalDash * (easedProgress * finalScore / 100));
-      if (fillCircle) fillCircle.style.strokeDashoffset = fillOffset;
-
-      if (progress >= 1){
-        clearInterval(currentScoreAnim);
-        currentScoreAnim = null;
-      }
-    }, intervalTime);
+// Filter transient Google API network drops and aborted connections from console
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const msg = (reason && (reason.message || reason.toString())) || "";
+  if (
+    msg.includes("ERR_CONNECTION_CLOSED") ||
+    msg.includes("Failed to fetch") ||
+    msg.includes("googleapis.com") ||
+    msg.includes("measurement ID") ||
+    (reason && (reason.code === "auth/network-request-failed" || reason.code === "auth/internal-error"))
+  ) {
+    event.preventDefault();
+    console.debug("Filtered background network connection notice:", msg);
   }
+});
+
+sessionRestorePromise = restoreSession();
+
+function setupFirebaseAuthStateListener() {
+  const auth = getFirebaseAuth();
+  const helpers = getFirebaseAuthHelpers();
+  if (auth && helpers && helpers.onAuthStateChanged) {
+    try {
+      helpers.onAuthStateChanged(auth, async (fbUser) => {
+        if (fbUser && fbUser.email && !currentUser) {
+          const email = normalizeEmail(fbUser.email);
+          const token = getAuthToken();
+          if (token) {
+            await restoreSession();
+          } else {
+            try {
+              const data = await safeFetchJson("/api/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: fbUser.displayName || email.split("@")[0],
+                  email: email
+                })
+              });
+              if (data && data.success && data.token) {
+                setAuthToken(data.token);
+                setLoggedInUser({
+                  id: data.user._id || data.user.id || data.user.userId,
+                  _id: data.user._id || data.user.id,
+                  userId: data.user.userId || data.user._id,
+                  name: data.user.name || fbUser.displayName,
+                  email: data.user.email || email,
+                  provider: data.user.provider || "google",
+                  photo: data.user.photo || fbUser.photoURL || "",
+                  token: data.token
+                });
+                fetchHistoryFromBackend();
+              }
+            } catch (e) { }
+          }
+        }
+      }, (authNotice) => {
+        console.debug("Firebase Auth background state notice:", authNotice?.message || authNotice);
+      });
+    } catch (e) { }
+  }
+}
+async function checkEmailVerificationURLParams() {
+  await checkForVerifyLink();
+}
+
+let firebaseInitDone = false;
+function initFirebaseIntegration() {
+  if (firebaseInitDone) return;
+  const auth = getFirebaseAuth();
+  const helpers = getFirebaseAuthHelpers();
+  if (!auth || !helpers) return;
+  firebaseInitDone = true;
+  setupFirebaseAuthStateListener();
+  checkFirebaseRedirectResult();
+}
+
+if (window.firebaseAuth && window.firebaseAuthHelpers) {
+  initFirebaseIntegration();
+} else {
+  window.addEventListener("firebase-ready", () => {
+    initFirebaseIntegration();
+  }, { once: true });
+
+  let fbAttempts = 0;
+  const fbCheckTimer = setInterval(() => {
+    fbAttempts++;
+    if (window.firebaseAuth && window.firebaseAuthHelpers) {
+      clearInterval(fbCheckTimer);
+      initFirebaseIntegration();
+    } else if (fbAttempts > 50) {
+      clearInterval(fbCheckTimer);
+    }
+  }, 100);
+}
+
+checkEmailVerificationURLParams();
+
+// ---- DEBUG HELPER — list every signed-up account on this browser ----
+//
+// Accounts live in localStorage under "ara_accounts_v1" — there's no
+// real server/database, so this is the only place to see who's signed
+// up (and only on THIS browser/device; it won't show accounts created
+// on a different computer or browser).
+//
+// HOW TO USE: open the site, DevTools (F12) → Console tab, run:
+//     debugListUsers()
+// It prints a table with each account's name, email, verification
+// status, and sign-up method — passwords are deliberately left out of
+// the printed table (they're plaintext in localStorage, which is a
+// known limitation of this front-end-only setup, but there's no reason
+// to also echo them to the console).
+window.debugListUsers = function () {
+  const list = Object.keys(accounts).map(email => {
+    const a = accounts[email];
+    return {
+      email,
+      name: a.name || "(none)",
+      provider: a.provider,
+      verified: a.provider === "google" ? "n/a (google)" : !!a.verified,
+      hasPendingVerifyToken: !!a.verifyToken,
+      hasPendingResetToken: !!a.resetToken
+    };
+  });
+  console.log(`${list.length} account(s) found in localStorage on this browser:`);
+  console.table(list);
+  return list;
+};
+checkForVerifyLink();
+checkForResetLink();
+checkFirebaseRedirectResult();
 
 
+// ---- New Floating Pill Nav Bar Menu & Action Controls ----
+const menuBtn = document.getElementById("menuBtn");
+const navMenuDropdown = document.getElementById("navMenuDropdown");
+const menuWrap = document.getElementById("menuWrap");
+const navActionBtn = document.getElementById("navActionBtn");
 
+if (menuBtn && navMenuDropdown) {
+  menuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    navMenuDropdown.classList.toggle("open");
+  });
 
-
-  // Filter transient Google API network drops and aborted connections from console
-  window.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason;
-    const msg = (reason && (reason.message || reason.toString())) || "";
-    if (
-      msg.includes("ERR_CONNECTION_CLOSED") ||
-      msg.includes("Failed to fetch") ||
-      msg.includes("googleapis.com") ||
-      msg.includes("measurement ID") ||
-      (reason && (reason.code === "auth/network-request-failed" || reason.code === "auth/internal-error"))
-    ) {
-      event.preventDefault();
-      console.debug("Filtered background network connection notice:", msg);
+  document.addEventListener("click", (e) => {
+    if (menuWrap && !menuWrap.contains(e.target)) {
+      navMenuDropdown.classList.remove("open");
     }
   });
 
-  sessionRestorePromise = restoreSession();
-
-  function setupFirebaseAuthStateListener() {
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (auth && helpers && helpers.onAuthStateChanged) {
-      try {
-        helpers.onAuthStateChanged(auth, async (fbUser) => {
-          if (fbUser && fbUser.email && !currentUser) {
-            const email = normalizeEmail(fbUser.email);
-            const token = getAuthToken();
-            if (token) {
-              await restoreSession();
-            } else {
-              try {
-                const data = await safeFetchJson("/api/auth/google", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    name: fbUser.displayName || email.split("@")[0],
-                    email: email
-                  })
-                });
-                if (data && data.success && data.token) {
-                  setAuthToken(data.token);
-                  setLoggedInUser({
-                    id: data.user._id || data.user.id || data.user.userId,
-                    _id: data.user._id || data.user.id,
-                    userId: data.user.userId || data.user._id,
-                    name: data.user.name || fbUser.displayName,
-                    email: data.user.email || email,
-                    provider: data.user.provider || "google",
-                    photo: data.user.photo || fbUser.photoURL || "",
-                    token: data.token
-                  });
-                  fetchHistoryFromBackend();
-                }
-              } catch (e) {}
-            }
-          }
-        }, (authNotice) => {
-          console.debug("Firebase Auth background state notice:", authNotice?.message || authNotice);
-        });
-      } catch (e) {}
-    }
-  }
-  async function checkEmailVerificationURLParams() {
-    await checkForVerifyLink();
-  }
-
-  let firebaseInitDone = false;
-  function initFirebaseIntegration() {
-    if (firebaseInitDone) return;
-    const auth = getFirebaseAuth();
-    const helpers = getFirebaseAuthHelpers();
-    if (!auth || !helpers) return;
-    firebaseInitDone = true;
-    setupFirebaseAuthStateListener();
-    checkFirebaseRedirectResult();
-  }
-
-  if (window.firebaseAuth && window.firebaseAuthHelpers) {
-    initFirebaseIntegration();
-  } else {
-    window.addEventListener("firebase-ready", () => {
-      initFirebaseIntegration();
-    }, { once: true });
-
-    let fbAttempts = 0;
-    const fbCheckTimer = setInterval(() => {
-      fbAttempts++;
-      if (window.firebaseAuth && window.firebaseAuthHelpers) {
-        clearInterval(fbCheckTimer);
-        initFirebaseIntegration();
-      } else if (fbAttempts > 50) {
-        clearInterval(fbCheckTimer);
-      }
-    }, 100);
-  }
-
-  checkEmailVerificationURLParams();
-
-  // ---- DEBUG HELPER — list every signed-up account on this browser ----
-  //
-  // Accounts live in localStorage under "ara_accounts_v1" — there's no
-  // real server/database, so this is the only place to see who's signed
-  // up (and only on THIS browser/device; it won't show accounts created
-  // on a different computer or browser).
-  //
-  // HOW TO USE: open the site, DevTools (F12) → Console tab, run:
-  //     debugListUsers()
-  // It prints a table with each account's name, email, verification
-  // status, and sign-up method — passwords are deliberately left out of
-  // the printed table (they're plaintext in localStorage, which is a
-  // known limitation of this front-end-only setup, but there's no reason
-  // to also echo them to the console).
-  window.debugListUsers = function(){
-    const list = Object.keys(accounts).map(email => {
-      const a = accounts[email];
-      return {
-        email,
-        name: a.name || "(none)",
-        provider: a.provider,
-        verified: a.provider === "google" ? "n/a (google)" : !!a.verified,
-        hasPendingVerifyToken: !!a.verifyToken,
-        hasPendingResetToken: !!a.resetToken
-      };
+  const menuItems = navMenuDropdown.querySelectorAll(".menu-item");
+  menuItems.forEach(item => {
+    item.addEventListener("click", () => {
+      navMenuDropdown.classList.remove("open");
     });
-    console.log(`${list.length} account(s) found in localStorage on this browser:`);
-    console.table(list);
-    return list;
-  };
-  checkForVerifyLink();
-  checkForResetLink();
-  checkFirebaseRedirectResult();
+  });
+}
 
+const navSignInBtn = document.getElementById("navSignInBtn");
+if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
 
-  // ---- New Floating Pill Nav Bar Menu & Action Controls ----
-  const menuBtn = document.getElementById("menuBtn");
+async function goHome(e) {
+  if (e && typeof e.preventDefault === "function") {
+    e.preventDefault();
+  }
+  if (typeof closeProfilePage === "function") closeProfilePage();
+  if (typeof closeHistory === "function") closeHistory();
+  if (typeof closeAuth === "function") closeAuth();
+  if (typeof closeSupport === "function") closeSupport();
+  const profileDropdown = document.getElementById("profileDropdown");
+  if (profileDropdown) profileDropdown.classList.remove("open");
   const navMenuDropdown = document.getElementById("navMenuDropdown");
-  const menuWrap = document.getElementById("menuWrap");
-  const navActionBtn = document.getElementById("navActionBtn");
+  if (navMenuDropdown) navMenuDropdown.classList.remove("open");
 
-  if (menuBtn && navMenuDropdown) {
-    menuBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      navMenuDropdown.classList.toggle("open");
-    });
-
-    document.addEventListener("click", (e) => {
-      if (menuWrap && !menuWrap.contains(e.target)) {
-        navMenuDropdown.classList.remove("open");
-      }
-    });
-
-    const menuItems = navMenuDropdown.querySelectorAll(".menu-item");
-    menuItems.forEach(item => {
-      item.addEventListener("click", () => {
-        navMenuDropdown.classList.remove("open");
-      });
-    });
+  // Reset analysis & view state to return to clean upload page
+  if (typeof resetAnalysis === "function") {
+    resetAnalysis();
   }
 
-  const navSignInBtn = document.getElementById("navSignInBtn");
-  if (navSignInBtn) navSignInBtn.addEventListener("click", () => openAuth("signup"));
-
-  async function goHome(e) {
-    if (e && typeof e.preventDefault === "function") {
-      e.preventDefault();
+  // Sync user state & history with backend when returning Home
+  if (getAuthToken()) {
+    try {
+      if (typeof restoreSession === "function") await restoreSession();
+      if (typeof fetchHistoryFromBackend === "function") await fetchHistoryFromBackend();
+    } catch (err) {
+      console.warn("Backend sync notice on Home navigation:", err);
     }
-    if (typeof closeProfilePage === "function") closeProfilePage();
-    if (typeof closeHistory === "function") closeHistory();
-    if (typeof closeAuth === "function") closeAuth();
-    if (typeof closeSupport === "function") closeSupport();
-    const profileDropdown = document.getElementById("profileDropdown");
-    if (profileDropdown) profileDropdown.classList.remove("open");
-    const navMenuDropdown = document.getElementById("navMenuDropdown");
-    if (navMenuDropdown) navMenuDropdown.classList.remove("open");
+  }
 
-    // Reset analysis & view state to return to clean upload page
-    if (typeof resetAnalysis === "function") {
-      resetAnalysis();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+const navHomeBtnRef = document.getElementById("navHomeBtn");
+if (navHomeBtnRef) navHomeBtnRef.addEventListener("click", goHome);
+
+const userHomeDropdownBtn = document.getElementById("userHomeDropdownBtn");
+if (userHomeDropdownBtn) userHomeDropdownBtn.addEventListener("click", goHome);
+
+const navBrandLogoRef = document.getElementById("navBrandLogo");
+if (navBrandLogoRef) {
+  navBrandLogoRef.addEventListener("click", goHome);
+}
+
+if (navActionBtn) {
+  navActionBtn.addEventListener("click", () => {
+    const fileInput = document.getElementById("fileInput");
+    if (fileInput) fileInput.click();
+    const dropzone = document.getElementById("dropzone");
+    if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
+  });
+}
+
+const footerHistoryLink = document.getElementById("footerHistoryLink");
+if (footerHistoryLink) {
+  footerHistoryLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    const historyBtnRef = document.getElementById("historyBtn");
+    if (currentUser && historyBtnRef) {
+      historyBtnRef.click();
+    } else {
+      const navLoginBtnRef = document.getElementById("navLoginBtn");
+      if (navLoginBtnRef) navLoginBtnRef.click();
     }
-
-    // Sync user state & history with backend when returning Home
-    if (getAuthToken()) {
-      try {
-        if (typeof restoreSession === "function") await restoreSession();
-        if (typeof fetchHistoryFromBackend === "function") await fetchHistoryFromBackend();
-      } catch (err) {
-        console.warn("Backend sync notice on Home navigation:", err);
-      }
-    }
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  const navHomeBtnRef = document.getElementById("navHomeBtn");
-  if (navHomeBtnRef) navHomeBtnRef.addEventListener("click", goHome);
-
-  const userHomeDropdownBtn = document.getElementById("userHomeDropdownBtn");
-  if (userHomeDropdownBtn) userHomeDropdownBtn.addEventListener("click", goHome);
-
-  const navBrandLogoRef = document.getElementById("navBrandLogo");
-  if (navBrandLogoRef) {
-    navBrandLogoRef.addEventListener("click", goHome);
-  }
-
-  if (navActionBtn) {
-    navActionBtn.addEventListener("click", () => {
-      const fileInput = document.getElementById("fileInput");
-      if (fileInput) fileInput.click();
-      const dropzone = document.getElementById("dropzone");
-      if (dropzone) dropzone.scrollIntoView({ behavior: "smooth" });
-    });
-  }
-
-  const footerHistoryLink = document.getElementById("footerHistoryLink");
-  if (footerHistoryLink) {
-    footerHistoryLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      const historyBtnRef = document.getElementById("historyBtn");
-      if (currentUser && historyBtnRef) {
-        historyBtnRef.click();
-      } else {
-        const navLoginBtnRef = document.getElementById("navLoginBtn");
-        if (navLoginBtnRef) navLoginBtnRef.click();
-      }
-    });
-  }
+  });
+}
 

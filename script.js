@@ -1586,9 +1586,36 @@ function renderKwColumn(container, items) {
 }
 
 // =========================================================================
-// AI-POWERED RECOMMENDATIONS ENGINE (OpenRouter Free AI Models)
-// Upgrades Target Role & Skill Recommendations and ATS Improvement Recommendations
+// AI-FIRST RECOMMENDATIONS ENGINE (OpenRouter Free AI Models)
+// Independent States for:
+// 1. Target Role & Skill Recommendations (mode: "normal")
+// 2. ATS Improvement Recommendations (mode: "ats")
+// States: 'idle' | 'loading' | 'success' | 'fallback'
 // =========================================================================
+
+const recsSectionState = {
+  ats: "idle",
+  normal: "idle"
+};
+
+const recsDataStore = {
+  ats: {
+    ruleBasedRecs: [],
+    aiData: null,
+    errorMessage: "",
+    resumeHash: "",
+    lastContext: null
+  },
+  normal: {
+    ruleBasedRecs: [],
+    aiData: null,
+    errorMessage: "",
+    resumeHash: "",
+    lastContext: null
+  }
+};
+
+let currentAIRequestId = 0;
 
 function updateAIRecsBadge(state, details) {
   const badge = document.getElementById("aiRecsBadge");
@@ -1611,20 +1638,44 @@ function updateAIRecsBadge(state, details) {
   }
 }
 
-function renderRuleBasedRecs(recs, mode) {
-  updateAIRecsBadge("normal");
-  const loadingEl = document.getElementById("aiRecsLoading");
-  if (loadingEl) loadingEl.style.display = "none";
-  const bannerEl = document.getElementById("aiSummaryBanner");
-  if (bannerEl) bannerEl.style.display = "none";
-  const fallbackBanner = document.getElementById("aiFallbackBanner");
-  if (fallbackBanner) fallbackBanner.style.display = "none";
-  const expContainer = document.getElementById("aiExpandedContainer");
-  if (expContainer) {
-    expContainer.style.display = "none";
-    expContainer.innerHTML = "";
-  }
+/**
+ * Validates AI response structure strictly before declaring success.
+ * Protects against empty arrays, malformed JSON, missing fields, or empty strings.
+ */
+function validateAIResponse(mode, data) {
+  if (!data || typeof data !== "object") return false;
+  if (!data.success) return false;
+  if (!Array.isArray(data.recommendations) || data.recommendations.length === 0) return false;
 
+  if (mode === "normal") {
+    // Target Role & Skill recommendations validation
+    const validItems = data.recommendations.filter(r => {
+      if (!r || typeof r !== "object") return false;
+      const skillName = (r.skill || r.skillName || "").toString().trim();
+      const whyMatters = (r.whyMatters || r.whyItMatters || "").toString().trim();
+      const howToImprove = (r.howToImprove || r.improvementTip || "").toString().trim();
+      const project = (r.suggestedProject || "").toString().trim();
+      return skillName.length > 0 && (whyMatters.length > 0 || howToImprove.length > 0 || project.length > 0);
+    });
+    return validItems.length > 0;
+  } else {
+    // ATS Improvement recommendations validation
+    const validItems = data.recommendations.filter(r => {
+      if (!r || typeof r !== "object") return false;
+      const issueTitle = (r.issueTitle || "").toString().trim();
+      const desc = (r.description || r.issueDescription || "").toString().trim();
+      const whyItMatters = (r.whyItMatters || r.whyMatters || "").toString().trim();
+      const instructions = (r.improvementInstructions || r.exactInstructions || "").toString().trim();
+      return issueTitle.length > 0 && (desc.length > 0 || whyItMatters.length > 0 || instructions.length > 0);
+    });
+    return validItems.length > 0;
+  }
+}
+
+/**
+ * Renders rule-based recommendations into #execIssuesList and #execFixesList
+ */
+function populateRuleBasedLists(recs) {
   const execIssuesEl = document.getElementById("execIssuesList");
   const execFixesEl = document.getElementById("execFixesList");
   if (!execIssuesEl || !execFixesEl) return;
@@ -1660,7 +1711,7 @@ function renderRuleBasedRecs(recs, mode) {
       badgeFixSpan.className = `exec-badge fix-${r.type || "format"}`;
       badgeFixSpan.textContent = `${prioTag}: ${r.badge || "Fix"}`;
       const textFixSpan = document.createElement("span");
-      textFixSpan.textContent = r.fix || "";
+      textFixSpan.innerHTML = r.fix || "";
       divFixWrap.appendChild(badgeFixSpan);
       divFixWrap.appendChild(document.createTextNode(" "));
       divFixWrap.appendChild(textFixSpan);
@@ -1681,336 +1732,396 @@ function renderRuleBasedRecs(recs, mode) {
   }
 }
 
-function applyAIRecommendations(data, context) {
-  const loadingEl = document.getElementById("aiRecsLoading");
-  if (loadingEl) loadingEl.style.display = "none";
-  const fallbackBanner = document.getElementById("aiFallbackBanner");
-  if (fallbackBanner) fallbackBanner.style.display = "none";
-
-  updateAIRecsBadge("ai", { model: data.model });
-
-  // Summary banner
-  const bannerEl = document.getElementById("aiSummaryBanner");
-  const summaryPill = document.getElementById("aiSummaryPill");
-  const summaryModel = document.getElementById("aiSummaryModel");
-  const summaryText = document.getElementById("aiSummaryText");
-  if (bannerEl && summaryText) {
-    bannerEl.style.display = "block";
-    if (summaryPill) {
-      summaryPill.textContent = context.mode === "ats" ? "✨ AI ATS Assessment" : "✨ AI Role Assessment";
-    }
-    if (summaryModel) {
-      const rawModel = data.model || "Free AI Model";
-      summaryModel.textContent = rawModel.split("/").pop().replace(":free", "") || "Free AI";
-    }
-    summaryText.textContent = data.summaryAssessment || (context.mode === "ats"
-      ? "AI evaluation of ATS readability, keyword distribution, and impact strength."
-      : "AI evaluation of target role competencies, skill gaps, and project roadmaps.");
-  }
-
-  const execIssuesEl = document.getElementById("execIssuesList");
-  const execFixesEl = document.getElementById("execFixesList");
-  if (!execIssuesEl || !execFixesEl) return;
-  execIssuesEl.innerHTML = "";
-  execFixesEl.innerHTML = "";
-
+/**
+ * Renders AI-generated cards into the expanded container
+ */
+function renderAICards(container, mode, data) {
+  container.innerHTML = "";
   const recs = Array.isArray(data.recommendations) ? data.recommendations : [];
 
-  if (context.mode === "normal") {
-    // Role & Skill recommendations
-    recs.slice(0, 8).forEach((r, idx) => {
-      const prioTag = `Prio ${idx + 1}`;
-      const liIssue = document.createElement("li");
-      const iconSpan = document.createElement("span");
-      iconSpan.className = "exec-icon";
-      iconSpan.textContent = "✕";
-      const divWrap = document.createElement("div");
-      const badgeSpan = document.createElement("span");
-      badgeSpan.className = "exec-badge " + ((r.priority || "").toLowerCase() === "high" ? "critical" : "keyword");
-      badgeSpan.textContent = `${prioTag} • ${r.priority || "High"}: ${r.skill || "Skill"}`;
-      const textSpan = document.createElement("span");
-      textSpan.textContent = r.whyMatters || "Important competency for this target role.";
-      divWrap.appendChild(badgeSpan);
-      divWrap.appendChild(document.createTextNode(" "));
-      divWrap.appendChild(textSpan);
-      liIssue.appendChild(iconSpan);
-      liIssue.appendChild(divWrap);
-      execIssuesEl.appendChild(liIssue);
+  if (mode === "normal") {
+    // Target Role & Skill Recommendations
+    recs.forEach(r => {
+      const card = document.createElement("div");
+      card.className = "ai-rec-card";
 
-      const liFix = document.createElement("li");
-      const iconFixSpan = document.createElement("span");
-      iconFixSpan.className = "exec-icon";
-      iconFixSpan.textContent = "✓";
-      const divFixWrap = document.createElement("div");
-      const badgeFixSpan = document.createElement("span");
-      badgeFixSpan.className = "exec-badge fix-impact";
-      badgeFixSpan.textContent = `Action: ${r.category || "Skill"}`;
-      const textFixSpan = document.createElement("span");
-      textFixSpan.textContent = r.howToImprove || r.suggestedProject || "Develop hands-on experience and feature in resume.";
-      divFixWrap.appendChild(badgeFixSpan);
-      divFixWrap.appendChild(document.createTextNode(" "));
-      divFixWrap.appendChild(textFixSpan);
-      liFix.appendChild(iconFixSpan);
-      liFix.appendChild(divFixWrap);
-      execFixesEl.appendChild(liFix);
+      const head = document.createElement("div");
+      head.className = "ai-rec-card-head";
+
+      const title = document.createElement("h4");
+      title.className = "ai-rec-card-title";
+      title.textContent = r.skill || r.skillName || "Target Skill";
+
+      const badgeGroup = document.createElement("div");
+      badgeGroup.className = "ai-rec-badge-group";
+
+      const prioBadge = document.createElement("span");
+      const prioLower = (r.priority || "Medium").toLowerCase();
+      prioBadge.className = `ai-prio-badge ${prioLower}`;
+      prioBadge.textContent = `${r.priority || "Medium"} Priority`;
+
+      const catBadge = document.createElement("span");
+      catBadge.className = "exec-badge format";
+      catBadge.textContent = r.category || "Skill";
+
+      badgeGroup.appendChild(prioBadge);
+      badgeGroup.appendChild(catBadge);
+      head.appendChild(title);
+      head.appendChild(badgeGroup);
+      card.appendChild(head);
+
+      const why = r.whyMatters || r.whyItMatters;
+      if (why) {
+        const whyP = document.createElement("p");
+        whyP.className = "ai-rec-desc";
+        const whyLbl = document.createElement("strong");
+        whyLbl.textContent = "Why it matters: ";
+        whyP.appendChild(whyLbl);
+        whyP.appendChild(document.createTextNode(why));
+        card.appendChild(whyP);
+      }
+
+      const how = r.howToImprove || r.improvementTip;
+      if (how) {
+        const howP = document.createElement("p");
+        howP.className = "ai-rec-desc";
+        const howLbl = document.createElement("strong");
+        howLbl.textContent = "How to develop: ";
+        howP.appendChild(howLbl);
+        howP.appendChild(document.createTextNode(how));
+        card.appendChild(howP);
+      }
+
+      if (r.suggestedProject) {
+        const projBox = document.createElement("div");
+        projBox.className = "ai-project-box";
+        const projLbl = document.createElement("strong");
+        projLbl.textContent = "Suggested Project: ";
+        projBox.appendChild(projLbl);
+        projBox.appendChild(document.createTextNode(r.suggestedProject));
+        card.appendChild(projBox);
+      }
+
+      if (r.learningRoadmap) {
+        const roadBox = document.createElement("div");
+        roadBox.className = "ai-roadmap-box";
+        const roadLbl = document.createElement("strong");
+        roadLbl.textContent = "Learning Roadmap: ";
+        roadBox.appendChild(roadLbl);
+        roadBox.appendChild(document.createTextNode(r.learningRoadmap));
+        card.appendChild(roadBox);
+      }
+
+      container.appendChild(card);
     });
   } else {
-    // ATS Improvement recommendations
-    recs.slice(0, 8).forEach((r, idx) => {
-      const prioTag = `Prio ${idx + 1}`;
-      const liIssue = document.createElement("li");
-      const iconSpan = document.createElement("span");
-      iconSpan.className = "exec-icon";
-      iconSpan.textContent = "✕";
-      const divWrap = document.createElement("div");
-      const badgeSpan = document.createElement("span");
-      const sev = (r.severity || "Medium").toLowerCase();
-      badgeSpan.className = "exec-badge " + (sev === "critical" || sev === "high" ? "critical" : "format");
-      badgeSpan.textContent = `${prioTag} • ${r.severity || "Medium"}: ${r.issueTitle || "Issue"}`;
-      const textSpan = document.createElement("span");
-      textSpan.textContent = r.whyItMatters || r.description || "Identified ATS parsing or readability improvement.";
-      divWrap.appendChild(badgeSpan);
-      divWrap.appendChild(document.createTextNode(" "));
-      divWrap.appendChild(textSpan);
-      liIssue.appendChild(iconSpan);
-      liIssue.appendChild(divWrap);
-      execIssuesEl.appendChild(liIssue);
+    // ATS Improvement Recommendations
+    recs.forEach(r => {
+      const card = document.createElement("div");
+      card.className = "ai-rec-card";
 
-      const liFix = document.createElement("li");
-      const iconFixSpan = document.createElement("span");
-      iconFixSpan.className = "exec-icon";
-      iconFixSpan.textContent = "✓";
-      const divFixWrap = document.createElement("div");
-      const badgeFixSpan = document.createElement("span");
-      badgeFixSpan.className = "exec-badge fix-format";
-      badgeFixSpan.textContent = `Fix: ${r.severity || "Medium"}`;
-      const textFixSpan = document.createElement("span");
-      textFixSpan.textContent = r.improvementInstructions || r.expectedBenefit || "Implement the recommended fix.";
-      divFixWrap.appendChild(badgeFixSpan);
-      divFixWrap.appendChild(document.createTextNode(" "));
-      divFixWrap.appendChild(textFixSpan);
-      liFix.appendChild(iconFixSpan);
-      liFix.appendChild(divFixWrap);
-      execFixesEl.appendChild(liFix);
+      const head = document.createElement("div");
+      head.className = "ai-rec-card-head";
+
+      const title = document.createElement("h4");
+      title.className = "ai-rec-card-title";
+      title.textContent = r.issueTitle || "ATS Improvement Item";
+
+      const prioBadge = document.createElement("span");
+      const sevLower = (r.severity || "Medium").toLowerCase();
+      prioBadge.className = `ai-prio-badge ${sevLower}`;
+      prioBadge.textContent = `${r.severity || "Medium"} Severity`;
+
+      head.appendChild(title);
+      head.appendChild(prioBadge);
+      card.appendChild(head);
+
+      const desc = r.description || r.issueDescription;
+      if (desc) {
+        const descP = document.createElement("p");
+        descP.className = "ai-rec-desc";
+        descP.appendChild(document.createTextNode(desc));
+        card.appendChild(descP);
+      }
+
+      const why = r.whyItMatters || r.whyMatters;
+      if (why) {
+        const whyP = document.createElement("p");
+        whyP.className = "ai-rec-desc";
+        const whyLbl = document.createElement("strong");
+        whyLbl.textContent = "Why it matters: ";
+        whyP.appendChild(whyLbl);
+        whyP.appendChild(document.createTextNode(why));
+        card.appendChild(whyP);
+      }
+
+      const instructions = r.improvementInstructions || r.exactInstructions;
+      if (instructions) {
+        const instP = document.createElement("p");
+        instP.className = "ai-rec-desc";
+        const instLbl = document.createElement("strong");
+        instLbl.textContent = "Exact improvement instruction: ";
+        instP.appendChild(instLbl);
+        instP.appendChild(document.createTextNode(instructions));
+        card.appendChild(instP);
+      }
+
+      const beforeSnippet = (r.beforeAfterExample && r.beforeAfterExample.before) || r.beforeExample;
+      const afterSnippet = (r.beforeAfterExample && r.beforeAfterExample.after) || r.afterExample;
+
+      if (beforeSnippet && afterSnippet) {
+        const grid = document.createElement("div");
+        grid.className = "ai-before-after-grid";
+
+        const beforeBox = document.createElement("div");
+        beforeBox.className = "ai-ba-box before";
+        const bLabel = document.createElement("span");
+        bLabel.className = "ai-ba-label";
+        bLabel.textContent = "Before (Current Bullet / Text)";
+        beforeBox.appendChild(bLabel);
+        beforeBox.appendChild(document.createTextNode(beforeSnippet));
+
+        const afterBox = document.createElement("div");
+        afterBox.className = "ai-ba-box after";
+        const aLabel = document.createElement("span");
+        aLabel.className = "ai-ba-label";
+        aLabel.textContent = "After (AI Optimized Example)";
+        afterBox.appendChild(aLabel);
+        afterBox.appendChild(document.createTextNode(afterSnippet));
+
+        grid.appendChild(beforeBox);
+        grid.appendChild(afterBox);
+        card.appendChild(grid);
+      }
+
+      if (r.expectedBenefit) {
+        const benBox = document.createElement("div");
+        benBox.className = "ai-roadmap-box";
+        const benLbl = document.createElement("strong");
+        benLbl.textContent = "Expected Benefit: ";
+        benBox.appendChild(benLbl);
+        benBox.appendChild(document.createTextNode(r.expectedBenefit));
+        card.appendChild(benBox);
+      }
+
+      container.appendChild(card);
     });
   }
+}
 
-  // Expanded Cards Container
-  const expContainer = document.getElementById("aiExpandedContainer");
-  if (expContainer) {
-    expContainer.innerHTML = "";
-    expContainer.style.display = "grid";
+/**
+ * Updates DOM visibility and elements to reflect the current section state.
+ * Implements strict AI-FIRST display (Scenario 1), automatic fallback (Scenario 2),
+ * and clean loading state (Scenario 3).
+ */
+function renderCurrentSectionState(mode) {
+  const currentMode = mode || analysisMode || "ats";
+  const state = recsSectionState[currentMode] || "idle";
+  const store = recsDataStore[currentMode] || { ruleBasedRecs: [], aiData: null, errorMessage: "" };
 
-    if (context.mode === "normal") {
-      recs.forEach(r => {
-        const card = document.createElement("div");
-        card.className = "ai-rec-card";
+  const execSummaryBody = document.getElementById("execSummaryBody");
+  const aiExpandedContainer = document.getElementById("aiExpandedContainer");
+  const aiRecsLoading = document.getElementById("aiRecsLoading");
+  const aiSummaryBanner = document.getElementById("aiSummaryBanner");
+  const aiFallbackBanner = document.getElementById("aiFallbackBanner");
+  const aiFallbackText = document.getElementById("aiFallbackText");
+  const execHeading = document.getElementById("execSummaryHeading");
+  const execColIssues = document.getElementById("execColTitleIssues");
+  const execColFixes = document.getElementById("execColTitleFixes");
 
-        const head = document.createElement("div");
-        head.className = "ai-rec-card-head";
+  // Update card heading
+  if (execHeading) {
+    execHeading.textContent = currentMode === "ats"
+      ? "ATS Improvement Recommendations"
+      : "Target Role & Skill Recommendations";
+  }
 
-        const title = document.createElement("h4");
-        title.className = "ai-rec-card-title";
-        title.textContent = r.skill || "Target Skill";
+  // Update column headers for rule-based container
+  if (execColIssues) {
+    execColIssues.textContent = currentMode === "ats" ? "Top Issues to Fix" : "Target Role & Skill Gaps";
+  }
+  if (execColFixes) {
+    execColFixes.textContent = currentMode === "ats" ? "Quick Fixes" : "Actionable Role Fixes";
+  }
 
-        const badgeGroup = document.createElement("div");
-        badgeGroup.className = "ai-rec-badge-group";
+  if (state === "loading") {
+    // SCENARIO 3: AI ANALYSIS IN PROGRESS
+    // - Display loading animation only
+    // - Completely hide default recommendations (Top Issues to Fix, Quick Fixes)
+    // - Hide previous AI output / banners
+    updateAIRecsBadge("loading");
+    if (aiRecsLoading) {
+      aiRecsLoading.style.display = "flex";
+      const loadingTitle = document.getElementById("aiLoadingTitle");
+      const loadingSub = document.getElementById("aiLoadingSubtitle");
+      if (loadingTitle) {
+        loadingTitle.textContent = currentMode === "ats"
+          ? "Analyzing your resume with Free AI..."
+          : "Analyzing role skills & career roadmap with Free AI...";
+      }
+      if (loadingSub) {
+        loadingSub.textContent = "Querying OpenRouter Free AI model for structured, personalized recommendations...";
+      }
+    }
+    if (execSummaryBody) execSummaryBody.style.display = "none";
+    if (aiSummaryBanner) aiSummaryBanner.style.display = "none";
+    if (aiFallbackBanner) aiFallbackBanner.style.display = "none";
+    if (aiExpandedContainer) {
+      aiExpandedContainer.style.display = "none";
+      aiExpandedContainer.innerHTML = "";
+    }
+  } else if (state === "success" && store.aiData) {
+    // SCENARIO 1: AI MODEL AVAILABLE AND SUCCESSFUL
+    // - Display ONLY AI-generated recommendations
+    // - Completely hide existing JS default recommendations (execSummaryBody)
+    // - Do not display "Top Issues to Fix" or "Quick Fixes"
+    // - Do not mix AI recommendations with default recommendations
+    // - Do not show duplicate recommendations
+    updateAIRecsBadge("ai", { model: store.aiData.modelUsed || store.aiData.model });
+    if (aiRecsLoading) aiRecsLoading.style.display = "none";
+    if (aiFallbackBanner) aiFallbackBanner.style.display = "none";
+    if (execSummaryBody) execSummaryBody.style.display = "none";
 
-        const prioBadge = document.createElement("span");
-        const prioLower = (r.priority || "Medium").toLowerCase();
-        prioBadge.className = `ai-prio-badge ${prioLower}`;
-        prioBadge.textContent = `${r.priority || "Medium"} Priority`;
+    // Summary banner
+    if (aiSummaryBanner) {
+      aiSummaryBanner.style.display = "block";
+      const summaryPill = document.getElementById("aiSummaryPill");
+      const summaryModel = document.getElementById("aiSummaryModel");
+      const summaryText = document.getElementById("aiSummaryText");
+      if (summaryPill) {
+        summaryPill.textContent = currentMode === "ats" ? "✨ AI ATS Assessment" : "✨ AI Role Assessment";
+      }
+      if (summaryModel) {
+        const rawModel = store.aiData.modelUsed || store.aiData.model || "Free AI Model";
+        summaryModel.textContent = rawModel.split("/").pop().replace(":free", "") || "Free AI";
+      }
+      if (summaryText) {
+        summaryText.textContent = store.aiData.summaryAssessment || store.aiData.roleSummary || (currentMode === "ats"
+          ? "AI evaluation of ATS readability, keyword distribution, and impact strength."
+          : "AI evaluation of target role competencies, skill gaps, and project roadmaps.");
+      }
+    }
 
-        const catBadge = document.createElement("span");
-        catBadge.className = "exec-badge format";
-        catBadge.textContent = r.category || "Skill";
+    // AI Cards
+    if (aiExpandedContainer) {
+      renderAICards(aiExpandedContainer, currentMode, store.aiData);
+      aiExpandedContainer.style.display = "grid";
+    }
+  } else if (state === "fallback") {
+    // SCENARIO 2: AI MODEL UNAVAILABLE OR REQUEST FAILED
+    // - Automatically switch to JavaScript-based default recommendations
+    // - Show original default recommendations in execSummaryBody
+    // - For ATS: Top Issues to Fix & Quick Fixes
+    // - For Role: Target Role & Skill Recommendations
+    // - Hide empty AI result containers
+    updateAIRecsBadge("fallback");
+    if (aiRecsLoading) aiRecsLoading.style.display = "none";
+    if (aiSummaryBanner) aiSummaryBanner.style.display = "none";
+    if (aiExpandedContainer) {
+      aiExpandedContainer.style.display = "none";
+      aiExpandedContainer.innerHTML = "";
+    }
 
-        badgeGroup.appendChild(prioBadge);
-        badgeGroup.appendChild(catBadge);
-        head.appendChild(title);
-        head.appendChild(badgeGroup);
-        card.appendChild(head);
+    // Show fallback notice banner
+    if (aiFallbackBanner) {
+      aiFallbackBanner.style.display = "flex";
+      if (aiFallbackText) {
+        aiFallbackText.textContent = store.errorMessage || "Free AI model temporarily unavailable or rate limited. Displaying high-precision rule-based recommendations.";
+      }
+    }
 
-        if (r.whyMatters) {
-          const whyP = document.createElement("p");
-          whyP.className = "ai-rec-desc";
-          const whyLbl = document.createElement("strong");
-          whyLbl.textContent = "Why it matters: ";
-          whyP.appendChild(whyLbl);
-          whyP.appendChild(document.createTextNode(r.whyMatters));
-          card.appendChild(whyP);
-        }
-
-        if (r.howToImprove) {
-          const howP = document.createElement("p");
-          howP.className = "ai-rec-desc";
-          const howLbl = document.createElement("strong");
-          howLbl.textContent = "How to develop: ";
-          howP.appendChild(howLbl);
-          howP.appendChild(document.createTextNode(r.howToImprove));
-          card.appendChild(howP);
-        }
-
-        if (r.suggestedProject) {
-          const projBox = document.createElement("div");
-          projBox.className = "ai-project-box";
-          const projLbl = document.createElement("strong");
-          projLbl.textContent = "Suggested Project: ";
-          projBox.appendChild(projLbl);
-          projBox.appendChild(document.createTextNode(r.suggestedProject));
-          card.appendChild(projBox);
-        }
-
-        if (r.learningRoadmap) {
-          const roadBox = document.createElement("div");
-          roadBox.className = "ai-roadmap-box";
-          const roadLbl = document.createElement("strong");
-          roadLbl.textContent = "Learning Roadmap: ";
-          roadBox.appendChild(roadLbl);
-          roadBox.appendChild(document.createTextNode(r.learningRoadmap));
-          card.appendChild(roadBox);
-        }
-
-        expContainer.appendChild(card);
-      });
-    } else {
-      recs.forEach(r => {
-        const card = document.createElement("div");
-        card.className = "ai-rec-card";
-
-        const head = document.createElement("div");
-        head.className = "ai-rec-card-head";
-
-        const title = document.createElement("h4");
-        title.className = "ai-rec-card-title";
-        title.textContent = r.issueTitle || "ATS Improvement Item";
-
-        const prioBadge = document.createElement("span");
-        const sevLower = (r.severity || "Medium").toLowerCase();
-        prioBadge.className = `ai-prio-badge ${sevLower}`;
-        prioBadge.textContent = `${r.severity || "Medium"} Severity`;
-
-        head.appendChild(title);
-        head.appendChild(prioBadge);
-        card.appendChild(head);
-
-        if (r.description) {
-          const descP = document.createElement("p");
-          descP.className = "ai-rec-desc";
-          descP.appendChild(document.createTextNode(r.description));
-          card.appendChild(descP);
-        }
-
-        if (r.whyItMatters) {
-          const whyP = document.createElement("p");
-          whyP.className = "ai-rec-desc";
-          const whyLbl = document.createElement("strong");
-          whyLbl.textContent = "Why it matters: ";
-          whyP.appendChild(whyLbl);
-          whyP.appendChild(document.createTextNode(r.whyItMatters));
-          card.appendChild(whyP);
-        }
-
-        if (r.improvementInstructions) {
-          const instP = document.createElement("p");
-          instP.className = "ai-rec-desc";
-          const instLbl = document.createElement("strong");
-          instLbl.textContent = "Exact improvement instruction: ";
-          instP.appendChild(instLbl);
-          instP.appendChild(document.createTextNode(r.improvementInstructions));
-          card.appendChild(instP);
-        }
-
-        if (r.beforeExample && r.afterExample) {
-          const grid = document.createElement("div");
-          grid.className = "ai-before-after-grid";
-
-          const beforeBox = document.createElement("div");
-          beforeBox.className = "ai-ba-box before";
-          const bLabel = document.createElement("span");
-          bLabel.className = "ai-ba-label";
-          bLabel.textContent = "Before (Current Bullet / Text)";
-          beforeBox.appendChild(bLabel);
-          beforeBox.appendChild(document.createTextNode(r.beforeExample));
-
-          const afterBox = document.createElement("div");
-          afterBox.className = "ai-ba-box after";
-          const aLabel = document.createElement("span");
-          aLabel.className = "ai-ba-label";
-          aLabel.textContent = "After (AI Optimized Example)";
-          afterBox.appendChild(aLabel);
-          afterBox.appendChild(document.createTextNode(r.afterExample));
-
-          grid.appendChild(beforeBox);
-          grid.appendChild(afterBox);
-          card.appendChild(grid);
-        }
-
-        if (r.expectedBenefit) {
-          const benBox = document.createElement("div");
-          benBox.className = "ai-roadmap-box";
-          const benLbl = document.createElement("strong");
-          benLbl.textContent = "Expected Benefit: ";
-          benBox.appendChild(benLbl);
-          benBox.appendChild(document.createTextNode(r.expectedBenefit));
-          card.appendChild(benBox);
-        }
-
-        expContainer.appendChild(card);
-      });
+    // Restore default JS recommendations in execSummaryBody
+    if (execSummaryBody) {
+      execSummaryBody.style.display = "grid";
+      populateRuleBasedLists(store.ruleBasedRecs);
+    }
+  } else {
+    // IDLE STATE (e.g. AI toggle disabled)
+    updateAIRecsBadge("normal");
+    if (aiRecsLoading) aiRecsLoading.style.display = "none";
+    if (aiSummaryBanner) aiSummaryBanner.style.display = "none";
+    if (aiFallbackBanner) aiFallbackBanner.style.display = "none";
+    if (aiExpandedContainer) {
+      aiExpandedContainer.style.display = "none";
+      aiExpandedContainer.innerHTML = "";
+    }
+    if (execSummaryBody) {
+      execSummaryBody.style.display = "grid";
+      populateRuleBasedLists(store.ruleBasedRecs);
     }
   }
 }
 
+/**
+ * Sets state for a section and updates DOM if active.
+ */
+function setRecommendationsState(mode, state, payload = {}) {
+  const targetMode = mode || "ats";
+  recsSectionState[targetMode] = state;
+
+  if (state === "success" && payload.aiData) {
+    recsDataStore[targetMode].aiData = payload.aiData;
+  } else if (state === "fallback") {
+    recsDataStore[targetMode].errorMessage = payload.errorMessage || "";
+  }
+
+  // Only update UI if the section being updated is currently active on screen
+  if (analysisMode === targetMode) {
+    renderCurrentSectionState(targetMode);
+  }
+}
+
+/**
+ * Legacy compatibility wrapper: keeps existing JavaScript recommendation functions intact
+ */
+function renderRuleBasedRecs(recs, mode) {
+  const targetMode = mode || analysisMode || "ats";
+  recsDataStore[targetMode].ruleBasedRecs = Array.isArray(recs) ? recs : [];
+  setRecommendationsState(targetMode, "fallback");
+}
+
+/**
+ * Legacy compatibility wrapper: keeps applyAIRecommendations intact
+ */
+function applyAIRecommendations(data, context) {
+  const targetMode = (context && context.mode) || analysisMode || "ats";
+  setRecommendationsState(targetMode, "success", { aiData: data });
+}
+
 async function triggerAIRecommendations(context) {
   if (!context || !context.resumeText) return;
+  const mode = context.mode || analysisMode || "ats";
 
   const toggle = document.getElementById("aiRecsToggle");
   const isAiEnabled = toggle ? toggle.checked : true;
+
   if (!isAiEnabled) {
-    updateAIRecsBadge("normal");
-    const fallbackBanner = document.getElementById("aiFallbackBanner");
-    if (fallbackBanner) {
-      fallbackBanner.style.display = "flex";
-      const fbText = document.getElementById("aiFallbackText");
-      if (fbText) fbText.textContent = "AI Insights are disabled. Displaying high-precision rule-based recommendations.";
-    }
+    setRecommendationsState(mode, "idle");
     return;
   }
 
-  const cacheKey = `${context.mode}_${context.targetRole || ""}_${context.resumeText.length}_${context.resumeText.slice(0, 100)}`;
-  if (aiRecsCache.has(cacheKey)) {
-    applyAIRecommendations(aiRecsCache.get(cacheKey), context);
+  // Check cache for this exact resume & mode
+  const resumeHash = `${mode}_${context.targetRole || ""}_${context.resumeText.length}_${context.resumeText.slice(0, 100)}`;
+  if (recsDataStore[mode].aiData && recsDataStore[mode].resumeHash === resumeHash) {
+    setRecommendationsState(mode, "success", { aiData: recsDataStore[mode].aiData });
     return;
   }
 
+  // Abort any in-flight request and generate a unique request ID
   if (currentAIAbortController) {
     currentAIAbortController.abort();
   }
   currentAIAbortController = new AbortController();
+  const requestId = ++currentAIRequestId;
 
-  updateAIRecsBadge("loading");
-  const loadingEl = document.getElementById("aiRecsLoading");
-  const loadingTitle = document.getElementById("aiLoadingTitle");
-  const loadingSub = document.getElementById("aiLoadingSubtitle");
-  if (loadingEl) loadingEl.style.display = "flex";
-  if (loadingTitle) {
-    loadingTitle.textContent = context.mode === "ats"
-      ? "Analyzing ATS formatting & keywords with Free AI..."
-      : "Analyzing role skills & career roadmap with Free AI...";
-  }
-  if (loadingSub) {
-    loadingSub.textContent = "Querying OpenRouter Free AI model for structured, personalized recommendations...";
-  }
+  // Set loading state immediately (hides default recs and shows loading animation)
+  setRecommendationsState(mode, "loading");
 
-  const fallbackBanner = document.getElementById("aiFallbackBanner");
-  if (fallbackBanner) fallbackBanner.style.display = "none";
-
-  const endpoint = context.mode === "ats"
+  const endpoint = mode === "ats"
     ? "/api/ai/ats-improvement-recommendations"
     : "/api/ai/target-role-recommendations";
 
-  const payload = context.mode === "ats"
+  const payload = mode === "ats"
     ? {
       resumeText: context.resumeText,
       overallScore: context.overallScore,
@@ -2042,34 +2153,28 @@ async function triggerAIRecommendations(context) {
       signal: currentAIAbortController.signal
     });
 
-    const resData = await resp.json().catch(() => ({}));
+    // Race condition guard: discard if newer request has been initiated
+    if (requestId !== currentAIRequestId) return;
 
-    if (resp.ok && resData.success && resData.aiPowered && Array.isArray(resData.recommendations) && resData.recommendations.length > 0) {
-      aiRecsCache.set(cacheKey, resData);
-      applyAIRecommendations(resData, context);
+    const resData = await resp.json().catch(() => null);
+
+    // Validate the AI response strictly before declaring success
+    if (resp.ok && validateAIResponse(mode, resData)) {
+      recsDataStore[mode].aiData = resData;
+      recsDataStore[mode].resumeHash = resumeHash;
+      aiRecsCache.set(resumeHash, resData);
+      setRecommendationsState(mode, "success", { aiData: resData });
     } else {
-      // Fallback gracefully
-      if (loadingEl) loadingEl.style.display = "none";
-      updateAIRecsBadge("fallback");
-      if (fallbackBanner) {
-        fallbackBanner.style.display = "flex";
-        const fbText = document.getElementById("aiFallbackText");
-        if (fbText) {
-          fbText.textContent = resData.message || "Free AI model temporarily unavailable or key not configured. Displaying high-precision rule-based recommendations.";
-        }
-      }
+      // AI unavailable, rate limited, empty, or malformed: automatic fallback
+      const errorMsg = (resData && (resData.error || resData.message)) ||
+        "Free AI model temporarily unavailable or rate limited. Displaying high-precision rule-based recommendations.";
+      setRecommendationsState(mode, "fallback", { errorMessage: errorMsg });
     }
   } catch (err) {
     if (err.name === "AbortError") return;
-    if (loadingEl) loadingEl.style.display = "none";
-    updateAIRecsBadge("fallback");
-    if (fallbackBanner) {
-      fallbackBanner.style.display = "flex";
-      const fbText = document.getElementById("aiFallbackText");
-      if (fbText) {
-        fbText.textContent = "Network issue contacting AI provider. Displaying high-precision rule-based recommendations.";
-      }
-    }
+    if (requestId !== currentAIRequestId) return;
+    const errorMsg = "Network timeout or connection issue with AI service. Displaying high-precision rule-based recommendations.";
+    setRecommendationsState(mode, "fallback", { errorMessage: errorMsg });
   }
 }
 
@@ -2776,8 +2881,10 @@ function analyzeText(text, filename) {
     });
   }
 
-  // Render rule-based recommendations immediately as reliable baseline
-  renderRuleBasedRecs(recs, analysisMode);
+  // Store rule-based recommendations in data store for automatic fallback
+  if (recsDataStore[analysisMode]) {
+    recsDataStore[analysisMode].ruleBasedRecs = recs;
+  }
 
   // ---- Errors & Issues Found: every detected problem ----
   const errorItems = [];
@@ -3045,7 +3152,18 @@ function analyzeText(text, filename) {
     ruleBasedRecs: recs
   };
 
-  triggerAIRecommendations(lastAIAnalysisContext);
+  if (recsDataStore[analysisMode]) {
+    recsDataStore[analysisMode].lastContext = lastAIAnalysisContext;
+  }
+
+  const aiToggleEl = document.getElementById("aiRecsToggle");
+  const isAiActive = aiToggleEl ? aiToggleEl.checked : true;
+
+  if (isAiActive) {
+    triggerAIRecommendations(lastAIAnalysisContext);
+  } else {
+    setRecommendationsState(analysisMode, "idle");
+  }
 
   document.getElementById("results").style.display = "block";
   document.getElementById("results").scrollIntoView({ behavior: "smooth" });
@@ -3487,7 +3605,14 @@ function resetAnalysis() {
     currentAIAbortController.abort();
     currentAIAbortController = null;
   }
+  currentAIRequestId++;
+  recsSectionState.ats = "idle";
+  recsSectionState.normal = "idle";
+  recsDataStore.ats = { ruleBasedRecs: [], aiData: null, errorMessage: "", resumeHash: "", lastContext: null };
+  recsDataStore.normal = { ruleBasedRecs: [], aiData: null, errorMessage: "", resumeHash: "", lastContext: null };
+  aiRecsCache.clear();
   lastAIAnalysisContext = null;
+
   const expContainer = document.getElementById("aiExpandedContainer");
   if (expContainer) {
     expContainer.style.display = "none";
@@ -3499,6 +3624,8 @@ function resetAnalysis() {
   if (fbBanner) fbBanner.style.display = "none";
   const aiLoading = document.getElementById("aiRecsLoading");
   if (aiLoading) aiLoading.style.display = "none";
+  const execBody = document.getElementById("execSummaryBody");
+  if (execBody) execBody.style.display = "grid";
   updateAIRecsBadge("normal");
 
   resultsEl.style.display = "none";
@@ -3555,18 +3682,19 @@ if (aiRecsToggle) {
   }
   aiRecsToggle.addEventListener("change", () => {
     localStorage.setItem("ara_ai_recs_enabled", aiRecsToggle.checked);
-    if (lastAIAnalysisContext) {
-      if (aiRecsToggle.checked) {
-        triggerAIRecommendations(lastAIAnalysisContext);
-      } else {
-        renderRuleBasedRecs(lastAIAnalysisContext.ruleBasedRecs, lastAIAnalysisContext.mode);
-        const fbBanner = document.getElementById("aiFallbackBanner");
-        if (fbBanner) {
-          fbBanner.style.display = "flex";
-          const fbText = document.getElementById("aiFallbackText");
-          if (fbText) fbText.textContent = "AI Insights disabled by user. Displaying high-precision rule-based recommendations.";
-        }
+    const activeMode = analysisMode || "ats";
+    const ctx = (recsDataStore[activeMode] && recsDataStore[activeMode].lastContext) || lastAIAnalysisContext;
+    if (aiRecsToggle.checked) {
+      if (ctx) {
+        triggerAIRecommendations(ctx);
       }
+    } else {
+      if (currentAIAbortController) {
+        currentAIAbortController.abort();
+      }
+      setRecommendationsState(activeMode, "fallback", {
+        errorMessage: "AI Insights disabled by user. Displaying high-precision rule-based recommendations."
+      });
     }
   });
 }

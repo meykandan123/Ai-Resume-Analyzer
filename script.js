@@ -2786,23 +2786,23 @@
       targetRole: targetRoleTitle,
       customRole: customJobRoleText || "",
       jobDescription: userJobDescriptionText || "",
-      matchedSkills: roleResult && roleResult.matched ? roleResult.matched : [],
-      missingSkills: roleResult && roleResult.missing ? roleResult.missing : [],
-      jdAnalysis: jdResult || null,
-      overallScore: score,
+      matchedSkills: typeof matchedRoleSkills !== "undefined" ? matchedRoleSkills : [],
+      missingSkills: typeof missingRoleSkills !== "undefined" ? missingRoleSkills : [],
+      jdAnalysis: typeof jdResult !== "undefined" ? jdResult : null,
+      overallScore: typeof score !== "undefined" ? score : 75,
       scoreBreakdown: {
         structure: typeof sectionCoveragePct !== "undefined" ? sectionCoveragePct : 70,
         keywords: typeof kwCoveragePct !== "undefined" ? kwCoveragePct : 70,
         impact: typeof impactPct !== "undefined" ? impactPct : 70,
         formatting: typeof formatPct !== "undefined" ? formatPct : 70
       },
-      missingSections: missing || [],
+      missingSections: typeof missing !== "undefined" ? missing : [],
       missingKeywords: (analysisMode === "ats" && typeof missingCommonKw !== "undefined") ? missingCommonKw : [],
-      weakPhrases: uniqueWeakPhrases || [],
-      quantifiedStats: quant || { total: 0, quantified: 0 },
+      weakPhrases: typeof uniqueWeakPhrases !== "undefined" ? uniqueWeakPhrases : [],
+      quantifiedStats: typeof quant !== "undefined" ? quant : { total: 0, quantified: 0 },
       formattingIssues: [
-        (wordCount < 300 || wordCount > 1100) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
-        noDatesFound ? "No clear dates or employment timelines detected" : null
+        (typeof wordCount !== "undefined" && (wordCount < 300 || wordCount > 1100)) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
+        (typeof noDatesFound !== "undefined" && noDatesFound) ? "No clear dates or employment timelines detected" : null
       ].filter(Boolean),
       ruleBasedRecs: recs
     };

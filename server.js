@@ -657,6 +657,9 @@ const authenticateToken = async (req, res, next) => {
 
 // Database Readiness Middleware
 const checkDbConnection = (req, res, next) => {
+  if (req.path.startsWith("/health") || req.path.startsWith("/config") || req.path.startsWith("/ai")) {
+    return next();
+  }
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({
       success: false,
@@ -738,6 +741,10 @@ const authRateLimiter = (req, res, next) => {
 };
 
 app.use("/api", checkDbConnection);
+
+// AI Recommendation Routes (OpenRouter integration for role & ATS recommendations)
+const aiRoutes = require("./routes/aiRoutes");
+app.use("/api/ai", aiRoutes);
 app.use("/api/auth/signup", authRateLimiter);
 app.use("/api/auth/login", authRateLimiter);
 app.use("/api/auth/resend-verification", authRateLimiter);
@@ -836,6 +843,11 @@ app.get("/api/config", (req, res) => {
       messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "356703491313",
       appId: process.env.FIREBASE_APP_ID || "1:356703491313:web:546f57b08bbf126da68550",
       measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-V9GGGHW78G"
+    },
+    aiConfig: {
+      enabled: process.env.AI_ENABLED !== "false" && process.env.AI_ENABLED !== false,
+      hasKey: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
+      model: process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free"
     }
   });
 });

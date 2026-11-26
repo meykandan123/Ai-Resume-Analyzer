@@ -512,10 +512,38 @@
       </div>
     </div>
 
-    <!-- Executive Summary (Shared) -->
-    <div class="report-card">
-      <div class="report-card-head"><h2 id="execSummaryHeading">Executive Summary</h2></div>
-      <div class="exec-summary-body">
+    <!-- Executive Summary (Shared) / AI Recommendations -->
+    <div class="report-card" id="recsReportCard">
+      <div class="report-card-head">
+        <h2 id="execSummaryHeading">Executive Summary</h2>
+        <div class="recs-head-actions">
+          <span class="ai-mode-badge fallback-active" id="aiRecsBadge">⚡ Rule-Based</span>
+          <label class="ai-toggle-switch" title="Toggle AI-Powered Recommendations (Free AI Model)">
+            <input type="checkbox" id="aiRecsToggle" checked>
+            <span class="ai-toggle-slider"></span>
+            <span class="ai-toggle-label">AI Insights</span>
+          </label>
+        </div>
+      </div>
+      <div id="aiRecsLoading" class="ai-recs-loading" style="display: none;">
+        <div class="ai-recs-spinner"></div>
+        <div class="ai-recs-loading-text">
+          <span class="ai-loading-title" id="aiLoadingTitle">Querying OpenRouter Free AI model...</span>
+          <span id="aiLoadingSubtitle">Analyzing your resume against industry standards and generating tailored recommendations.</span>
+        </div>
+      </div>
+      <div id="aiFallbackBanner" class="ai-fallback-banner" style="display: none;">
+        <span>ℹ️</span>
+        <span id="aiFallbackText">Rule-based recommendations engine active (AI insights disabled or unavailable).</span>
+      </div>
+      <div id="aiSummaryBanner" class="ai-summary-banner" style="display: none;">
+        <div class="ai-summary-header">
+          <span class="ai-summary-pill" id="aiSummaryPill">✨ AI Assessment</span>
+          <span class="ai-summary-model" id="aiSummaryModel">Free AI Model</span>
+        </div>
+        <p class="ai-summary-text" id="aiSummaryText"></p>
+      </div>
+      <div class="exec-summary-body" id="execSummaryBody">
         <div>
           <div class="exec-col-title issues" id="execColTitleIssues">Top Issues to Fix</div>
           <ul class="exec-list issues" id="execIssuesList"></ul>
@@ -525,6 +553,7 @@
           <ul class="exec-list fixes" id="execFixesList"></ul>
         </div>
       </div>
+      <div id="aiExpandedContainer" class="ai-expanded-container" style="display: none;"></div>
     </div>
 
     <!-- Readability & Content Quality (Normal Mode) -->

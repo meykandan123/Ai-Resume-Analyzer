@@ -8,11 +8,11 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Default fallback list of verified free models on OpenRouter
 const DEFAULT_FREE_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
-  "google/gemini-2.0-flash-lite-preview-02-05:free",
-  "qwen/qwen-2.5-72b-instruct:free",
-  "mistralai/mistral-7b-instruct:free"
+  "openrouter/free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "liquid/lfm-3-1.7b:free"
 ];
 
 class OpenRouterService {
@@ -50,8 +50,8 @@ class OpenRouterService {
    */
   getFreeModelsSequence() {
     const sequence = [this.primaryModel, ...DEFAULT_FREE_MODELS];
-    // Enforce :free suffix on every model to ensure zero cost
-    const freeOnly = sequence.filter(m => typeof m === "string" && m.trim().endsWith(":free"));
+    // Enforce :free suffix or openrouter/free to ensure zero cost
+    const freeOnly = sequence.filter(m => typeof m === "string" && (m.trim().endsWith(":free") || m.trim() === "openrouter/free"));
     // Deduplicate
     return [...new Set(freeOnly)];
   }
@@ -121,9 +121,12 @@ class OpenRouterService {
           model,
           messages,
           temperature: options.temperature !== undefined ? options.temperature : 0.2,
-          max_tokens: options.max_tokens || 2048,
-          response_format: options.response_format || { type: "json_object" }
+          max_tokens: options.max_tokens || 4096
         };
+
+        if (options.response_format) {
+          payload.response_format = options.response_format;
+        }
 
         const response = await fetch(OPENROUTER_API_URL, {
           method: "POST",

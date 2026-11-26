@@ -2779,36 +2779,6 @@
     // Render rule-based recommendations immediately as reliable baseline
     renderRuleBasedRecs(recs, analysisMode);
 
-    // Prepare context and trigger AI recommendations asynchronously
-    lastAIAnalysisContext = {
-      mode: analysisMode,
-      resumeText: text,
-      targetRole: targetRoleTitle,
-      customRole: customJobRoleText || "",
-      jobDescription: userJobDescriptionText || "",
-      matchedSkills: typeof matchedRoleSkills !== "undefined" ? matchedRoleSkills : [],
-      missingSkills: typeof missingRoleSkills !== "undefined" ? missingRoleSkills : [],
-      jdAnalysis: typeof jdResult !== "undefined" ? jdResult : null,
-      overallScore: typeof score !== "undefined" ? score : 75,
-      scoreBreakdown: {
-        structure: typeof sectionCoveragePct !== "undefined" ? sectionCoveragePct : 70,
-        keywords: typeof kwCoveragePct !== "undefined" ? kwCoveragePct : 70,
-        impact: typeof impactPct !== "undefined" ? impactPct : 70,
-        formatting: typeof formatPct !== "undefined" ? formatPct : 70
-      },
-      missingSections: typeof missing !== "undefined" ? missing : [],
-      missingKeywords: (analysisMode === "ats" && typeof missingCommonKw !== "undefined") ? missingCommonKw : [],
-      weakPhrases: typeof uniqueWeakPhrases !== "undefined" ? uniqueWeakPhrases : [],
-      quantifiedStats: typeof quant !== "undefined" ? quant : { total: 0, quantified: 0 },
-      formattingIssues: [
-        (typeof wordCount !== "undefined" && (wordCount < 300 || wordCount > 1100)) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
-        (typeof noDatesFound !== "undefined" && noDatesFound) ? "No clear dates or employment timelines detected" : null
-      ].filter(Boolean),
-      ruleBasedRecs: recs
-    };
-
-    triggerAIRecommendations(lastAIAnalysisContext);
-
     // ---- Errors & Issues Found: every detected problem ----
     const errorItems = [];
     missing.forEach(m => {
@@ -3046,6 +3016,36 @@
       saveHistoryEntry(currentUser ? currentUser.email : null, filename, score, verdict);
       historySavedForCurrentUpload = true;
     }
+
+    // Prepare context and trigger AI recommendations asynchronously now that score & all metrics are fully computed
+    lastAIAnalysisContext = {
+      mode: analysisMode,
+      resumeText: text,
+      targetRole: targetRoleTitle,
+      customRole: customJobRoleText || "",
+      jobDescription: userJobDescriptionText || "",
+      matchedSkills: typeof matchedRoleSkills !== "undefined" ? matchedRoleSkills : [],
+      missingSkills: typeof missingRoleSkills !== "undefined" ? missingRoleSkills : [],
+      jdAnalysis: typeof jdResult !== "undefined" ? jdResult : null,
+      overallScore: score,
+      scoreBreakdown: {
+        structure: typeof sectionCoveragePct !== "undefined" ? sectionCoveragePct : 70,
+        keywords: typeof kwCoveragePct !== "undefined" ? kwCoveragePct : 70,
+        impact: typeof impactPct !== "undefined" ? impactPct : 70,
+        formatting: typeof formatPct !== "undefined" ? formatPct : 70
+      },
+      missingSections: typeof missing !== "undefined" ? missing : [],
+      missingKeywords: (analysisMode === "ats" && typeof missingCommonKw !== "undefined") ? missingCommonKw : [],
+      weakPhrases: typeof uniqueWeakPhrases !== "undefined" ? uniqueWeakPhrases : [],
+      quantifiedStats: typeof quant !== "undefined" ? quant : { total: 0, quantified: 0 },
+      formattingIssues: [
+        (typeof wordCount !== "undefined" && (wordCount < 300 || wordCount > 1100)) ? `Resume length outside ideal 300-1100 words (${wordCount} words)` : null,
+        (typeof noDatesFound !== "undefined" && noDatesFound) ? "No clear dates or employment timelines detected" : null
+      ].filter(Boolean),
+      ruleBasedRecs: recs
+    };
+
+    triggerAIRecommendations(lastAIAnalysisContext);
 
     document.getElementById("results").style.display = "block";
     document.getElementById("results").scrollIntoView({ behavior: "smooth" });

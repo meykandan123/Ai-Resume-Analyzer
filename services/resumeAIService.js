@@ -78,7 +78,7 @@ CANDIDATE RESUME CONTENT:
 ${resumeText}
 <<<END_CANDIDATE_RESUME_TEXT>>>
 
-Evaluate the resume and return the structured JSON object with 4 to 8 high-impact skill recommendations.`;
+Evaluate the resume and return the structured JSON object with 3 to 5 high-impact skill recommendations. Keep descriptions concise (max 2 sentences per field) and ensure the JSON is valid and properly closed.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -87,7 +87,7 @@ Evaluate the resume and return the structured JSON object with 4 to 8 high-impac
 
     const completion = await openRouterService.generateChatCompletion(messages, {
       temperature: 0.2,
-      max_tokens: 2200
+      max_tokens: 3500
     });
 
     const parsed = openRouterService.parseJsonFromResponse(completion.content);
@@ -102,12 +102,15 @@ Evaluate the resume and return the structured JSON object with 4 to 8 high-impac
       matchPercentage: typeof parsed.matchPercentage === "number" ? Math.max(0, Math.min(100, parsed.matchPercentage)) : 70,
       careerPriorities: Array.isArray(parsed.careerPriorities) ? parsed.careerPriorities.slice(0, 5) : [],
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.map(r => ({
-        skillName: String(r.skillName || "Skill"),
-        category: ["Technical", "Soft Skill", "Tool/Platform", "Domain Knowledge"].includes(r.category) ? r.category : "Technical",
+        skill: String(r.skill || r.skillName || "Skill"),
+        skillName: String(r.skillName || r.skill || "Skill"),
+        category: ["Technical", "Soft Skill", "Tool/Platform", "Domain Knowledge"].includes(r.category) ? r.category : (r.category || "Technical"),
         priority: ["High", "Medium", "Low"].includes(r.priority) ? r.priority : "Medium",
         status: ["Missing", "Needs Improvement", "Demonstrated"].includes(r.status) ? r.status : "Missing",
-        whyItMatters: String(r.whyItMatters || ""),
-        improvementTip: String(r.improvementTip || ""),
+        whyMatters: String(r.whyMatters || r.whyItMatters || ""),
+        whyItMatters: String(r.whyItMatters || r.whyMatters || ""),
+        howToImprove: String(r.howToImprove || r.improvementTip || ""),
+        improvementTip: String(r.improvementTip || r.howToImprove || ""),
         suggestedProject: String(r.suggestedProject || ""),
         learningRoadmap: String(r.learningRoadmap || "")
       })) : []
@@ -175,7 +178,7 @@ CANDIDATE RESUME CONTENT:
 ${resumeText}
 <<<END_CANDIDATE_RESUME_TEXT>>>
 
-Analyze the resume and return the structured JSON object with 4 to 8 high-priority ATS improvement recommendations.`;
+Analyze the resume and return the structured JSON object with 3 to 5 high-priority ATS improvement recommendations. Keep all descriptions and before/after examples concise (1-2 sentences each) and ensure the JSON is valid and properly closed.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -184,7 +187,7 @@ Analyze the resume and return the structured JSON object with 4 to 8 high-priori
 
     const completion = await openRouterService.generateChatCompletion(messages, {
       temperature: 0.2,
-      max_tokens: 2200
+      max_tokens: 3500
     });
 
     const parsed = openRouterService.parseJsonFromResponse(completion.content);
@@ -197,15 +200,19 @@ Analyze the resume and return the structured JSON object with 4 to 8 high-priori
       summaryAssessment: parsed.summaryAssessment || "Comprehensive ATS structure and impact assessment complete.",
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.map(r => ({
         issueTitle: String(r.issueTitle || "Resume Improvement"),
-        issueDescription: String(r.issueDescription || ""),
+        description: String(r.description || r.issueDescription || ""),
+        issueDescription: String(r.issueDescription || r.description || ""),
         severity: ["Critical", "High", "Medium", "Low"].includes(r.severity) ? r.severity : "Medium",
-        whyItMatters: String(r.whyItMatters || ""),
-        exactInstructions: String(r.exactInstructions || ""),
+        whyItMatters: String(r.whyItMatters || r.whyMatters || ""),
+        improvementInstructions: String(r.improvementInstructions || r.exactInstructions || ""),
+        exactInstructions: String(r.exactInstructions || r.improvementInstructions || ""),
         suggestedText: String(r.suggestedText || ""),
+        beforeExample: (r.beforeAfterExample && r.beforeAfterExample.before) || r.beforeExample || "",
+        afterExample: (r.beforeAfterExample && r.beforeAfterExample.after) || r.afterExample || "",
         beforeAfterExample: (r.beforeAfterExample && typeof r.beforeAfterExample === "object") ? {
-          before: String(r.beforeAfterExample.before || ""),
-          after: String(r.beforeAfterExample.after || "")
-        } : null,
+          before: String(r.beforeAfterExample.before || r.beforeExample || ""),
+          after: String(r.beforeAfterExample.after || r.afterExample || "")
+        } : (r.beforeExample && r.afterExample ? { before: String(r.beforeExample), after: String(r.afterExample) } : null),
         expectedBenefit: String(r.expectedBenefit || "")
       })) : []
     };

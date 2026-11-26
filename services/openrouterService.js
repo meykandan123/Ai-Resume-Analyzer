@@ -8,17 +8,14 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Default fallback list of verified free models on OpenRouter
 const DEFAULT_FREE_MODELS = [
-  "openrouter/free",
-  "nvidia/nemotron-3.5-lightning:free",
-  "google/gemma-4-31b-it:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "liquid/lfm-3-1.7b:free"
+  "baidu/ernie-5.5-flash-preview:free",
+  "openrouter/free"
 ];
 
 class OpenRouterService {
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || "";
-    this.primaryModel = process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free";
+    this.primaryModel = process.env.OPENROUTER_MODEL || "baidu/ernie-5.5-flash-preview:free";
     this.siteUrl = process.env.OPENROUTER_SITE_URL || "http://localhost:5000";
     this.appName = process.env.OPENROUTER_APP_NAME || "AI Resume Analyzer";
     this.aiEnabled = process.env.AI_ENABLED !== "false" && process.env.AI_ENABLED !== false;
@@ -30,7 +27,7 @@ class OpenRouterService {
    */
   reloadConfig() {
     this.apiKey = process.env.OPENROUTER_API_KEY || "";
-    this.primaryModel = process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free";
+    this.primaryModel = process.env.OPENROUTER_MODEL || "baidu/ernie-5.5-flash-preview:free";
     this.siteUrl = process.env.OPENROUTER_SITE_URL || "http://localhost:5000";
     this.appName = process.env.OPENROUTER_APP_NAME || "AI Resume Analyzer";
     this.aiEnabled = process.env.AI_ENABLED !== "false" && process.env.AI_ENABLED !== false;
@@ -84,7 +81,24 @@ class OpenRouterService {
         try {
           return JSON.parse(potentialJson);
         } catch (subErr) {
-          // Continue to error throw below
+          // Try salvage below
+        }
+      }
+
+      // Salvage partially truncated JSON if closing brackets were truncated
+      if (firstBrace !== -1) {
+        const lastCompleteObj = cleaned.lastIndexOf("}");
+        if (lastCompleteObj > firstBrace) {
+          const salvaged = cleaned.substring(firstBrace, lastCompleteObj + 1);
+          const attempts = [salvaged + "]}", salvaged + "}", salvaged];
+          for (const cand of attempts) {
+            try {
+              const res = JSON.parse(cand);
+              if (res && (res.recommendations || res.summaryAssessment)) {
+                return res;
+              }
+            } catch (_) {}
+          }
         }
       }
 
@@ -111,7 +125,7 @@ class OpenRouterService {
     const candidateModels = this.getFreeModelsSequence();
     let lastError = null;
 
-    for (let i = 0; i < Math.min(candidateModels.length, 3); i++) {
+    for (let i = 0; i < candidateModels.length; i++) {
       const model = candidateModels[i];
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -161,6 +175,7 @@ class OpenRouterService {
         const content = data?.choices?.[0]?.message?.content;
 
         if (!content) {
+          console.warn(`[OpenRouter Debug] Model ${model} raw data:`, JSON.stringify(data));
           throw new Error("Received empty choices or content from OpenRouter response.");
         }
 
